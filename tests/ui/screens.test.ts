@@ -667,6 +667,34 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
         cardIds: ['hc_2', 'hc_1'],
       });
 
+      // При активном bl_psychic и < 5 выбранных картах кнопка «Сыграть» остаётся активной (во избежание софтлока)
+      const psychicBlinds = [...base.anteBlinds] as [
+        (typeof base.anteBlinds)[0],
+        (typeof base.anteBlinds)[1],
+        (typeof base.anteBlinds)[2],
+      ];
+      psychicBlinds[2] = { ...psychicBlinds[2], bossId: 'bl_psychic', status: 'current' };
+      const psychicState: RunState = {
+        ...state,
+        anteBlinds: psychicBlinds,
+        activeBossDisabled: false,
+      };
+      renderRunView(
+        root,
+        createViewModel(psychicState, { selectedCardIds: ['hc_1', 'hc_2'] }),
+        handlers,
+      );
+      const psychicPlayBtn = findButtonByText(
+        root.querySelector('[data-belt="hand"]') as HTMLElement,
+        'Сыграть',
+      )!;
+      expect(psychicPlayBtn.disabled).toBe(false);
+      psychicPlayBtn.click();
+      expect(handlers.onCommand).toHaveBeenLastCalledWith({
+        type: 'PLAY_HAND',
+        cardIds: ['hc_1', 'hc_2'],
+      });
+
       // Во время isAnimating тап по арене вызывает onSkipAnimation
       const animRefs = renderRunView(
         root,
@@ -805,6 +833,17 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
               chooseCount: 1,
               purchased: false,
             },
+            {
+              uid: 'pack_free',
+              packId: 'celestial_normal',
+              type: 'celestial',
+              size: 'normal',
+              cost: 0,
+              baseCost: 4,
+              totalCards: 3,
+              chooseCount: 1,
+              purchased: false,
+            },
           ],
           rerollCost: 5,
           tempRerollCost: 2,
@@ -829,6 +868,10 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       const packEl = arena.querySelector('[data-pack-uid="pack_1"]') as HTMLElement;
       packEl.click();
       expect(handlers.onInspectPack).toHaveBeenCalledWith(state.shop!.packs[0]);
+
+      const freePackEl = arena.querySelector('[data-pack-uid="pack_free"]') as HTMLElement;
+      expect(freePackEl.textContent).toContain('Бесплатно');
+      expect(freePackEl.textContent).not.toContain('0 з.');
 
       findButtonByText(arena, 'Обновить (2 з.)')?.click();
       expect(handlers.onCommand).toHaveBeenCalledWith({ type: 'REROLL_SHOP' });

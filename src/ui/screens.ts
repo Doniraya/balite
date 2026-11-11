@@ -1167,6 +1167,15 @@ function renderCashoutArena(ctx: RenderContext, arenaEl: HTMLElement): void {
 }
 
 /**
+ * Форматирует ценник товара или бустера в лавке с поддержкой бесплатных позиций по купону.
+ */
+function formatShopPrice(cost: number, translator: Translator): string {
+  return cost === 0
+    ? translator.t('ui.shop.free')
+    : translator.t('ui.hud.goldAmount', { dollars: cost });
+}
+
+/**
  * Отрисовывает экран лавки (фаза `shop`).
  */
 function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
@@ -1229,6 +1238,7 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
         relic: offer.relic,
         translator,
         price: offer.cost,
+        free: offer.cost === 0,
         compact: true,
         interactive: true,
         disabled: !affordable,
@@ -1239,6 +1249,7 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
         consumable: offer.consumable,
         translator,
         price: offer.cost,
+        free: offer.cost === 0,
         compact: true,
         interactive: true,
         disabled: !affordable,
@@ -1258,9 +1269,7 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
       createEl(
         'span',
         'shop-slot-btn__price',
-        offer.cost === 0
-          ? translator.t('ui.shop.free')
-          : translator.t('ui.hud.goldAmount', { dollars: offer.cost }),
+        formatShopPrice(offer.cost, translator),
       ),
     );
     if (!affordable) {
@@ -1289,6 +1298,7 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
       charterId: voucher.charterId,
       translator,
       price: voucher.cost,
+      free: voucher.cost === 0,
       compact: true,
       interactive: true,
       disabled: !affordable,
@@ -1299,7 +1309,7 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
       createEl(
         'span',
         'shop-slot-btn__price',
-        translator.t('ui.hud.goldAmount', { dollars: voucher.cost }),
+        formatShopPrice(voucher.cost, translator),
       ),
     );
     voucherBtn.addEventListener('click', () =>
@@ -1334,6 +1344,7 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
       packSize: pack.size,
       translator,
       price: pack.cost,
+      free: pack.cost === 0,
       compact: true,
       interactive: true,
       disabled: !affordable,
@@ -1344,7 +1355,7 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
       createEl(
         'span',
         'shop-slot-btn__price',
-        translator.t('ui.hud.goldAmount', { dollars: pack.cost }),
+        formatShopPrice(pack.cost, translator),
       ),
     );
     packBtn.addEventListener('click', () => handlers.onInspectPack(pack));
@@ -1686,11 +1697,6 @@ function isPlayHandBlocked(
   if (state.handsLeft <= 0) return true;
   if (selectedCardIds.length === 0 || selectedCardIds.length > 5) return true;
   if (missingForcedSelection) return true;
-
-  const activeBoss = getActiveBossId(state);
-  if (activeBoss === 'bl_psychic' && !state.activeBossDisabled && selectedCardIds.length !== 5) {
-    return true;
-  }
 
   // Наличие хотя бы одной валидной карты из колоды
   return selectedCardIds.every((id) => !cardById.has(id));
