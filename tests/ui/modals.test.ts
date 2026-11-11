@@ -1,0 +1,818 @@
+import { describe, expect, it, vi } from 'vitest';
+import {
+  CELESTIAL_IDS,
+  HAND_TYPES,
+  RELIC_IDS,
+  RUNE_IDS,
+  SCROLL_IDS,
+  createInitialRunState,
+  createPlayingCard,
+  type BossId,
+  type CharterId,
+  type ConsumableId,
+  type ConsumableInstance,
+  type GameSettings,
+  type PackOffer,
+  type PlayingCard,
+  type RelicId,
+  type RelicInstance,
+  type RunState,
+  type ShopOffer,
+} from '../../src/engine';
+import { createTranslator } from '../../src/i18n';
+import {
+  getConsumableTargetRequirement,
+  getRelicLocParams,
+  renderInspectorOverlay,
+  type InspectorCallbacks,
+} from '../../src/ui/inspector';
+import {
+  renderDeckModal,
+  renderHandReferenceModal,
+  renderSettingsModal,
+  type SettingsModalOptions,
+} from '../../src/ui/modals';
+
+/**
+ * Запрещённые слова и корни для рейтинга 6+/12+ (без казино/покера/оккультизма).
+ */
+const FORBIDDEN_TEXT_PATTERNS: readonly RegExp[] = [
+  /\bpokers?\b/i,
+  /\bcasinos?\b/i,
+  /\bbets?\b/i,
+  /\bblinds?\b/i,
+  /\bchips?\b/i,
+  /\btarots?\b/i,
+  /\bdevils?\b/i,
+  /\bhanged\b/i,
+  /\bouija\b/i,
+  /\bjokers?\b/i,
+  /\bvampires?\b/i,
+  /\bgambl(?:e|ing)\b/i,
+  /\bjackpots?\b/i,
+  /(?<![а-яё])покер/iu,
+  /(?<![а-яё])казино/iu,
+  /(?<![а-яё])ставк[аиуео]?[ймх]?/iu,
+  /(?<![а-яё])блайнд/iu,
+  /(?<![а-яё])фишк/iu,
+  /(?<![а-яё])фишек/iu,
+  /(?<![а-яё])таро(?![а-яё])/iu,
+  /(?<![а-яё])дьявол/iu,
+  /(?<![а-яё])висельник/iu,
+  /(?<![а-яё])джокер/iu,
+  /(?<![а-яё])вампир/iu,
+];
+
+/**
+ * Создаёт тестовый экземпляр Реликвии с настраиваемым состоянием.
+ */
+function makeRelic(
+  id: RelicId,
+  overrides: Partial<RelicInstance> = {},
+): RelicInstance {
+  return {
+    uid: overrides.uid ?? `rel_${id}`,
+    id,
+    edition: overrides.edition ?? 'base',
+    baseCost: overrides.baseCost ?? 5,
+    sellValue: overrides.sellValue ?? 2,
+    extraValue: overrides.extraValue ?? 0,
+    debuffed: overrides.debuffed ?? false,
+    state: overrides.state ?? { chips: 0, mult: 0, xMult: 1 },
+  };
+}
+
+/**
+ * Создаёт тестовый экземпляр Расходника.
+ */
+function makeConsumable(
+  id: ConsumableId,
+  overrides: Partial<ConsumableInstance> = {},
+): ConsumableInstance {
+  const kind = (CELESTIAL_IDS as readonly string[]).includes(id)
+    ? 'celestial'
+    : (SCROLL_IDS as readonly string[]).includes(id)
+      ? 'scroll'
+      : 'rune';
+  return {
+    uid: overrides.uid ?? `con_${id}`,
+    id,
+    kind,
+    edition: overrides.edition ?? 'base',
+    baseCost: overrides.baseCost ?? 3,
+    sellValue: overrides.sellValue ?? 1,
+  };
+}
+
+/**
+ * Создаёт базовое состояние забега для UI-тестов.
+ */
+function createTestState(overrides: Partial<RunState> = {}): RunState {
+  const base = createInitialRunState('b_red', 'MODALS_TEST_SEED');
+  return {
+    ...base,
+    ...overrides,
+  };
+}
+
+/**
+ * Проверяет, что в тексте DOM-элемента нет нераскрытых шаблонов вида {param} и запрещённых слов.
+ */
+function assertCleanLocalizedElement(root: HTMLElement): void {
+  const text = root.textContent ?? '';
+  expect(text).not.toMatch(/\{[a-zA-Z0-9_]+\}/);
+  expect(root.querySelectorAll('a[href]')).toHaveLength(0);
+  expect(text).not.toMatch(/https?:\/\//i);
+  for (const pattern of FORBIDDEN_TEXT_PATTERNS) {
+    expect(text).not.toMatch(pattern);
+  }
+}
+
+describe('UI инспектор (src/ui/inspector.ts)', () => {
+  it('возвращает точные правила выбора карт для всех 37 расходников', () => {
+    for (const celestialId of CELESTIAL_IDS) {
+      expect(getConsumableTargetRequirement(celestialId)).toEqual({
+        min: 0,
+        max: 0,
+        mode: 'none',
+      });
+    }
+
+    const upToTwo: readonly ConsumableId[] = [
+      'c_magician',
+      'c_empress',
+      'c_heirophant',
+      'c_strength',
+      'c_hanged_man',
+    ];
+    for (const id of upToTwo) {
+      expect(getConsumableTargetRequirement(id)).toEqual({
+        min: 1,
+        max: 2,
+        mode: 'upTo',
+      });
+    }
+
+    const singleOne: readonly ConsumableId[] = [
+      'c_lovers',
+      'c_chariot',
+      'c_justice',
+      'c_devil',
+      'c_tower',
+      'c_talisman',
+      'c_deja_vu',
+      'c_trance',
+      'c_medium',
+      'c_aura',
+      'c_cryptid',
+    ];
+    for (const id of singleOne) {
+      expect(getConsumableTargetRequirement(id)).toEqual({
+        min: 1,
+        max: 1,
+        mode: 'single',
+      });
+    }
+
+    expect(getConsumableTargetRequirement('c_death')).toEqual({
+      min: 2,
+      max: 2,
+      mode: 'mirror',
+    });
+
+    const noneScrollsAndRunes: readonly ConsumableId[] = [
+      'c_fool',
+      'c_hermit',
+      'c_temperance',
+      'c_wheel_of_fortune',
+      'c_judgement',
+      'c_immolate',
+      'c_hex',
+      'c_black_hole',
+    ];
+    for (const id of noneScrollsAndRunes) {
+      expect(getConsumableTargetRequirement(id)).toEqual({
+        min: 0,
+        max: 0,
+        mode: 'none',
+      });
+    }
+
+    // Убеждаемся, что покрыты абсолютно все 37 расходников движка
+    expect(
+      CELESTIAL_IDS.length + SCROLL_IDS.length + RUNE_IDS.length,
+    ).toBe(37);
+  });
+
+  it('вычисляет параметры подстановки реликвий с учётом счётчиков и состояния забега', () => {
+    const ru = createTranslator('ru');
+    const en = createTranslator('en');
+
+    // Статические реликвии не затирают значения из DEFAULT_RELIC_PARAMS нулями из relic.state
+    const simpleJoker = makeRelic('j_joker');
+    expect(getRelicLocParams(simpleJoker)).toMatchObject({ mult: 4 });
+    expect(ru.getRelicText('j_joker', getRelicLocParams(simpleJoker)).description).toContain('+4');
+
+    const sly = makeRelic('j_sly');
+    expect(getRelicLocParams(sly)).toMatchObject({ chips: 50 });
+
+    const photo = makeRelic('j_photograph');
+    expect(getRelicLocParams(photo)).toMatchObject({ xMult: 2 });
+
+    // Накопительные реликвии берут живые значения из relic.state
+    const runner = makeRelic('j_runner', { state: { chips: 45, mult: 0, xMult: 1 } });
+    expect(getRelicLocParams(runner)).toMatchObject({ chipsStep: 15, chips: 45 });
+
+    const green = makeRelic('j_green_joker', { state: { chips: 0, mult: 9, xMult: 1 } });
+    expect(getRelicLocParams(green)).toMatchObject({ multGain: 1, multLoss: 1, mult: 9 });
+
+    const flash = makeRelic('j_flash', { state: { chips: 0, mult: 6, xMult: 1 } });
+    expect(getRelicLocParams(flash)).toMatchObject({ multStep: 2, mult: 6 });
+
+    const trousers = makeRelic('j_trousers', { state: { chips: 0, mult: 8, xMult: 1 } });
+    expect(getRelicLocParams(trousers)).toMatchObject({ multStep: 2, mult: 8 });
+
+    const ceremonial = makeRelic('j_ceremonial', { state: { chips: 0, mult: 14, xMult: 1 } });
+    expect(getRelicLocParams(ceremonial)).toMatchObject({ mult: 14 });
+
+    const constellation = makeRelic('j_constellation', {
+      state: { chips: 0, mult: 0, xMult: 1.3000000000000003 },
+    });
+    expect(getRelicLocParams(constellation)).toMatchObject({ xMultStep: 0.1, xMult: 1.3 });
+
+    const hologram = makeRelic('j_hologram', { state: { chips: 0, mult: 0, xMult: 2.25 } });
+    expect(getRelicLocParams(hologram)).toMatchObject({ xMultStep: 0.25, xMult: 2.25 });
+
+    const vampire = makeRelic('j_vampire', { state: { chips: 0, mult: 0, xMult: 1.6 } });
+    expect(getRelicLocParams(vampire)).toMatchObject({ xMultStep: 0.1, xMult: 1.6 });
+
+    const ramen = makeRelic('j_ramen', { state: { chips: 0, mult: 0, xMult: 1.74 } });
+    expect(getRelicLocParams(ramen)).toMatchObject({ xMult: 1.74, xMultLoss: 0.01 });
+
+    // Контекстные реликвии: j_abstract, j_stencil, j_bull
+    const abstractRelic = makeRelic('j_abstract');
+    const stencilRelic = makeRelic('j_stencil', { uid: 'rel_stencil_1' });
+    const negativeRelic = makeRelic('j_joker', { uid: 'rel_neg', edition: 'negative' });
+    const bullRelic = makeRelic('j_bull');
+    const state = createTestState({
+      dollars: 15,
+      maxRelics: 5,
+      relics: [abstractRelic, stencilRelic, negativeRelic],
+    });
+
+    expect(getRelicLocParams(abstractRelic, state)).toMatchObject({
+      multPerRelic: 3,
+      mult: 9,
+    });
+
+    // maxRelics (5) + 1 negative = 6 слотов; занято 3 => 3 свободных; emptySlots (3) + stencilCount (1) = 4
+    expect(getRelicLocParams(stencilRelic, state)).toMatchObject({ xMult: 4 });
+
+    // Когда слоты забиты полностью, j_stencil даёт ×1
+    const fullState = createTestState({
+      maxRelics: 2,
+      relics: [stencilRelic, abstractRelic],
+    });
+    expect(getRelicLocParams(stencilRelic, fullState)).toMatchObject({ xMult: 1 });
+
+    expect(getRelicLocParams(bullRelic, state)).toMatchObject({
+      chipsPerDollar: 2,
+      chips: 30,
+    });
+
+    // Минимальный срез состояния (Pick без maxRelics и dollars) также валиден и безопасен
+    const minimalState: Pick<
+      RunState,
+      'relics' | 'deck' | 'discardsLeft' | 'handsLeft' | 'handLevels' | 'charters'
+    > = {
+      relics: [abstractRelic, stencilRelic],
+      deck: state.deck,
+      discardsLeft: state.discardsLeft,
+      handsLeft: state.handsLeft,
+      handLevels: state.handLevels,
+      charters: state.charters,
+    };
+    expect(getRelicLocParams(abstractRelic, minimalState)).toMatchObject({ mult: 6 });
+    expect(getRelicLocParams(stencilRelic, minimalState)).toMatchObject({ xMult: 4 });
+
+    // Все 40 реликвий форматируются в RU и EN без нераскрытых плейсхолдеров
+    for (const relicId of RELIC_IDS) {
+      const instance = makeRelic(relicId);
+      const params = getRelicLocParams(instance, state);
+      expect(ru.getRelicText(relicId, params).description).not.toMatch(/\{[a-zA-Z0-9_]+\}/);
+      expect(en.getRelicText(relicId, params).description).not.toMatch(/\{[a-zA-Z0-9_]+\}/);
+    }
+  });
+
+  it('отрисовывает инспектор реликвии, обрабатывает перемещение, продажу и запрет продажи Вечной реликвии', () => {
+    const ru = createTranslator('ru');
+    const relic = makeRelic('j_flash', {
+      uid: 'r_flash',
+      edition: 'foil',
+      sellValue: 4,
+      debuffed: true,
+      state: { chips: 0, mult: 10, xMult: 1 },
+    });
+    const state = createTestState({ relics: [relic] });
+    const callbacks: InspectorCallbacks = {
+      onClose: vi.fn(),
+      onMoveRelic: vi.fn(),
+      onSellRelic: vi.fn(),
+    };
+
+    const overlay = renderInspectorOverlay(
+      { kind: 'relic', relic, index: 1, total: 3 },
+      state,
+      ru,
+      callbacks,
+    );
+
+    assertCleanLocalizedElement(overlay);
+    expect(overlay.textContent).toContain('+10');
+    expect(overlay.textContent).toContain(ru.t('ui.hud.debuffedBadge'));
+    expect(overlay.textContent).toContain(ru.catalog.editions.foil.name);
+
+    const moveLeft = overlay.querySelector<HTMLButtonElement>('[data-action="move-left"]');
+    const moveRight = overlay.querySelector<HTMLButtonElement>('[data-action="move-right"]');
+    const sellBtn = overlay.querySelector<HTMLButtonElement>('[data-action="sell"]');
+    const closeBtn = overlay.querySelector<HTMLButtonElement>('[data-action="close"]');
+
+    expect(moveLeft?.disabled).toBe(false);
+    expect(moveRight?.disabled).toBe(false);
+    expect(sellBtn?.disabled).toBe(false);
+
+    moveLeft?.click();
+    moveRight?.click();
+    sellBtn?.click();
+    closeBtn?.click();
+
+    expect(callbacks.onMoveRelic).toHaveBeenNthCalledWith(1, 'r_flash', -1);
+    expect(callbacks.onMoveRelic).toHaveBeenNthCalledWith(2, 'r_flash', 1);
+    expect(callbacks.onSellRelic).toHaveBeenCalledWith('r_flash');
+    expect(callbacks.onClose).toHaveBeenCalledTimes(1);
+
+    // Границы и Вечная реликвия
+    const eternalRelic = makeRelic('j_joker', {
+      uid: 'r_eternal',
+      state: { chips: 0, mult: 0, xMult: 1, extra: { eternal: true } },
+    });
+    const boundaryOverlay = renderInspectorOverlay(
+      { kind: 'relic', relic: eternalRelic, index: 0, total: 1 },
+      state,
+      ru,
+      callbacks,
+    );
+    expect(
+      boundaryOverlay.querySelector<HTMLButtonElement>('[data-action="move-left"]')?.disabled,
+    ).toBe(true);
+    expect(
+      boundaryOverlay.querySelector<HTMLButtonElement>('[data-action="move-right"]')?.disabled,
+    ).toBe(true);
+    expect(
+      boundaryOverlay.querySelector<HTMLButtonElement>('[data-action="sell"]')?.disabled,
+    ).toBe(true);
+  });
+
+  it('отрисовывает инспектор расходника и закрывается только по тапу на затемнённый фон', () => {
+    const en = createTranslator('en');
+    const consumable = makeConsumable('c_mercury', { uid: 'con_1', sellValue: 2 });
+    const state = createTestState({ consumables: [consumable] });
+    const callbacks: InspectorCallbacks = {
+      onClose: vi.fn(),
+      onMoveConsumable: vi.fn(),
+      onUseConsumable: vi.fn(),
+      onSellConsumable: vi.fn(),
+    };
+
+    const overlay = renderInspectorOverlay(
+      { kind: 'consumable', consumable, index: 0, total: 2, canUse: true },
+      state,
+      en,
+      callbacks,
+    );
+
+    assertCleanLocalizedElement(overlay);
+    expect(overlay.textContent).toContain(en.catalog.consumableKinds.celestial);
+
+    const card = overlay.querySelector<HTMLElement>('.inspector-card');
+    card?.click();
+    expect(callbacks.onClose).not.toHaveBeenCalled();
+
+    overlay.querySelector<HTMLButtonElement>('[data-action="use"]')?.click();
+    overlay.querySelector<HTMLButtonElement>('[data-action="move-right"]')?.click();
+    overlay.querySelector<HTMLButtonElement>('[data-action="sell"]')?.click();
+    expect(callbacks.onUseConsumable).toHaveBeenCalledWith('con_1');
+    expect(callbacks.onMoveConsumable).toHaveBeenCalledWith('con_1', 1);
+    expect(callbacks.onSellConsumable).toHaveBeenCalledWith('con_1');
+
+    // Тап непосредственно на фон закрывает инспектор
+    overlay.click();
+    expect(callbacks.onClose).toHaveBeenCalledTimes(1);
+
+    // Когда canUse === false, кнопка использования отключена
+    const disabledOverlay = renderInspectorOverlay(
+      { kind: 'consumable', consumable, index: 1, total: 2, canUse: false },
+      state,
+      en,
+      callbacks,
+    );
+    expect(
+      disabledOverlay.querySelector<HTMLButtonElement>('[data-action="use"]')?.disabled,
+    ).toBe(true);
+  });
+
+  it('отрисовывает инспектор товаров магазина (реликвия, расходник, карта, грамота, набор)', () => {
+    const ru = createTranslator('ru');
+    const state = createTestState({ dollars: 20 });
+    const callbacks: InspectorCallbacks = {
+      onClose: vi.fn(),
+      onBuyOffer: vi.fn(),
+      onBuyCharter: vi.fn(),
+      onOpenPack: vi.fn(),
+    };
+
+    // 1. Расходник в магазине: кнопки Купить и Купить и применить
+    const consumableOffer: ShopOffer = {
+      uid: 'offer_con',
+      kind: 'consumable',
+      consumable: makeConsumable('c_hermit'),
+      cost: 3,
+      baseCost: 3,
+      sold: false,
+    };
+    const conOfferOverlay = renderInspectorOverlay(
+      {
+        kind: 'shop_offer',
+        offer: consumableOffer,
+        canAfford: true,
+        hasSlot: false,
+        slotFreeForImmediateUse: true,
+      },
+      state,
+      ru,
+      callbacks,
+    );
+    assertCleanLocalizedElement(conOfferOverlay);
+    const buyBtn = conOfferOverlay.querySelector<HTMLButtonElement>('[data-action="buy"]');
+    const buyAndUseBtn = conOfferOverlay.querySelector<HTMLButtonElement>('[data-action="buy-and-use"]');
+    expect(buyBtn?.disabled).toBe(true);
+    expect(buyAndUseBtn?.disabled).toBe(false);
+    buyAndUseBtn?.click();
+    expect(callbacks.onBuyOffer).toHaveBeenCalledWith('offer_con', true);
+
+    // 2. Реликвия в магазине при наличии средств и слота
+    const relicOffer: ShopOffer = {
+      uid: 'offer_rel',
+      kind: 'relic',
+      relic: makeRelic('j_joker'),
+      cost: 5,
+      baseCost: 5,
+      sold: false,
+    };
+    const relOfferOverlay = renderInspectorOverlay(
+      {
+        kind: 'shop_offer',
+        offer: relicOffer,
+        canAfford: true,
+        hasSlot: true,
+        slotFreeForImmediateUse: false,
+      },
+      state,
+      ru,
+      callbacks,
+    );
+    assertCleanLocalizedElement(relOfferOverlay);
+    relOfferOverlay.querySelector<HTMLButtonElement>('[data-action="buy"]')?.click();
+    expect(callbacks.onBuyOffer).toHaveBeenCalledWith('offer_rel', false);
+
+    // 3. Игральная карта в магазине
+    const cardOffer: ShopOffer = {
+      uid: 'offer_card',
+      kind: 'card',
+      card: createPlayingCard({
+        id: 'shop_c1',
+        suit: 'hearts',
+        rank: 14,
+        enhancement: 'lucky',
+      }),
+      cost: 2,
+      baseCost: 2,
+      sold: false,
+    };
+    const cardOfferOverlay = renderInspectorOverlay(
+      {
+        kind: 'shop_offer',
+        offer: cardOffer,
+        canAfford: true,
+        hasSlot: true,
+        slotFreeForImmediateUse: false,
+      },
+      state,
+      ru,
+      callbacks,
+    );
+    assertCleanLocalizedElement(cardOfferOverlay);
+    expect(cardOfferOverlay.querySelector('.card-frame')).not.toBeNull();
+
+    // 4. Гильдейская грамота
+    const charterId: CharterId = 'v_grabber';
+    const charterOverlay = renderInspectorOverlay(
+      { kind: 'shop_charter', charterId, price: 10, canAfford: true },
+      state,
+      ru,
+      callbacks,
+    );
+    assertCleanLocalizedElement(charterOverlay);
+    charterOverlay.querySelector<HTMLButtonElement>('[data-action="buy-charter"]')?.click();
+    expect(callbacks.onBuyCharter).toHaveBeenCalledTimes(1);
+
+    // 5. Бустер-набор
+    const pack: PackOffer = {
+      uid: 'pack_1',
+      packId: 'p_arcana_normal',
+      type: 'arcana',
+      size: 'normal',
+      cost: 4,
+      baseCost: 4,
+      totalCards: 3,
+      chooseCount: 1,
+      purchased: false,
+    };
+    const packOverlay = renderInspectorOverlay(
+      { kind: 'shop_pack', pack, canAfford: false },
+      state,
+      ru,
+      callbacks,
+    );
+    assertCleanLocalizedElement(packOverlay);
+    const openBtn = packOverlay.querySelector<HTMLButtonElement>('[data-action="open-pack"]');
+    expect(openBtn?.disabled).toBe(true);
+    expect(packOverlay.textContent).toContain(ru.t('ui.shop.notEnoughGold'));
+  });
+
+  it('отрисовывает инспектор игральной карты и босса', () => {
+    const ru = createTranslator('ru');
+    const state = createTestState();
+    const callbacks: InspectorCallbacks = { onClose: vi.fn() };
+
+    const specialCard: PlayingCard = createPlayingCard({
+      id: 'c_inspect',
+      suit: 'spades',
+      rank: 13,
+      enhancement: 'glass',
+      edition: 'holo',
+      seal: 'red',
+      bonusChips: 20,
+      permaBonus: 15,
+      debuffed: true,
+    });
+    const cardOverlay = renderInspectorOverlay(
+      { kind: 'playing_card', card: specialCard },
+      state,
+      ru,
+      callbacks,
+    );
+    assertCleanLocalizedElement(cardOverlay);
+    expect(cardOverlay.querySelector('.card-frame')).not.toBeNull();
+    expect(cardOverlay.textContent).toContain(ru.catalog.enhancements.glass.name);
+    expect(cardOverlay.textContent).toContain(ru.catalog.editions.holo.name);
+    expect(cardOverlay.textContent).toContain(ru.catalog.seals.red.name);
+    expect(cardOverlay.textContent).toContain(ru.t('ui.hud.debuffedBadge'));
+    expect(cardOverlay.textContent).toContain('+35');
+
+    const bossId: BossId = 'bl_hook';
+    const bossOverlay = renderInspectorOverlay(
+      { kind: 'boss', bossId, disabled: true },
+      state,
+      ru,
+      callbacks,
+    );
+    assertCleanLocalizedElement(bossOverlay);
+    expect(bossOverlay.textContent).toContain(ru.getBossText(bossId).name);
+    expect(bossOverlay.textContent).toContain(ru.t('ui.hud.abilityDisabled'));
+  });
+});
+
+describe('Модальные окна (src/ui/modals.ts)', () => {
+  it('renderHandReferenceModal показывает все 12 раскладов и маскирует скрытые при visible === false', () => {
+    const ru = createTranslator('ru');
+    const en = createTranslator('en');
+    const baseState = createTestState();
+
+    // Делаем пару раскладов прокачанными/сыгранными, а Flush House открытым для проверки обоих состояний
+    const customLevels = {
+      ...baseState.handLevels,
+      Pair: {
+        ...baseState.handLevels.Pair,
+        level: 3,
+        chips: 40,
+        mult: 4,
+        playedCount: 7,
+      },
+      'Flush House': {
+        ...baseState.handLevels['Flush House'],
+        visible: true,
+        playedCount: 1,
+      },
+    };
+    const state = { ...baseState, handLevels: customLevels };
+    const onClose = vi.fn();
+
+    const modalRu = renderHandReferenceModal(state, ru, onClose);
+    assertCleanLocalizedElement(modalRu);
+
+    const rows = modalRu.querySelectorAll<HTMLElement>('[data-hand-type]');
+    expect(rows).toHaveLength(HAND_TYPES.length);
+
+    const pairRow = modalRu.querySelector<HTMLElement>('[data-hand-type="Pair"]');
+    expect(pairRow?.textContent).toContain(ru.getHandText('Pair').name);
+    expect(pairRow?.textContent).toContain(ru.t('ui.handReference.level', { level: 3 }));
+    expect(pairRow?.textContent).toContain(ru.t('ui.handReference.played', { count: 7 }));
+    expect(pairRow?.textContent).toContain(
+      ru.t('ui.handReference.baseFormula', { chips: 40, mult: 4 }),
+    );
+
+    // Скрытые на старте Flush Five и Five of a Kind не должны утекать названием
+    const hiddenRow = modalRu.querySelector<HTMLElement>('[data-hand-type="Flush Five"]');
+    expect(hiddenRow?.dataset.visible).toBe('false');
+    expect(hiddenRow?.textContent).toContain(ru.t('ui.handReference.hiddenLayout'));
+    expect(hiddenRow?.textContent).not.toContain(ru.getHandText('Flush Five').name);
+
+    // Открытый Flush House отображает своё название
+    const openedRow = modalRu.querySelector<HTMLElement>('[data-hand-type="Flush House"]');
+    expect(openedRow?.dataset.visible).toBe('true');
+    expect(openedRow?.textContent).toContain(ru.getHandText('Flush House').name);
+
+    // Проверка EN локали и закрытия по кнопке / фону
+    const modalEn = renderHandReferenceModal(state, en, onClose);
+    assertCleanLocalizedElement(modalEn);
+    const hiddenRowEn = modalEn.querySelector<HTMLElement>('[data-hand-type="Five of a Kind"]');
+    expect(hiddenRowEn?.textContent).toContain(en.t('ui.handReference.hiddenLayout'));
+
+    modalRu.querySelector<HTMLElement>('.modal-sheet')?.click();
+    expect(onClose).not.toHaveBeenCalled();
+    modalRu.querySelector<HTMLButtonElement>('[data-action="close"]')?.click();
+    modalRu.click();
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('renderDeckModal отображает все стопки компактными картами и подсчитывает масти без Каменных карт', () => {
+    const ru = createTranslator('ru');
+    const baseState = createTestState();
+
+    // Превращаем одну бубновую карту в Каменную, чтобы проверить исключение Каменных из сводки мастей
+    const firstCard = baseState.deck[0]!;
+    const secondCard = baseState.deck[1]!;
+    const thirdCard = baseState.deck[2]!;
+    const fourthCard = baseState.deck[3]!;
+    const modifiedDeck = baseState.deck.map((c) =>
+      c.id === firstCard.id ? { ...c, enhancement: 'stone' as const } : c,
+    );
+
+    const unsortedDrawIds = modifiedDeck
+      .map((c) => c.id)
+      .filter((id) => id !== firstCard.id && id !== secondCard.id && id !== thirdCard.id && id !== fourthCard.id)
+      .reverse();
+
+    const state: RunState = {
+      ...baseState,
+      deck: modifiedDeck,
+      handIds: [firstCard.id, secondCard.id],
+      discardPileIds: [thirdCard.id],
+      drawPileIds: unsortedDrawIds,
+    };
+
+    const onClose = vi.fn();
+    const modal = renderDeckModal(state, ru, onClose);
+    assertCleanLocalizedElement(modal);
+
+    // Колода добора отсортирована по убыванию ранга, не раскрывая порядок перемешивания
+    const drawFrames = Array.from(
+      modal.querySelectorAll<HTMLElement>('[data-pile="draw-pile"] .card-frame'),
+    );
+    const rankById = new Map(modifiedDeck.map((c) => [c.id, c.rank]));
+    const renderedDrawRanks = drawFrames.map((el) => rankById.get(el.dataset.cardId ?? '') ?? 0);
+    for (let i = 1; i < renderedDrawRanks.length; i += 1) {
+      expect(renderedDrawRanks[i - 1]!).toBeGreaterThanOrEqual(renderedDrawRanks[i]!);
+    }
+
+    expect(modal.textContent).toContain(
+      ru.t('ui.deckModal.totalCards', { count: modifiedDeck.length }),
+    );
+    expect(modal.textContent).toContain(ru.t('ui.deckModal.inHand', { count: 2 }));
+    expect(modal.textContent).toContain(
+      ru.t('ui.deckModal.drawPile', { count: state.drawPileIds.length }),
+    );
+    expect(modal.textContent).toContain(ru.t('ui.deckModal.discardPile', { count: 1 }));
+
+    // Все отображаемые карты — компактные и неинтерактивные
+    const frames = modal.querySelectorAll<HTMLElement>('.card-frame');
+    expect(frames).toHaveLength(
+      state.handIds.length + state.drawPileIds.length + state.discardPileIds.length,
+    );
+    for (const frame of Array.from(frames)) {
+      expect(frame.classList.contains('is-compact')).toBe(true);
+      expect(frame.classList.contains('is-interactive')).toBe(false);
+    }
+
+    // Проверка сводки по мастям: Каменная карта не считается в свою исходную масть
+    const stoneSuitEl = modal.querySelector<HTMLElement>(
+      `[data-suit-summary="${firstCard.suit}"]`,
+    );
+    expect(stoneSuitEl?.dataset.count).toBe('12');
+
+    modal.querySelector<HTMLButtonElement>('[data-action="close"]')?.click();
+    modal.click();
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('renderSettingsModal управляет скоростью, звуком, громкостью, языком и отладкой', async () => {
+    const ru = createTranslator('ru');
+    const settings: GameSettings = {
+      animationSpeed: 2,
+      lang: 'ru',
+      soundEnabled: true,
+      musicVolume: 0.4,
+      sfxVolume: 0.8,
+    };
+    const onChangeSettings = vi.fn();
+    const onClose = vi.fn();
+    const onDebugAction = vi.fn().mockResolvedValue('ok:done');
+
+    const baseOptions: SettingsModalOptions = {
+      settings,
+      translator: ru,
+      platformId: 'mock',
+      isDebug: false,
+      onChangeSettings,
+      onClose,
+      onDebugAction,
+    };
+
+    const modalNoDebug = renderSettingsModal(baseOptions);
+    assertCleanLocalizedElement(modalNoDebug);
+    expect(modalNoDebug.querySelector('[data-debug-panel]')).toBeNull();
+    expect(modalNoDebug.querySelector('[data-debug-action]')).toBeNull();
+
+    // Скорость 4x
+    modalNoDebug.querySelector<HTMLButtonElement>('[data-speed="4"]')?.click();
+    expect(onChangeSettings).toHaveBeenLastCalledWith({ animationSpeed: 4 });
+
+    // Выключение звука
+    modalNoDebug.querySelector<HTMLButtonElement>('[data-sound="off"]')?.click();
+    expect(onChangeSettings).toHaveBeenLastCalledWith({ soundEnabled: false });
+
+    // Ползунки громкости
+    const sfxInput = modalNoDebug.querySelector<HTMLInputElement>('input[data-volume="sfx"]');
+    const musicInput = modalNoDebug.querySelector<HTMLInputElement>('input[data-volume="music"]');
+    expect(sfxInput?.value).toBe('0.8');
+    expect(musicInput?.value).toBe('0.4');
+    if (sfxInput && musicInput) {
+      sfxInput.value = '0.55';
+      sfxInput.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(onChangeSettings).toHaveBeenLastCalledWith({ sfxVolume: 0.55 });
+
+      musicInput.value = '0.25';
+      musicInput.dispatchEvent(new Event('change', { bubbles: true }));
+      expect(onChangeSettings).toHaveBeenLastCalledWith({ musicVolume: 0.25 });
+    }
+
+    // Переключение языка на EN
+    modalNoDebug.querySelector<HTMLButtonElement>('[data-lang="en"]')?.click();
+    expect(onChangeSettings).toHaveBeenLastCalledWith({ lang: 'en' });
+
+    // Закрытие по кнопке и фону
+    modalNoDebug.querySelector<HTMLButtonElement>('[data-action="close"]')?.click();
+    modalNoDebug.click();
+    expect(onClose).toHaveBeenCalledTimes(2);
+
+    // Режим отладки (?debug)
+    const modalDebug = renderSettingsModal({
+      ...baseOptions,
+      isDebug: true,
+      platformId: 'yandex',
+    });
+    const debugPanel = modalDebug.querySelector<HTMLElement>('[data-debug-panel]');
+    expect(debugPanel).not.toBeNull();
+    expect(debugPanel?.textContent).toContain('yandex');
+
+    const debugActions = ['interstitial', 'rewarded', 'flush', 'resetRun'] as const;
+    for (const action of debugActions) {
+      const btn = modalDebug.querySelector<HTMLButtonElement>(`[data-debug-action="${action}"]`);
+      expect(btn).not.toBeNull();
+      btn?.click();
+      await Promise.resolve();
+      expect(onDebugAction).toHaveBeenCalledWith(action);
+    }
+
+    const logEl = modalDebug.querySelector<HTMLElement>('[data-debug-log]');
+    expect(logEl?.textContent).toContain('ok:done');
+    // Проверяем, что все кнопки инспектора и модалок оформлены как сенсорные кнопки .modal-btn
+    const buttons = modalDebug.querySelectorAll<HTMLButtonElement>('button');
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const button of Array.from(buttons)) {
+      expect(button.type).toBe('button');
+      expect(button.classList.contains('modal-btn')).toBe(true);
+    }
+  });
+});

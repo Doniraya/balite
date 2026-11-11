@@ -1,0 +1,457 @@
+/* Общие стили оверлеев инспектора и модальных окон Balite (портрет 720×1280, touch-first >= 44px) */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(6, 13, 10, 0.8);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  box-sizing: border-box;
+  touch-action: manipulation;
+}
+
+.modal-sheet {
+  width: min(100%, 660px);
+  max-height: min(92vh, 1140px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--panel-bg, #13251e);
+  border: 2px solid var(--panel-border, #26483a);
+  color: var(--text-main, #f3f0e6);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.65);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.inspector-card {
+  width: min(100%, 540px);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--panel-border, #26483a);
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.25;
+  font-weight: 800;
+  color: var(--text-main, #f3f0e6);
+}
+
+.modal-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--text-muted, #a7b8ae);
+}
+
+.modal-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.modal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--panel-border, #26483a);
+}
+
+/* Крупные сенсорные кнопки не меньше 44×44px без зависимости от :hover */
+.modal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-border, #26483a);
+  background: #1b342a;
+  color: var(--text-main, #f3f0e6);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  box-sizing: border-box;
+  transition: transform 0.08s ease, background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.modal-btn:active:not(:disabled) {
+  transform: scale(0.97);
+  background: #234337;
+}
+
+.modal-btn:focus-visible {
+  outline: 2px solid var(--accent-gold, #f5b942);
+  outline-offset: 2px;
+}
+
+.modal-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.modal-btn--primary {
+  background: #1e4b6d;
+  border-color: var(--accent-blue, #4aa8ff);
+}
+
+.modal-btn--primary:active:not(:disabled) {
+  background: #275e88;
+}
+
+.modal-btn--gold {
+  background: #4e3b14;
+  border-color: var(--accent-gold, #f5b942);
+  color: #ffe39e;
+}
+
+.modal-btn--gold:active:not(:disabled) {
+  background: #654c1b;
+}
+
+.modal-btn--danger {
+  background: #551e1e;
+  border-color: var(--accent-red, #e84b4b);
+}
+
+.modal-btn--danger:active:not(:disabled) {
+  background: #6b2727;
+}
+
+.modal-btn--active,
+.modal-btn[aria-pressed='true'] {
+  background: #2b5946;
+  border-color: var(--accent-gold, #f5b942);
+  color: #fff5d6;
+}
+
+.modal-btn--icon {
+  padding: 8px 12px;
+  font-size: 18px;
+}
+
+.modal-btn--full {
+  flex: 1 1 100%;
+}
+
+/* Инспектор сущности */
+.inspector-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.inspector-preview {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.inspector-info {
+  flex: 1 1 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inspector-description {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text-main, #f3f0e6);
+}
+
+.inspector-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.inspector-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #1b342a;
+  border: 1px solid var(--panel-border, #26483a);
+  color: var(--text-muted, #a7b8ae);
+}
+
+.inspector-badge--gold {
+  background: #423313;
+  border-color: var(--accent-gold, #f5b942);
+  color: #ffe39e;
+}
+
+.inspector-badge--danger {
+  background: #4d1b1b;
+  border-color: var(--accent-red, #e84b4b);
+  color: #ffd0d0;
+}
+
+.inspector-badge--blue {
+  background: #193b55;
+  border-color: var(--accent-blue, #4aa8ff);
+  color: #cbe7ff;
+}
+
+.inspector-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inspector-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inspector-actions-row > .modal-btn {
+  flex: 1 1 130px;
+}
+
+/* Таблица справки раскладов */
+.hand-ref-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hand-ref-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #182f26;
+  border: 1px solid var(--panel-border, #26483a);
+}
+
+.hand-ref-row--hidden {
+  opacity: 0.72;
+  border-style: dashed;
+}
+
+.hand-ref-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.hand-ref-name {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-main, #f3f0e6);
+}
+
+.hand-ref-desc {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-muted, #a7b8ae);
+}
+
+.hand-ref-stats {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  text-align: right;
+}
+
+.hand-ref-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted, #a7b8ae);
+}
+
+.hand-ref-level {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #193b55;
+  color: #cbe7ff;
+  font-weight: 700;
+}
+
+.hand-ref-formula {
+  font-size: 13px;
+  font-weight: 800;
+  color: #ffe39e;
+}
+
+/* Модальное окно состава колоды */
+.deck-suit-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.deck-suit-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: #182f26;
+  border: 1px solid var(--panel-border, #26483a);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.deck-suit-chip--hearts,
+.deck-suit-chip--diamonds {
+  color: #ff9a9a;
+}
+
+.deck-suit-chip--spades,
+.deck-suit-chip--clubs {
+  color: #c5d9ff;
+}
+
+.deck-pile-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.deck-pile-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-muted, #a7b8ae);
+}
+
+.deck-pile-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Модальное окно настроек */
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #182f26;
+  border: 1px solid var(--panel-border, #26483a);
+}
+
+.settings-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.settings-value {
+  font-size: 13px;
+  color: var(--text-muted, #a7b8ae);
+}
+
+.settings-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-segmented > .modal-btn {
+  flex: 1 1 80px;
+}
+
+.settings-range-wrap {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.settings-range {
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  accent-color: var(--accent-gold, #f5b942);
+  cursor: pointer;
+  touch-action: pan-y;
+}
+
+/* Отладочная панель (?debug) */
+.modal-debug-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--accent-gold, #f5b942);
+  background: #102019;
+}
+
+.modal-debug-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #ffe39e;
+}
+
+.modal-debug-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.modal-debug-log {
+  margin: 0;
+  padding: 8px;
+  border-radius: 8px;
+  background: #0a1410;
+  color: #b7ebd0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 28px;
+}
