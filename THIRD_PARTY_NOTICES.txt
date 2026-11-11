@@ -1,0 +1,10 @@
+BALITE — THIRD-PARTY NOTICES
+
+This file contains attribution for third-party libraries and assets used in the project.
+In-game credits intentionally contain no clickable external links.
+
+LIBRARIES
+
+- @vkontakte/vk-bridge
+  License: MIT
+  Copyright (c) VK

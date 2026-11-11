@@ -1,0 +1,13 @@
+# Зависимости и сборки
+node_modules/
+dist/
+build/
+*.zip
+
+# Локальные скрипты и артефакты суперсилы
+*.bat
+.superpowers/
+
+# Системные файлы ОС
+.DS_Store
+Thumbs.db
