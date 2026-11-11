@@ -18,7 +18,7 @@ import {
   type RunState,
   type TraceEvent,
 } from '../../src/engine';
-import { EN_DICTIONARY, RU_DICTIONARY } from '../../src/i18n';
+import { EN_DICTIONARY, RU_DICTIONARY, formatMessage } from '../../src/i18n';
 
 /**
  * Прогоняет последовательность команд через чистый диспетчер и собирает все порождённые события.
@@ -716,12 +716,20 @@ describe('Конечный автомат забега Balite (Stage 5B: run.ts 
         },
       ],
     };
-    collectedEvents.push(
-      ...evaluatePlay(psychicState, ['lk_2'], {
-        relicRegistry: getRelicDefinition,
-        resolveRelicTarget,
-      }).events,
+    const psychicEvents = evaluatePlay(psychicState, ['lk_2'], {
+      relicRegistry: getRelicDefinition,
+      resolveRelicTarget,
+    }).events;
+    expect(psychicEvents).toContainEqual({
+      type: 'BOSS_TRIGGER',
+      bossId: 'bl_psychic',
+      locKey: 'boss_psychic',
+      locParams: { count: 5 },
+    });
+    expect(psychicEvents.some((e) => e.type === 'HAND_DEBUFFED' && e.locKey === 'hand_debuffed')).toBe(
+      true,
     );
+    collectedEvents.push(...psychicEvents);
 
     const flintState: RunState = {
       ...testState,
@@ -755,6 +763,13 @@ describe('Конечный автомат забега Balite (Stage 5B: run.ts 
     for (const event of collectedEvents) {
       if ('locKey' in event && event.locKey !== undefined) {
         expect(validKeys.has(event.locKey), `Неизвестный locKey: ${event.locKey}`).toBe(true);
+        const params = 'locParams' in event ? event.locParams : undefined;
+        const ruText = formatMessage('ru', event.locKey, params);
+        const enText = formatMessage('en', event.locKey, params);
+        expect(ruText).not.toBe(event.locKey);
+        expect(enText).not.toBe(event.locKey);
+        expect(ruText).not.toMatch(/\{[^}]+\}/);
+        expect(enText).not.toMatch(/\{[^}]+\}/);
       }
     }
   });

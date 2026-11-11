@@ -771,8 +771,8 @@ function handleRerollBoss(state: RunState): DispatchResult {
   const bossPick = selectBossForAnte(work.ante, adjustedCounts, work.rngState);
   const newBossId = bossPick.bossId;
   const bossDef = BOSS_DEFINITIONS[newBossId];
-  const baseAnte = getBlindAmount(work.ante, work.anteScaling as 1 | 2 | 3);
-  const newBossTarget = Math.floor(baseAnte * bossDef.targetMultiplier);
+  const baseAnteScore = getBlindAmount(work.ante, 1);
+  const newBossTarget = Math.floor(baseAnteScore * bossDef.targetMultiplier * work.anteScaling);
 
   const updatedBossSlot: BlindSlotState = {
     ...bossSlot,

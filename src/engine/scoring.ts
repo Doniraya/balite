@@ -579,10 +579,16 @@ export function evaluatePlay(
   const activeBoss = getActiveBossId(work.run);
   if (activeBoss === 'bl_psychic' && playedCards.length < 5) {
     work.events.push({
+      type: 'BOSS_TRIGGER',
+      bossId: 'bl_psychic',
+      locKey: 'boss_psychic',
+      locParams: { count: 5 },
+    });
+    work.events.push({
       type: 'HAND_DEBUFFED',
       bossId: 'bl_psychic',
       handType: topHand,
-      locKey: 'boss_psychic',
+      locKey: 'hand_debuffed',
     });
     work.run = {
       ...work.run,
