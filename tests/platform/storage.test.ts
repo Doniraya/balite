@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   readLocalSave,
   serializeWithinLimit,
+  trySerializeWithinLimit,
   utf8ByteLength,
   writeLocalSave,
 } from '../../src/platform/storage';
@@ -49,6 +50,33 @@ describe('serializeWithinLimit', () => {
         throw new Error('fallback crash');
       }),
     ).toBe('{}');
+  });
+});
+
+describe('trySerializeWithinLimit', () => {
+  it('возвращает JSON если укладывается напрямую или через compactFallback', () => {
+    expect(trySerializeWithinLimit({ ante: 2 }, 100)).toBe('{"ante":2}');
+    expect(
+      trySerializeWithinLimit(
+        { ante: 2, log: 'x'.repeat(80) },
+        25,
+        (d) => ({ ante: d.ante }),
+      ),
+    ).toBe('{"ante":2}');
+  });
+
+  it('возвращает null вместо "{}" если лимит превышен, maxBytes <= 0 или объект не сериализуется', () => {
+    expect(trySerializeWithinLimit({ payload: 'x'.repeat(100) }, 20)).toBeNull();
+    expect(
+      trySerializeWithinLimit({ payload: 'x'.repeat(100) }, 10, () => ({
+        stillTooBig: 'y'.repeat(50),
+      })),
+    ).toBeNull();
+    expect(trySerializeWithinLimit({ a: 1 }, 0)).toBeNull();
+
+    const cyclic: Record<string, unknown> = { a: 1 };
+    cyclic.self = cyclic;
+    expect(trySerializeWithinLimit(cyclic, 200)).toBeNull();
   });
 });
 

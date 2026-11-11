@@ -261,6 +261,17 @@ describe('VkAdapter', () => {
     expect(await adapter.showInterstitial()).toEqual({ shown: false });
     expect(events).toEqual([]);
   });
+
+  it('не вызывает VKWebAppStorageSet и возвращает false при превышении лимита байтов без compactFallback', async () => {
+    const { ctx } = makeContext({ storageKey: 'balite_save_v1', maxStorageBytes: 30 });
+    const adapter = new VkAdapter(ctx);
+    await adapter.init();
+    vkBridgeMock.send.mockClear();
+
+    const ok = await adapter.savePlayerData({ large: 'x'.repeat(100) });
+    expect(ok).toBe(false);
+    expect(vkBridgeMock.send).not.toHaveBeenCalledWith('VKWebAppStorageSet', expect.anything());
+  });
 });
 
 describe('OkAdapter', () => {
@@ -324,6 +335,28 @@ describe('OkAdapter', () => {
 
     expect(await adapter.showInterstitial()).toEqual({ shown: true });
     expect(await adapter.showRewarded()).toEqual({ rewarded: true });
+  });
+
+  it('не вызывает storage.set и возвращает false при превышении лимита байтов без compactFallback', async () => {
+    const callMock = vi.fn((_params: Record<string, unknown>, cb: (status: string, data: unknown) => void) => {
+      cb('ok', {});
+    });
+    (globalThis as Record<string, unknown>).FAPI = {
+      init: vi.fn((_s, _c, onSuccess) => onSuccess?.()),
+      Client: { call: callMock },
+    };
+
+    const { ctx } = makeContext({
+      params: { api_server: 'https://api.ok.ru/', api_connection: 'conn1' },
+      maxStorageBytes: 30,
+    });
+    const adapter = new OkAdapter(ctx);
+    await adapter.init();
+    callMock.mockClear();
+
+    const ok = await adapter.savePlayerData({ large: 'x'.repeat(100) });
+    expect(ok).toBe(false);
+    expect(callMock).not.toHaveBeenCalled();
   });
 });
 

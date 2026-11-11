@@ -1,5 +1,5 @@
 import vkBridge, { type VKBridgeSubscribeHandler } from '@vkontakte/vk-bridge';
-import { serializeWithinLimit } from '../storage';
+import { trySerializeWithinLimit } from '../storage';
 import type {
   AdapterContext,
   InterstitialResult,
@@ -153,11 +153,15 @@ export class VkAdapter<TSave extends Record<string, unknown> = Record<string, un
 
   async savePlayerData(mergedData: TSave): Promise<boolean> {
     try {
-      const serialized = serializeWithinLimit(
+      const serialized = trySerializeWithinLimit(
         mergedData,
         this.ctx.maxStorageBytes,
         this.ctx.compactFallback,
       );
+      if (serialized === null) {
+        // Не перезаписываем облачное сохранение пустым '{}', оставляя локальный сейв целым
+        return false;
+      }
       const res = await withTimeout(
         vkBridge.send('VKWebAppStorageSet', {
           key: this.ctx.storageKey,

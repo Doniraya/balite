@@ -270,4 +270,118 @@ describe('createPlatformBridge', () => {
     expect(saved).toEqual([{ a: 1 }, { a: 1, b: 2 }]);
     bridge.audio.dispose();
   });
+
+  it('при стандартном слиянии учитывает revision/updatedAt и не затирает более свежий локальный сейв старым облаком', async () => {
+    window.history.replaceState({}, '', '/?platform=yandex');
+    localStorage.setItem(
+      'balite_fresh_local',
+      JSON.stringify({ revision: 5, bestAnte: 8, unlocked: ['r1', 'r2'] }),
+    );
+    const getData = vi.fn().mockResolvedValue({
+      revision: 3,
+      bestAnte: 2,
+      cloudOnlyBonus: true,
+    });
+
+    (globalThis as Record<string, unknown>).YaGames = {
+      init: vi.fn().mockResolvedValue({
+        environment: { i18n: { lang: 'ru' } },
+        features: { LoadingAPI: { ready: vi.fn() }, GameplayAPI: { start: vi.fn(), stop: vi.fn() } },
+        getPlayer: vi.fn().mockResolvedValue({
+          getData,
+          setData: vi.fn().mockResolvedValue(undefined),
+        }),
+        on: vi.fn(() => () => {}),
+      }),
+    };
+
+    const bridge = createPlatformBridge({ localBackupKey: 'balite_fresh_local' });
+    await bridge.init();
+
+    const loaded = await bridge.loadPlayerData();
+    expect(loaded).toEqual({
+      revision: 5,
+      bestAnte: 8,
+      unlocked: ['r1', 'r2'],
+      cloudOnlyBonus: true,
+    });
+
+    // А когда облако новее по updatedAt, приоритет у облака
+    localStorage.setItem(
+      'balite_fresh_local_2',
+      JSON.stringify({ updatedAt: 1000, bestAnte: 4 }),
+    );
+    getData.mockResolvedValueOnce({ updatedAt: 2000, bestAnte: 9 });
+    const bridge2 = createPlatformBridge({ localBackupKey: 'balite_fresh_local_2' });
+    await bridge2.init();
+    expect(await bridge2.loadPlayerData()).toEqual({ updatedAt: 2000, bestAnte: 9 });
+
+    bridge.audio.dispose();
+    bridge2.audio.dispose();
+  });
+
+  it('дебаунсит облачные сохранения и немедленно сбрасывает их через flushCloudSave или pagehide/game_api_pause', async () => {
+    vi.useFakeTimers();
+    try {
+      window.history.replaceState({}, '', '/?platform=yandex');
+      const setData = vi.fn().mockResolvedValue(undefined);
+      const listeners: Record<string, () => void> = {};
+
+      (globalThis as Record<string, unknown>).YaGames = {
+        init: vi.fn().mockResolvedValue({
+          environment: { i18n: { lang: 'ru' } },
+          features: { LoadingAPI: { ready: vi.fn() }, GameplayAPI: { start: vi.fn(), stop: vi.fn() } },
+          getPlayer: vi.fn().mockResolvedValue({
+            getData: vi.fn().mockResolvedValue({}),
+            setData,
+          }),
+          on: vi.fn((evt: string, cb: () => void) => {
+            listeners[evt] = cb;
+            return () => {};
+          }),
+        }),
+      };
+
+      const bridge = createPlatformBridge<{ a?: number; b?: number; c?: number }>({
+        localBackupKey: 'balite_debounce_local',
+        cloudDebounceMs: 1000,
+      });
+      await bridge.init();
+
+      const p1 = bridge.savePlayerData({ a: 1 });
+      const p2 = bridge.savePlayerData({ b: 2 });
+
+      // Локально доступно сразу, а в облако ещё не ушло
+      expect(JSON.parse(localStorage.getItem('balite_debounce_local') || '{}')).toEqual({
+        a: 1,
+        b: 2,
+      });
+      expect(setData).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1000);
+      await expect(Promise.all([p1, p2])).resolves.toEqual([true, true]);
+      expect(setData).toHaveBeenCalledTimes(1);
+      expect(setData).toHaveBeenCalledWith({ a: 1, b: 2 }, true);
+
+      // Принудительный flushCloudSave сбрасывает отложенную запись без ожидания таймера
+      const p3 = bridge.savePlayerData({ c: 3 });
+      expect(setData).toHaveBeenCalledTimes(1);
+      await expect(bridge.flushCloudSave()).resolves.toBe(true);
+      await expect(p3).resolves.toBe(true);
+      expect(setData).toHaveBeenCalledTimes(2);
+      expect(setData).toHaveBeenLastCalledWith({ a: 1, b: 2, c: 3 }, true);
+
+      // Событие паузы платформы также инициирует немедленный flush
+      const p4 = bridge.savePlayerData({ a: 10 });
+      expect(setData).toHaveBeenCalledTimes(2);
+      listeners.game_api_pause?.();
+      await vi.waitFor(() => expect(setData).toHaveBeenCalledTimes(3));
+      await expect(p4).resolves.toBe(true);
+      expect(setData).toHaveBeenLastCalledWith({ a: 10, b: 2, c: 3 }, true);
+
+      bridge.audio.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

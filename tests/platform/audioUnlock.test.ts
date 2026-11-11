@@ -82,11 +82,16 @@ describe('createAudioUnlockController', () => {
     expect(resume).toHaveBeenCalledTimes(1);
   });
 
-  it('реагирует на setPlatformPaused и window.blur / focus', () => {
+  it('реагирует на setPlatformPaused и window.pagehide/pageshow, но не глушится на window.blur и не дублирует слушатели на document', () => {
+    const docAddSpy = vi.spyOn(document, 'addEventListener');
     const controller = createAudioUnlockController();
     const history: boolean[] = [];
     controller.subscribeMute((m) => history.push(m));
     controller.install();
+
+    const docEvents = docAddSpy.mock.calls.map(([evt]) => evt);
+    expect(docEvents).not.toContain('pageshow');
+    expect(docEvents).not.toContain('pagehide');
 
     controller.setPlatformPaused(true);
     expect(controller.isMutedByPlatform()).toBe(true);
@@ -94,13 +99,53 @@ describe('createAudioUnlockController', () => {
     controller.setPlatformPaused(false);
     expect(controller.isMutedByPlatform()).toBe(false);
 
+    // Клик по шапке/оверлею портала вызывает blur у iframe — звук не должен пропадать
     window.dispatchEvent(new Event('blur'));
+    expect(controller.isMutedByPlatform()).toBe(false);
+
+    window.dispatchEvent(new Event('pagehide'));
     expect(controller.isMutedByPlatform()).toBe(true);
 
-    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('pageshow'));
     expect(controller.isMutedByPlatform()).toBe(false);
 
     expect(history).toEqual([true, false, true, false]);
+    controller.dispose();
+  });
+
+  it('приостанавливает running AudioContext при глушении и возобновляет после снятия мьюта', () => {
+    const controller = createAudioUnlockController();
+    const suspend = vi.fn().mockResolvedValue(undefined);
+    const resume = vi.fn().mockResolvedValue(undefined);
+    const fakeCtx = {
+      state: 'running',
+      destination: {},
+      suspend,
+      resume,
+      createBuffer: vi.fn().mockReturnValue({}),
+      createBufferSource: vi.fn().mockReturnValue({
+        buffer: null,
+        connect: vi.fn(),
+        start: vi.fn(),
+      }),
+    } as unknown as AudioContext;
+
+    controller.install();
+    controller.registerContext(fakeCtx);
+
+    // Имитируем первый пользовательский жест (звук разблокирован)
+    window.dispatchEvent(new Event('pointerdown'));
+    resume.mockClear();
+
+    // Во время рекламы/паузы контекст уходит в suspend()
+    controller.onAdStart();
+    expect(suspend).toHaveBeenCalledTimes(1);
+
+    // Имитация состояния suspended перед выходом из рекламы
+    (fakeCtx as { state: string }).state = 'suspended';
+    controller.onAdEnd();
+    expect(resume).toHaveBeenCalledTimes(1);
+
     controller.dispose();
   });
 });

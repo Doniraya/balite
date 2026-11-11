@@ -81,6 +81,8 @@ export interface PlatformBridgeConfig<
   localBackupKey: string;
   maxStorageBytes: number;
   sandboxMockDelayMs: number;
+  /** Задержка группировки облачных записей в мс (0 — отправлять сразу в очередь) */
+  cloudDebounceMs?: number;
   mergeSave?: (baseData: Partial<TSave>, incomingData: Partial<TSave>) => Partial<TSave>;
   compactFallback?: (data: TSave) => unknown;
   sanitizeSave?: (raw: unknown) => Partial<TSave>;
@@ -105,5 +107,7 @@ export interface PlatformBridge<
   setLeaderboardScore(boardName: string, score: number): Promise<void>;
   loadPlayerData(): Promise<Partial<TSave>>;
   savePlayerData(patch: Partial<TSave>): Promise<boolean>;
+  /** Принудительно отправляет отложенное облачное сохранение без ожидания таймера */
+  flushCloudSave(): Promise<boolean>;
   vibrate(style?: 'light' | 'medium' | 'heavy'): void;
 }

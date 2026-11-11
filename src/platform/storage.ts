@@ -21,14 +21,15 @@ function safeJsonStringify(value: unknown): string | null {
 }
 
 /**
- * Сериализует объект сохранения с учётом лимита облачного хранилища площадки.
+ * Пытается сериализовать объект сохранения в JSON, не превышая maxBytes (UTF-8).
+ * Возвращает null, если ни полный объект, ни compactFallback не укладываются в лимит или сериализация упала.
  */
-export function serializeWithinLimit<TSave>(
+export function trySerializeWithinLimit<TSave>(
   data: TSave,
   maxBytes: number,
   compactFallback?: (data: TSave) => unknown,
-): string {
-  if (maxBytes <= 0) return '';
+): string | null {
+  if (maxBytes <= 0) return null;
 
   const fullJson = safeJsonStringify(data);
   if (fullJson !== null && utf8ByteLength(fullJson) <= maxBytes) {
@@ -42,13 +43,31 @@ export function serializeWithinLimit<TSave>(
         return compactJson;
       }
     } catch {
-      // При сбое compactFallback безопасно откатываемся к пустому валидному JSON
+      // При сбое compactFallback безопасно возвращаем null, чтобы не затирать облачный сейв
     }
   }
 
+  return null;
+}
+
+/**
+ * Сериализует объект сохранения с учётом лимита облачного хранилища площадки.
+ * При переполнении откатывается к минимальному валидному JSON ('{}').
+ */
+export function serializeWithinLimit<TSave>(
+  data: TSave,
+  maxBytes: number,
+  compactFallback?: (data: TSave) => unknown,
+): string {
+  if (maxBytes <= 0) return '';
+
+  const serialized = trySerializeWithinLimit(data, maxBytes, compactFallback);
+  if (serialized !== null) {
+    return serialized;
+  }
+
   if (maxBytes >= 2) return '{}';
-  if (maxBytes === 1) return '0';
-  return '';
+  return '0';
 }
 
 /**

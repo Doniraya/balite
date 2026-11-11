@@ -49,7 +49,12 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: clamp(16px, 3vh, 28px);
+  --stage-pad: clamp(16px, 3vh, 28px);
+  padding:
+    max(var(--stage-pad), env(safe-area-inset-top))
+    max(var(--stage-pad), env(safe-area-inset-right))
+    max(var(--stage-pad), env(safe-area-inset-bottom))
+    max(var(--stage-pad), env(safe-area-inset-left));
   background: radial-gradient(circle at 50% 24%, var(--bg-felt) 0%, var(--bg-felt-deep) 82%);
   border: 1px solid var(--panel-border);
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);

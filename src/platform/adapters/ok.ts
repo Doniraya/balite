@@ -1,4 +1,4 @@
-import { serializeWithinLimit } from '../storage';
+import { trySerializeWithinLimit } from '../storage';
 import type {
   AdapterContext,
   InterstitialResult,
@@ -263,11 +263,15 @@ export class OkAdapter<TSave extends Record<string, unknown> = Record<string, un
 
   async savePlayerData(mergedData: TSave): Promise<boolean> {
     try {
-      const serialized = serializeWithinLimit(
+      const serialized = trySerializeWithinLimit(
         mergedData,
         this.ctx.maxStorageBytes,
         this.ctx.compactFallback,
       );
+      if (serialized === null) {
+        // Не перезаписываем облачное сохранение пустым '{}', оставляя локальный сейв целым
+        return false;
+      }
       const { status } = await this.callClient({
         method: 'storage.set',
         key: this.ctx.storageKey,

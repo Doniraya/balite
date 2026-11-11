@@ -61,6 +61,7 @@ function createElement<K extends keyof HTMLElementTagNameMap>(
 
 function renderShell(root: HTMLElement): void {
   const lang = platformBridge.getLanguage();
+  document.documentElement.lang = lang;
   const copy = UI_TEXT[lang];
   const platformId = platformBridge.getPlatformId();
   const isDebug = platformBridge.isDebugMode();
