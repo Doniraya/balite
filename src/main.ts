@@ -9,6 +9,7 @@ const UI_TEXT: Record<
     stubTitle: string;
     stubBody: string;
     footer: string;
+    debugFooter: string;
     debugTitle: string;
     btnInterstitial: string;
     btnRewarded: string;
@@ -23,6 +24,7 @@ const UI_TEXT: Record<
     stubBody:
       'Платформенный мост и разблокировка аудио инициализированы. Ядро карт и блайндов будет добавлено в следующих модулях.',
     footer: 'Для открытия отладочных кнопок добавьте ?debug к URL',
+    debugFooter: 'Режим отладки активен (?debug)',
     debugTitle: 'Отладка моста (?debug)',
     btnInterstitial: 'Interstitial',
     btnRewarded: 'Rewarded',
@@ -36,6 +38,7 @@ const UI_TEXT: Record<
     stubBody:
       'Platform bridge and audio unlock controller are active. Card engine and blinds will be added in upcoming modules.',
     footer: 'Append ?debug to the URL to inspect bridge test controls',
+    debugFooter: 'Debug mode active (?debug)',
     debugTitle: 'Bridge Debug (?debug)',
     btnInterstitial: 'Interstitial',
     btnRewarded: 'Rewarded',
@@ -137,7 +140,7 @@ function renderShell(root: HTMLElement): void {
     stage.appendChild(debugPanel);
   }
 
-  stage.appendChild(createElement('footer', 'stage-footer', copy.footer));
+  stage.appendChild(createElement('footer', 'stage-footer', isDebug ? copy.debugFooter : copy.footer));
   root.appendChild(stage);
 }
 
