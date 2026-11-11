@@ -1,0 +1,641 @@
+/* Слоёный каркас карт Balite (4 слоя снизу вверх: enhancement -> art -> chrome -> fx) */
+
+.card-frame {
+  --tilt-x: 0;
+  --tilt-y: 0;
+  --suit-color: #1e293b;
+  --rarity-color: rgba(226, 206, 165, 0.55);
+  --card-radius: 10px;
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  width: var(--card-width, 84px);
+  min-width: 44px;
+  min-height: 44px;
+  aspect-ratio: 5 / 7;
+  padding: 0;
+  margin: 0;
+  border: 1.5px solid var(--rarity-color);
+  border-radius: var(--card-radius);
+  background: #141c2c;
+  color: #f4efe4;
+  font: inherit;
+  text-align: left;
+  appearance: none;
+  -webkit-appearance: none;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  transform-style: preserve-3d;
+  transform: perspective(640px)
+    rotateX(calc(var(--tilt-y, 0) * -9deg))
+    rotateY(calc(var(--tilt-x, 0) * 9deg));
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms ease,
+    border-color 180ms ease,
+    filter 180ms ease;
+  box-shadow:
+    0 6px 14px rgba(4, 7, 15, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
+.card-frame.is-compact {
+  width: var(--card-compact-width, 58px);
+  min-width: 44px;
+  min-height: 44px;
+  --card-radius: 8px;
+}
+
+.card-frame.is-interactive {
+  cursor: pointer;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.card-frame.is-interactive:focus-visible {
+  outline: 2px solid #f5b942;
+  outline-offset: 2px;
+}
+
+.card-frame.is-interactive:active:not(.is-disabled) {
+  transform: translateY(-4px) scale(0.97) perspective(640px)
+    rotateX(calc(var(--tilt-y, 0) * -7deg))
+    rotateY(calc(var(--tilt-x, 0) * 7deg));
+}
+
+.card-frame.is-selected {
+  transform: translateY(-24px) perspective(640px)
+    rotateX(calc(var(--tilt-y, 0) * -9deg))
+    rotateY(calc(var(--tilt-x, 0) * 9deg));
+  border-color: #f5b942;
+  box-shadow:
+    0 16px 26px rgba(2, 6, 14, 0.65),
+    0 0 0 2px rgba(245, 185, 66, 0.85),
+    0 0 16px rgba(245, 185, 66, 0.42);
+  z-index: 4;
+}
+
+.card-frame.is-selected.is-interactive:active:not(.is-disabled) {
+  transform: translateY(-24px) scale(0.98) perspective(640px)
+    rotateX(calc(var(--tilt-y, 0) * -7deg))
+    rotateY(calc(var(--tilt-x, 0) * 7deg));
+}
+
+.card-frame.is-forced {
+  box-shadow:
+    0 8px 18px rgba(14, 165, 233, 0.45),
+    0 0 0 2px #38bdf8;
+}
+
+.card-frame.is-triggering {
+  animation: card-frame-trigger-pulse 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.card-frame.is-disabled {
+  opacity: 0.62;
+  filter: grayscale(0.35);
+  cursor: not-allowed;
+}
+
+.card-frame.is-locked {
+  opacity: 0.72;
+  filter: saturate(0.42) brightness(0.84);
+}
+
+/* Цвета мастей для высокого контраста на 720x1280 */
+.card-frame--suit-spades {
+  --suit-color: #1e293b;
+}
+
+.card-frame--suit-hearts {
+  --suit-color: #c8233c;
+}
+
+.card-frame--suit-clubs {
+  --suit-color: #157347;
+}
+
+.card-frame--suit-diamonds {
+  --suit-color: #c2610c;
+}
+
+/* Рамки редкости для Реликвий (1: Обычная, 2: Необычная, 3: Редкая) */
+.card-frame--rarity-1 {
+  --rarity-color: #60a5fa;
+  box-shadow:
+    0 6px 14px rgba(4, 7, 15, 0.5),
+    0 0 0 1px rgba(96, 165, 250, 0.45);
+}
+
+.card-frame--rarity-2 {
+  --rarity-color: #2dd4bf;
+  box-shadow:
+    0 6px 16px rgba(4, 7, 15, 0.55),
+    0 0 10px rgba(45, 212, 191, 0.28);
+}
+
+.card-frame--rarity-3 {
+  --rarity-color: #f59e0b;
+  box-shadow:
+    0 8px 18px rgba(4, 7, 15, 0.62),
+    0 0 0 1px rgba(244, 63, 94, 0.55),
+    0 0 14px rgba(245, 158, 11, 0.35);
+}
+
+.card-frame--edition-negative {
+  border-color: #c084fc;
+  box-shadow:
+    0 8px 18px rgba(20, 8, 42, 0.72),
+    0 0 12px rgba(168, 85, 247, 0.45);
+}
+
+/* Базовое позиционирование 4 слоёв */
+.card-frame__layer-enhancement,
+.card-frame__layer-art,
+.card-frame__layer-chrome,
+.card-frame__layer-fx {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.card-frame__layer-enhancement {
+  z-index: 1;
+}
+
+.card-frame__layer-art {
+  z-index: 2;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-frame__layer-chrome {
+  z-index: 3;
+  pointer-events: none;
+}
+
+.card-frame__layer-fx {
+  z-index: 4;
+  pointer-events: none;
+}
+
+/* Слой 1: Подложки Улучшений игральных карт и сущностей */
+.card-frame__enhancement--base,
+.card-frame__enhancement--none {
+  background: linear-gradient(155deg, #fbf7ed 0%, #ede3cd 58%, #dfcfb0 100%);
+  box-shadow: inset 0 0 0 3px rgba(164, 134, 84, 0.18);
+}
+
+.card-frame__enhancement--back {
+  background: linear-gradient(155deg, #1b2848 0%, #0f172a 100%);
+  box-shadow: inset 0 0 0 3px rgba(245, 185, 66, 0.3);
+}
+
+.card-frame__enhancement--bonus {
+  background:
+    repeating-linear-gradient(
+      45deg,
+      rgba(56, 189, 248, 0.14) 0px,
+      rgba(56, 189, 248, 0.14) 4px,
+      transparent 4px,
+      transparent 10px
+    ),
+    linear-gradient(150deg, #e0f2fe 0%, #93c5fd 55%, #60a5fa 100%);
+}
+
+.card-frame__enhancement--mult {
+  background:
+    radial-gradient(circle at 50% 35%, rgba(255, 237, 213, 0.72) 0%, transparent 62%),
+    linear-gradient(150deg, #ffedd5 0%, #fb923c 55%, #dc2626 100%);
+}
+
+.card-frame__enhancement--wild {
+  background: linear-gradient(135deg, #fde68a 0%, #86efac 34%, #93c5fd 68%, #f9a8d4 100%);
+}
+
+.card-frame__enhancement--glass {
+  background:
+    linear-gradient(
+      120deg,
+      rgba(255, 255, 255, 0.72) 0%,
+      rgba(224, 242, 254, 0.38) 38%,
+      rgba(186, 230, 253, 0.78) 54%,
+      rgba(240, 249, 255, 0.65) 100%
+    ),
+    #cbeafe;
+  box-shadow: inset 0 0 12px rgba(255, 255, 255, 0.8);
+}
+
+.card-frame__enhancement--steel {
+  background: linear-gradient(
+    145deg,
+    #f1f5f9 0%,
+    #94a3b8 42%,
+    #e2e8f0 58%,
+    #64748b 100%
+  );
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.42);
+}
+
+.card-frame__enhancement--stone {
+  background:
+    radial-gradient(circle at 30% 28%, rgba(148, 163, 184, 0.25) 0%, transparent 55%),
+    linear-gradient(155deg, #646b77 0%, #404652 55%, #272b33 100%);
+  box-shadow: inset 0 0 0 3px rgba(15, 23, 42, 0.45);
+}
+
+.card-frame__enhancement--gold {
+  background: linear-gradient(145deg, #fef3c7 0%, #f5b942 46%, #d97706 100%);
+  box-shadow: inset 0 0 10px rgba(255, 251, 235, 0.65);
+}
+
+.card-frame__enhancement--lucky {
+  background:
+    radial-gradient(circle at 50% 45%, rgba(254, 249, 195, 0.68) 0%, transparent 64%),
+    linear-gradient(150deg, #ecfccb 0%, #86efac 54%, #eab308 100%);
+}
+
+/* Подложки сущностей */
+.card-frame__enhancement--entity-relic {
+  background: linear-gradient(160deg, #1a293f 0%, #10192b 100%);
+}
+
+.card-frame__enhancement--entity-celestial {
+  background:
+    radial-gradient(circle at 50% 34%, rgba(56, 189, 248, 0.24) 0%, transparent 58%),
+    linear-gradient(160deg, #101f4b 0%, #070e26 100%);
+}
+
+.card-frame__enhancement--entity-scroll {
+  background:
+    radial-gradient(circle at 50% 36%, rgba(245, 185, 66, 0.22) 0%, transparent 60%),
+    linear-gradient(160deg, #3c2a1d 0%, #1e140e 100%);
+}
+
+.card-frame__enhancement--entity-rune {
+  background:
+    radial-gradient(circle at 50% 36%, rgba(192, 132, 252, 0.28) 0%, transparent 60%),
+    linear-gradient(160deg, #271546 0%, #120926 100%);
+}
+
+.card-frame__enhancement--entity-charter {
+  background:
+    radial-gradient(circle at 50% 36%, rgba(251, 191, 36, 0.22) 0%, transparent 62%),
+    linear-gradient(160deg, #431c28 0%, #210d14 100%);
+}
+
+.card-frame__enhancement--entity-deck {
+  background: linear-gradient(160deg, #1e293b 0%, #0f172a 100%);
+}
+
+.card-frame__enhancement--entity-boss {
+  background:
+    radial-gradient(circle at 50% 35%, rgba(232, 74, 95, 0.26) 0%, transparent 62%),
+    linear-gradient(160deg, #33131d 0%, #16090e 100%);
+}
+
+.card-frame__enhancement--entity-pack {
+  background:
+    radial-gradient(circle at 50% 35%, rgba(245, 185, 66, 0.2) 0%, transparent 62%),
+    linear-gradient(160deg, #24304d 0%, #121829 100%);
+}
+
+/* Слой 2: Векторный SVG арт */
+.card-frame__art-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Слой 3: Хром и типографика */
+.card-frame__corner {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 5px;
+  color: var(--suit-color);
+  line-height: 1;
+}
+
+.card-frame__corner--top {
+  top: 0;
+  left: 0;
+}
+
+.card-frame__corner--bottom {
+  right: 0;
+  bottom: 0;
+  transform: rotate(180deg);
+}
+
+.card-frame.is-compact .card-frame__corner--bottom {
+  display: none;
+}
+
+.card-frame__rank {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.card-frame.is-compact .card-frame__rank {
+  font-size: 11px;
+}
+
+.card-frame__suit {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.card-frame.is-compact .card-frame__suit {
+  font-size: 10px;
+}
+
+.card-frame__enhancement-badge {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  padding: 2px 4px;
+  border-radius: 5px;
+  background: rgba(12, 18, 30, 0.82);
+  color: #f8fafc;
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-frame.is-compact .card-frame__enhancement-badge {
+  font-size: 7.5px;
+  padding: 1px 3px;
+}
+
+/* Хром карточек сущностей */
+.card-frame__price-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 2px 5px;
+  border-radius: 6px;
+  background: #f5b942;
+  color: #1f1403;
+  font-size: 9.5px;
+  font-weight: 800;
+  line-height: 1.15;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+
+.card-frame__price-badge.is-free {
+  background: #34d399;
+  color: #052e1e;
+}
+
+.card-frame__rarity-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  padding: 2px 5px;
+  border-radius: 6px;
+  background: rgba(11, 17, 29, 0.86);
+  border: 1px solid var(--rarity-color);
+  color: var(--rarity-color);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.15;
+  max-width: calc(100% - 14px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-frame__entity-footer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 5px 5px;
+  background: linear-gradient(
+    180deg,
+    rgba(9, 13, 22, 0) 0%,
+    rgba(9, 13, 22, 0.85) 36%,
+    rgba(9, 13, 22, 0.96) 100%
+  );
+  text-align: center;
+}
+
+.card-frame__kind-badge {
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #93c5fd;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-frame__title {
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1.18;
+  color: #f8f5ec;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.card-frame.is-compact .card-frame__title {
+  font-size: 8px;
+  -webkit-line-clamp: 1;
+}
+
+.card-frame.is-compact .card-frame__kind-badge,
+.card-frame.is-compact .card-frame__rarity-badge {
+  display: none;
+}
+
+.card-frame__lock-badge {
+  align-self: center;
+  margin-top: 1px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(232, 74, 95, 0.24);
+  border: 1px solid rgba(232, 74, 95, 0.65);
+  color: #fecdd3;
+  font-size: 7.5px;
+  font-weight: 700;
+}
+
+/* Слой 4: Издания (foil, holo/holographic, polychrome, negative), Печати и Подавление */
+.card-frame__edition-sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.card-frame__fx--foil {
+  background:
+    linear-gradient(
+      115deg,
+      rgba(255, 255, 255, 0) 18%,
+      rgba(226, 232, 240, 0.62) 44%,
+      rgba(255, 255, 255, 0.85) 50%,
+      rgba(203, 213, 225, 0.45) 58%,
+      rgba(255, 255, 255, 0) 82%
+    );
+  background-size: 210% 210%;
+  background-position:
+    calc(50% + var(--tilt-x, 0) * 42%)
+    calc(50% + var(--tilt-y, 0) * 42%);
+  mix-blend-mode: screen;
+  opacity: 0.72;
+}
+
+.card-frame__fx--holo,
+.card-frame__fx--holographic {
+  background:
+    linear-gradient(
+      128deg,
+      rgba(56, 189, 248, 0.42) 0%,
+      rgba(167, 139, 250, 0.56) 28%,
+      rgba(244, 114, 182, 0.56) 52%,
+      rgba(52, 211, 153, 0.45) 76%,
+      rgba(56, 189, 248, 0.42) 100%
+    );
+  background-size: 220% 220%;
+  background-position:
+    calc(50% + var(--tilt-x, 0) * 48%)
+    calc(50% + var(--tilt-y, 0) * 48%);
+  mix-blend-mode: color-dodge;
+  opacity: 0.75;
+}
+
+.card-frame__fx--polychrome {
+  background:
+    conic-gradient(
+      from calc(45deg + var(--tilt-x, 0) * 35deg),
+      rgba(251, 113, 133, 0.58),
+      rgba(251, 191, 36, 0.58),
+      rgba(52, 211, 153, 0.58),
+      rgba(56, 189, 248, 0.58),
+      rgba(192, 132, 252, 0.58),
+      rgba(251, 113, 133, 0.58)
+    );
+  background-position:
+    calc(50% + var(--tilt-x, 0) * 35%)
+    calc(50% + var(--tilt-y, 0) * 35%);
+  mix-blend-mode: hard-light;
+  opacity: 0.55;
+}
+
+.card-frame__fx--negative {
+  background:
+    radial-gradient(
+      circle at calc(50% + var(--tilt-x, 0) * 35%) calc(50% + var(--tilt-y, 0) * 35%),
+      rgba(216, 180, 254, 0.75) 0%,
+      rgba(88, 28, 135, 0.62) 60%,
+      rgba(17, 24, 39, 0.85) 100%
+    );
+  mix-blend-mode: difference;
+  opacity: 0.88;
+}
+
+.card-frame__seal {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.45);
+}
+
+.card-frame.is-compact .card-frame__seal {
+  width: 14px;
+  height: 14px;
+  top: 3px;
+  right: 3px;
+}
+
+.card-frame__seal svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.card-frame__debuff-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(15, 23, 42, 0.58) 0px,
+      rgba(15, 23, 42, 0.58) 6px,
+      rgba(185, 28, 28, 0.34) 6px,
+      rgba(185, 28, 28, 0.34) 12px
+    );
+}
+
+.card-frame__debuff-badge {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(127, 29, 29, 0.92);
+  border: 1px solid rgba(254, 202, 202, 0.65);
+  color: #fef2f2;
+  font-size: 8.5px;
+  font-weight: 800;
+  line-height: 1.15;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+}
+
+@keyframes card-frame-trigger-pulse {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  45% {
+    transform: scale(1.09) rotate(-2deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+.card-frame.is-selected.is-triggering {
+  animation: card-frame-selected-trigger-pulse 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes card-frame-selected-trigger-pulse {
+  0% {
+    transform: translateY(-24px) scale(1) rotate(0deg);
+  }
+  45% {
+    transform: translateY(-28px) scale(1.09) rotate(-2deg);
+  }
+  100% {
+    transform: translateY(-24px) scale(1) rotate(0deg);
+  }
+}
