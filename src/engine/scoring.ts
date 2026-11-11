@@ -312,7 +312,7 @@ function processBossHookDiscard(work: MutableWorkState, options: ScoringOptions)
     type: 'BOSS_TRIGGER',
     bossId: 'bl_hook',
     affectedCardIds: hookDiscardedIds,
-    locKey: 'boss.bl_hook.trigger',
+    locKey: 'boss_hook_discard',
     locParams: { count: hookDiscardedIds.length },
   });
 
@@ -331,7 +331,7 @@ function processBossHookDiscard(work: MutableWorkState, options: ScoringOptions)
           cardId: card.id,
           retriggerIndex: 0,
           seal: 'purple',
-          locKey: 'card.seal.purple',
+          locKey: 'hand_card_purple_seal',
           locParams: { consumableId: created.id },
         });
       }
@@ -582,7 +582,7 @@ export function evaluatePlay(
       type: 'HAND_DEBUFFED',
       bossId: 'bl_psychic',
       handType: topHand,
-      locKey: 'boss.bl_psychic.debuff',
+      locKey: 'boss_psychic',
     });
     work.run = {
       ...work.run,
@@ -663,7 +663,7 @@ export function evaluatePlay(
     work.events.push({
       type: 'BOSS_TRIGGER',
       bossId: 'bl_flint',
-      locKey: 'boss.bl_flint.modify',
+      locKey: 'boss_flint',
       locParams: { chips, mult },
     });
   }
@@ -702,7 +702,7 @@ export function evaluatePlay(
             ? { copiedByUid: repSource.resolved.stateRelic.uid }
             : {}),
           hook: 'onScoreCardRepetition',
-          locKey: 'relic.retrigger',
+          locKey: 'card_retrigger',
         });
       }
 
@@ -876,7 +876,7 @@ export function evaluatePlay(
             ? { copiedByUid: repSource.resolved.stateRelic.uid }
             : {}),
           hook: 'onHoldCardRepetition',
-          locKey: 'relic.retrigger',
+          locKey: 'card_retrigger',
         });
       }
 
@@ -888,7 +888,8 @@ export function evaluatePlay(
           cardId: heldCard.id,
           retriggerIndex: repIndex,
           xMult: 1.5,
-          locKey: 'card.enhancement.steel',
+          locKey: 'hand_card_steel',
+          locParams: { xMult: 1.5 },
         });
       }
 
@@ -933,7 +934,8 @@ export function evaluatePlay(
         relicId: slotRelic.id,
         hook: 'onScoreRelic',
         chipsDelta: 50,
-        locKey: 'edition.foil',
+        locKey: 'relic_chips',
+        locParams: { chips: 50 },
       });
     } else if (slotRelic.edition === 'holo') {
       mult += 10;
@@ -943,7 +945,8 @@ export function evaluatePlay(
         relicId: slotRelic.id,
         hook: 'onScoreRelic',
         multDelta: 10,
-        locKey: 'edition.holo',
+        locKey: 'relic_mult',
+        locParams: { mult: 10 },
       });
     }
 
@@ -1006,7 +1009,8 @@ export function evaluatePlay(
         relicId: slotRelic.id,
         hook: 'onScoreRelic',
         xMult: 1.5,
-        locKey: 'edition.polychrome',
+        locKey: 'relic_x_mult',
+        locParams: { xMult: 1.5 },
       });
     }
   }
@@ -1022,7 +1026,8 @@ export function evaluatePlay(
           consumableId: consumable.id,
           handType: topHand,
           xMult: 1.5,
-          locKey: 'charter.v_observatory',
+          locKey: 'relic_x_mult',
+          locParams: { xMult: 1.5 },
         });
       }
     }
@@ -1128,7 +1133,7 @@ export function evaluateRoundEnd(state: RunState, options: ScoringOptions): Disp
             ? { copiedByUid: repSource.resolved.stateRelic.uid }
             : {}),
           hook: 'onHoldCardRepetition',
-          locKey: 'relic.retrigger',
+          locKey: 'card_retrigger',
         });
       }
 
@@ -1139,7 +1144,8 @@ export function evaluateRoundEnd(state: RunState, options: ScoringOptions): Disp
           cardId: card.id,
           retriggerIndex: repIndex,
           dollarsDelta: 3,
-          locKey: 'card.enhancement.gold',
+          locKey: 'hand_card_gold',
+          locParams: { dollars: 3 },
         });
       }
 
@@ -1152,7 +1158,7 @@ export function evaluateRoundEnd(state: RunState, options: ScoringOptions): Disp
             cardId: card.id,
             retriggerIndex: repIndex,
             createdConsumableId: created.id,
-            locKey: 'card.seal.blue',
+            locKey: 'hand_card_blue_seal',
           });
         }
       }
@@ -1208,8 +1214,8 @@ export function evaluateRoundEnd(state: RunState, options: ScoringOptions): Disp
         work.events.push({
           type: 'TAG_TRIGGER',
           tagId: 'tag_investment',
-          locKey: 'tag.tag_investment.trigger',
-          locParams: { dollars: 25 },
+          locKey: 'tag_activated',
+          locParams: { tagName: 'tag_investment', dollars: 25 },
         });
       } else {
         nextTags.push(tagId);
