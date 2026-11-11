@@ -219,11 +219,14 @@ export const RELIC_HOOK_NAMES = [
   'onDiscard',
   'onBeforeScore',
   'onScoreCard',
+  'onScoreCardRepetition',
   'onHoldCard',
+  'onHoldCardRepetition',
   'onScoreRelic',
   'onRoundEnd',
   'onShopReroll',
   'onCardAdded',
+  'onUseConsumable',
 ] as const;
 
 /**
@@ -245,7 +248,7 @@ export interface RelicHookContextBase {
 }
 
 /**
- * Размеченное объединение декларативных контекстов всех 9 хуков Реликвий.
+ * Размеченное объединение декларативных контекстов всех 12 хуков Реликвий.
  */
 export type RelicHookContext =
   | (RelicHookContextBase & {
@@ -275,10 +278,24 @@ export type RelicHookContext =
       readonly isFirstScoringFaceCard?: boolean;
     })
   | (RelicHookContextBase & {
+      readonly hook: 'onScoreCardRepetition';
+      readonly card: PlayingCard;
+      readonly playedCards: readonly PlayingCard[];
+      readonly scoringCards: readonly PlayingCard[];
+      readonly handEvaluation: HandEvaluationResult;
+    })
+  | (RelicHookContextBase & {
       readonly hook: 'onHoldCard';
       readonly card: PlayingCard;
       readonly handCards: readonly PlayingCard[];
       readonly handEvaluation: HandEvaluationResult;
+    })
+  | (RelicHookContextBase & {
+      readonly hook: 'onHoldCardRepetition';
+      readonly card: PlayingCard;
+      readonly handCards: readonly PlayingCard[];
+      readonly handEvaluation?: HandEvaluationResult;
+      readonly phase: 'scoring' | 'roundEnd';
     })
   | (RelicHookContextBase & {
       readonly hook: 'onScoreRelic';
@@ -299,6 +316,10 @@ export type RelicHookContext =
   | (RelicHookContextBase & {
       readonly hook: 'onCardAdded';
       readonly addedCards: readonly PlayingCard[];
+    })
+  | (RelicHookContextBase & {
+      readonly hook: 'onUseConsumable';
+      readonly consumable: ConsumableInstance;
     });
 
 /**
@@ -318,9 +339,46 @@ export interface RelicEffectResult {
   readonly updatedEffectState?: RelicStateCounters;
   readonly destroySelf?: boolean;
   readonly destroyRightRelic?: boolean;
+  readonly destroyedRelicUid?: string;
   readonly stripCardEnhancement?: boolean;
+  readonly strippedCardIds?: readonly string[];
   readonly createConsumableKind?: ConsumableKind;
+  readonly locKey?: string;
+  readonly locParams?: Readonly<Record<string, string | number>>;
 }
+
+/**
+ * Чистый обработчик конкретного хука Реликвии.
+ */
+export type RelicHookHandler<H extends RelicHookName = RelicHookName> = (
+  ctx: RelicHookContextFor<H>,
+) => RelicEffectResult | null | undefined;
+
+/**
+ * Набор обработчиков хуков, привязанных к конкретной Реликвии.
+ */
+export type RelicHookMap = {
+  readonly [H in RelicHookName]?: RelicHookHandler<H>;
+};
+
+/**
+ * Декларативное описание Реликвии в реестре движка (конфиг, совместимость и хуки).
+ */
+export interface RelicDefinition {
+  readonly id: RelicId;
+  readonly rarity: RelicRarity;
+  readonly baseCost: number;
+  readonly blueprintCompat: boolean;
+  readonly perishableCompat: boolean;
+  readonly eternalCompat: boolean;
+  readonly initialState: RelicStateCounters;
+  readonly hooks: RelicHookMap;
+}
+
+/**
+ * Функция поиска описания Реликвии по её идентификатору (для развязки модулей scoring и relics).
+ */
+export type RelicRegistryLookup = (id: RelicId) => RelicDefinition | undefined;
 
 /**
  * Категории расходников: Астральные сферы, Алхимические свитки, Эфирные руны.
@@ -699,6 +757,8 @@ export interface RunState {
   readonly activeBossDisabled: boolean;
   readonly savedBossDiscards: number | null;
   readonly endlessMode: boolean;
+  readonly probabilitiesNormal: number;
+  readonly anteScaling: number;
   readonly score: number;
   readonly targetScore: number;
   readonly dollars: number;
@@ -1029,6 +1089,8 @@ export interface RunSnapshot {
   readonly activeBossDisabled: boolean;
   readonly savedBossDiscards: number | null;
   readonly endlessMode: boolean;
+  readonly probabilitiesNormal: number;
+  readonly anteScaling: number;
   readonly score: number;
   readonly targetScore: number;
   readonly dollars: number;
@@ -1067,9 +1129,11 @@ export interface RunSnapshot {
 }
 
 /**
- * Объединённый объект сохранения игры (мета-прогресс + опциональный активный забег).
+ * Объединённый объект сохранения игры (верхнеуровневые поля revision/updatedAt совместимы с defaultMergeSave и PlatformBridge).
  */
-export interface PlayerSaveData {
+export type PlayerSaveData = {
+  readonly revision: number;
+  readonly updatedAt: number;
   readonly meta: MetaSave;
   readonly activeRun: RunSnapshot | null;
-}
+};

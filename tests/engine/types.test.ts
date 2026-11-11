@@ -21,8 +21,11 @@ import {
   type DispatchResult,
   type GameCommand,
   type MetaSave,
+  type PlayerSaveData,
   type PlayingCard,
+  type RelicDefinition,
   type RelicHookContext,
+  type RelicHookMap,
   type RelicInstance,
   type RunSnapshot,
   type RunState,
@@ -87,11 +90,14 @@ describe('Канонические перечисления и таблицы и
       'onDiscard',
       'onBeforeScore',
       'onScoreCard',
+      'onScoreCardRepetition',
       'onHoldCard',
+      'onHoldCardRepetition',
       'onScoreRelic',
       'onRoundEnd',
       'onShopReroll',
       'onCardAdded',
+      'onUseConsumable',
     ]);
     expect(BLIND_KINDS).toEqual(['small', 'big', 'boss']);
     expect(PACK_TYPES).toEqual(['arcana', 'celestial', 'standard', 'buffoon', 'spectral']);
@@ -165,6 +171,8 @@ describe('Типы состояния, команд, хуков и сохран�
       activeBossDisabled: false,
       savedBossDiscards: null,
       endlessMode: false,
+      probabilitiesNormal: 1,
+      anteScaling: 1,
       score: 0,
       targetScore: 300,
       dollars: 4,
@@ -286,6 +294,8 @@ describe('Типы состояния, команд, хуков и сохран�
       activeBossDisabled: runState.activeBossDisabled,
       savedBossDiscards: runState.savedBossDiscards,
       endlessMode: runState.endlessMode,
+      probabilitiesNormal: runState.probabilitiesNormal,
+      anteScaling: runState.anteScaling,
       score: runState.score,
       targetScore: runState.targetScore,
       dollars: runState.dollars,
@@ -328,5 +338,33 @@ describe('Типы состояния, команд, хуков и сохран�
     expect(meta.settings.animationSpeed).toBe(2);
     expect(meta.settings.lang).toBe('ru');
     expect(snapshot.compactDeck[0][2]).toBe(14);
+
+    // Проверяем совместимость PlayerSaveData с Record<string, unknown> и контракты RelicDefinition/RelicHookMap
+    const saveData: PlayerSaveData = {
+      revision: meta.revision,
+      updatedAt: meta.updatedAt,
+      meta,
+      activeRun: snapshot,
+    };
+    const recordAssignable: Record<string, unknown> = saveData;
+    expect(recordAssignable['revision']).toBe(3);
+
+    const hooks: RelicHookMap = {
+      onUseConsumable: (ctx) => (ctx.consumable.kind === 'celestial' ? { xMult: 1.1 } : null),
+      onBeforeScore: (ctx) => ({ strippedCardIds: ctx.scoringCards.map((c) => c.id) }),
+      onScoreCardRepetition: () => ({ retriggerDelta: 1 }),
+      onHoldCardRepetition: (ctx) => (ctx.phase === 'roundEnd' ? { retriggerDelta: 1 } : null),
+    };
+    const relicDef: RelicDefinition = {
+      id: 'j_constellation',
+      rarity: 2,
+      baseCost: 6,
+      blueprintCompat: true,
+      perishableCompat: false,
+      eternalCompat: true,
+      initialState: { chips: 0, mult: 0, xMult: 1 },
+      hooks,
+    };
+    expect(relicDef.hooks.onUseConsumable).toBeDefined();
   });
 });
