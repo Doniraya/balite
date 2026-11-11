@@ -20,12 +20,14 @@ function isDocumentHidden(): boolean {
 }
 
 /**
- * Создаёт контроллер разблокировки Web Audio и платформенного мьюта при рекламе/сворачивании.
+ * Создаёт контроллер разблокировки Web Audio и платформенного мьюта при рекламе/паузе/сворачивании.
  */
 export function createAudioUnlockController(): AudioUnlockController {
   let installed = false;
   let hasUserInteracted = false;
   let adShowing = false;
+  let platformPaused = false;
+  let windowBlurred = false;
   let lastMuted: boolean | null = null;
   let iosChannelAudio: HTMLAudioElement | null = null;
 
@@ -33,7 +35,8 @@ export function createAudioUnlockController(): AudioUnlockController {
   const unlockedContexts = new WeakSet<AudioContext>();
   const muteListeners = new Set<(muted: boolean) => void>();
 
-  const isMutedByPlatform = (): boolean => adShowing || isDocumentHidden();
+  const isMutedByPlatform = (): boolean =>
+    adShowing || platformPaused || windowBlurred || isDocumentHidden();
 
   const notifyMuteIfChanged = (): void => {
     const muted = isMutedByPlatform();
@@ -64,6 +67,15 @@ export function createAudioUnlockController(): AudioUnlockController {
       }
     } catch {
       // Игнорируем ограничения автоплея вне пользовательского жеста
+    }
+  };
+
+  const pauseIosSilentTag = (): void => {
+    if (!iosChannelAudio) return;
+    try {
+      iosChannelAudio.pause();
+    } catch {
+      // Игнорируем
     }
   };
 
@@ -116,18 +128,32 @@ export function createAudioUnlockController(): AudioUnlockController {
   const handleVisibility = (): void => {
     notifyMuteIfChanged();
     if (isMutedByPlatform()) {
-      destroyIosSilentTag();
+      pauseIosSilentTag();
     } else if (hasUserInteracted) {
       unlock();
     }
   };
 
+  const handleWindowBlur = (): void => {
+    windowBlurred = true;
+    handleVisibility();
+  };
+
+  const handleWindowFocus = (): void => {
+    windowBlurred = false;
+    handleVisibility();
+  };
+
   const handleGesture = (): void => {
+    if (windowBlurred) {
+      windowBlurred = false;
+      notifyMuteIfChanged();
+    }
     unlock();
   };
 
   const gestureEvents = ['pointerdown', 'touchstart', 'mousedown', 'keydown'] as const;
-  const visibilityEvents = ['visibilitychange', 'pageshow', 'pagehide'] as const;
+  const docVisibilityEvents = ['visibilitychange', 'pageshow', 'pagehide'] as const;
 
   const install = (): void => {
     if (installed) return;
@@ -138,13 +164,14 @@ export function createAudioUnlockController(): AudioUnlockController {
       for (const evt of gestureEvents) {
         window.addEventListener(evt, handleGesture, { capture: true, passive: true });
       }
-      window.addEventListener('focus', handleVisibility);
-      window.addEventListener('pageshow', handleVisibility);
-      window.addEventListener('pagehide', handleVisibility);
+      window.addEventListener('blur', handleWindowBlur);
+      window.addEventListener('focus', handleWindowFocus);
+      window.addEventListener('pageshow', handleWindowFocus);
+      window.addEventListener('pagehide', handleWindowBlur);
     }
 
     if (typeof document !== 'undefined') {
-      for (const evt of visibilityEvents) {
+      for (const evt of docVisibilityEvents) {
         document.addEventListener(evt, handleVisibility);
       }
     }
@@ -156,13 +183,14 @@ export function createAudioUnlockController(): AudioUnlockController {
         for (const evt of gestureEvents) {
           window.removeEventListener(evt, handleGesture, { capture: true });
         }
-        window.removeEventListener('focus', handleVisibility);
-        window.removeEventListener('pageshow', handleVisibility);
-        window.removeEventListener('pagehide', handleVisibility);
+        window.removeEventListener('blur', handleWindowBlur);
+        window.removeEventListener('focus', handleWindowFocus);
+        window.removeEventListener('pageshow', handleWindowFocus);
+        window.removeEventListener('pagehide', handleWindowBlur);
       }
 
       if (typeof document !== 'undefined') {
-        for (const evt of visibilityEvents) {
+        for (const evt of docVisibilityEvents) {
           document.removeEventListener(evt, handleVisibility);
         }
       }
@@ -170,6 +198,9 @@ export function createAudioUnlockController(): AudioUnlockController {
     }
 
     hasUserInteracted = false;
+    adShowing = false;
+    platformPaused = false;
+    windowBlurred = false;
     destroyIosSilentTag();
     contexts.clear();
     muteListeners.clear();
@@ -182,10 +213,15 @@ export function createAudioUnlockController(): AudioUnlockController {
     }
   };
 
+  const setPlatformPaused = (paused: boolean): void => {
+    platformPaused = paused;
+    handleVisibility();
+  };
+
   const onAdStart = (): void => {
     adShowing = true;
     notifyMuteIfChanged();
-    destroyIosSilentTag();
+    pauseIosSilentTag();
   };
 
   const onAdEnd = (): void => {
@@ -208,6 +244,7 @@ export function createAudioUnlockController(): AudioUnlockController {
     dispose,
     unlock,
     registerContext,
+    setPlatformPaused,
     onAdStart,
     onAdEnd,
     isMutedByPlatform,

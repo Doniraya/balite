@@ -38,7 +38,7 @@ export class VkAdapter<TSave extends Record<string, unknown> = Record<string, un
         vkBridge.subscribe(this.lifecycleHandler);
       }
 
-      if (vkBridge.isEmbedded() || this.ctx.params.platform === 'vk' || this.ctx.params.vk_app_id) {
+      if (vkBridge.isEmbedded()) {
         await withTimeout(vkBridge.send('VKWebAppInit'), 4000, 'VKWebAppInit');
         this.inited = true;
       }
@@ -55,18 +55,19 @@ export class VkAdapter<TSave extends Record<string, unknown> = Record<string, un
 
   private async showNativeAd(
     adFormat: 'interstitial' | 'reward',
-  ): Promise<{ shown: boolean; error?: string }> {
+  ): Promise<{ supported: boolean; shown: boolean }> {
     const supported = await vkBridge.supportsAsync('VKWebAppShowNativeAds').catch(() => false);
     if (!supported) {
-      return { shown: false, error: 'VKWebAppShowNativeAds unsupported' };
+      return { supported: false, shown: false };
     }
 
+    this.ctx.emit(adFormat === 'reward' ? 'rewarded_open' : 'interstitial_open', {});
     const res = await withTimeout(
       vkBridge.send('VKWebAppShowNativeAds', { ad_format: adFormat }),
       adFormat === 'reward' ? 60000 : 30000,
       `VKWebAppShowNativeAds:${adFormat}`,
     );
-    return { shown: Boolean((res as { result?: boolean })?.result) };
+    return { supported: true, shown: Boolean((res as { result?: boolean })?.result) };
   }
 
   async showInterstitial(): Promise<InterstitialResult> {
@@ -78,11 +79,9 @@ export class VkAdapter<TSave extends Record<string, unknown> = Record<string, un
         return await runSandboxInterstitial(this.ctx);
       }
 
-      this.ctx.emit('interstitial_open', {});
-      const { shown, error } = await this.showNativeAd('interstitial');
-      if (error) {
-        this.ctx.emit('interstitial_error', { error });
-        return { shown: false, error };
+      const { supported, shown } = await this.showNativeAd('interstitial');
+      if (!supported) {
+        return { shown: false };
       }
       this.ctx.emit('interstitial_close', { shown });
       return { shown };
@@ -104,11 +103,9 @@ export class VkAdapter<TSave extends Record<string, unknown> = Record<string, un
         return await runSandboxRewarded(this.ctx);
       }
 
-      this.ctx.emit('rewarded_open', {});
-      const { shown, error } = await this.showNativeAd('reward');
-      if (error) {
-        this.ctx.emit('rewarded_error', { error });
-        return { rewarded: false, error };
+      const { supported, shown } = await this.showNativeAd('reward');
+      if (!supported) {
+        return { rewarded: false };
       }
       if (shown) this.ctx.emit('rewarded_rewarded', {});
       this.ctx.emit('rewarded_closed', { rewarded: shown });

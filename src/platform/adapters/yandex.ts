@@ -79,11 +79,13 @@ export class YandexAdapter<TSave extends Record<string, unknown> = Record<string
 
   ready(): void {
     if (this.readySent) return;
+    const readyFn = this.ysdk?.features?.LoadingAPI?.ready;
+    if (typeof readyFn !== 'function') return;
     try {
-      this.ysdk?.features?.LoadingAPI?.ready?.();
+      readyFn.call(this.ysdk?.features?.LoadingAPI);
       this.readySent = true;
     } catch {
-      // Игнорируем при отсутствии SDK
+      // Игнорируем ошибку вызова LoadingAPI.ready
     }
   }
 

@@ -105,6 +105,10 @@ describe('detectPlatformId', () => {
     expect(detectPlatformId({}, { location: { hostname: 'evil-vk.com' } })).toBe('mock');
     expect(detectPlatformId({}, {}, 'myvk.ru')).toBe('mock');
     expect(detectPlatformId({}, { location: { hostname: 'mybook.ru' } })).toBe('mock');
+    expect(detectPlatformId({}, { location: { hostname: 'yandex.evil.com' } })).toBe('mock');
+    expect(detectPlatformId({}, { location: { hostname: 'foo.vkplay.evil.com' } })).toBe('mock');
+    expect(detectPlatformId({ api_server: 'https://notok.ru/' })).toBe('mock');
+    expect(detectPlatformId({ app_id: '77' }, { location: { hostname: 'games.yandex.ru' } })).toBe('yandex');
     expect(detectPlatformId({}, {}, 'localhost')).toBe('mock');
   });
 });

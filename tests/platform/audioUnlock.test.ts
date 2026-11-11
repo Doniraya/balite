@@ -81,4 +81,26 @@ describe('createAudioUnlockController', () => {
     window.dispatchEvent(new Event('pointerdown'));
     expect(resume).toHaveBeenCalledTimes(1);
   });
+
+  it('реагирует на setPlatformPaused и window.blur / focus', () => {
+    const controller = createAudioUnlockController();
+    const history: boolean[] = [];
+    controller.subscribeMute((m) => history.push(m));
+    controller.install();
+
+    controller.setPlatformPaused(true);
+    expect(controller.isMutedByPlatform()).toBe(true);
+
+    controller.setPlatformPaused(false);
+    expect(controller.isMutedByPlatform()).toBe(false);
+
+    window.dispatchEvent(new Event('blur'));
+    expect(controller.isMutedByPlatform()).toBe(true);
+
+    window.dispatchEvent(new Event('focus'));
+    expect(controller.isMutedByPlatform()).toBe(false);
+
+    expect(history).toEqual([true, false, true, false]);
+    controller.dispose();
+  });
 });

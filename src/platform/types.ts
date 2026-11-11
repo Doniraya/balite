@@ -36,6 +36,7 @@ export interface AudioUnlockController {
   dispose(): void;
   unlock(): void;
   registerContext(ctx: AudioContext): void;
+  setPlatformPaused(paused: boolean): void;
   onAdStart(): void;
   onAdEnd(): void;
   isMutedByPlatform(): boolean;

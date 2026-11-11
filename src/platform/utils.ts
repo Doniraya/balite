@@ -51,27 +51,40 @@ export function loadScriptOnce(src: string, timeoutMs = 5000): Promise<void> {
     script.async = true;
 
     let settled = false;
+    const cleanupScript = (removeTag: boolean): void => {
+      clearTimeout(timer);
+      script.removeEventListener('load', onLoad);
+      script.removeEventListener('error', onError);
+      if (removeTag) {
+        script.remove();
+      }
+    };
+
+    const onLoad = (): void => {
+      if (settled) return;
+      settled = true;
+      cleanupScript(false);
+      resolve();
+    };
+
+    const onError = (): void => {
+      if (settled) return;
+      settled = true;
+      cleanupScript(true);
+      loadedScriptPromises.delete(src);
+      reject(new Error(`Ошибка загрузки скрипта: ${src}`));
+    };
+
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
+      cleanupScript(true);
       loadedScriptPromises.delete(src);
       reject(new Error(`Таймаут загрузки скрипта: ${src}`));
     }, timeoutMs);
 
-    script.addEventListener('load', () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve();
-    });
-
-    script.addEventListener('error', () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      loadedScriptPromises.delete(src);
-      reject(new Error(`Ошибка загрузки скрипта: ${src}`));
-    });
+    script.addEventListener('load', onLoad);
+    script.addEventListener('error', onError);
 
     (document.head ?? document.documentElement).appendChild(script);
   });

@@ -46,6 +46,7 @@ export class OkAdapter<TSave extends Record<string, unknown> = Record<string, un
   private adBusy = false;
   private adLoaded = false;
   private lastLoadAdAt = 0;
+  private hookHandler: ((method: string, result: string, data: unknown) => void) | null = null;
   private readonly pendingCallbacks = new Map<
     string,
     (result: string, data: unknown) => void
@@ -61,17 +62,21 @@ export class OkAdapter<TSave extends Record<string, unknown> = Record<string, un
 
   private installCallbackHook(): void {
     const g = globalThis as Record<string, unknown>;
+    if (this.hookHandler && g.API_callback === this.hookHandler) {
+      return;
+    }
+
     const prev = g.API_callback as
       | ((method: string, result: string, data: unknown) => void)
       | undefined;
 
-    g.API_callback = (method: string, result: string, data: unknown) => {
+    this.hookHandler = (method: string, result: string, data: unknown) => {
       const pending = this.pendingCallbacks.get(method);
       if (pending) {
         this.pendingCallbacks.delete(method);
         pending(result, data);
       }
-      if (typeof prev === 'function' && prev !== g.API_callback) {
+      if (typeof prev === 'function' && prev !== this.hookHandler) {
         try {
           prev(method, result, data);
         } catch {
@@ -79,6 +84,8 @@ export class OkAdapter<TSave extends Record<string, unknown> = Record<string, un
         }
       }
     };
+
+    g.API_callback = this.hookHandler;
   }
 
   private waitForCallback(method: string, timeoutMs: number): Promise<{ result: string; data: unknown }> {
@@ -180,6 +187,7 @@ export class OkAdapter<TSave extends Record<string, unknown> = Record<string, un
       const now = Date.now();
       if (!this.adLoaded) {
         if (this.lastLoadAdAt > 0 && now - this.lastLoadAdAt < OK_LOAD_AD_COOLDOWN_MS) {
+          this.ctx.emit('rewarded_error', { error: 'cooldown' });
           return { rewarded: false, error: 'cooldown' };
         }
         this.lastLoadAdAt = now;
@@ -187,7 +195,9 @@ export class OkAdapter<TSave extends Record<string, unknown> = Record<string, un
         ui.loadAd();
         const loaded = await loadWait;
         if (loaded.result !== 'ok') {
-          return { rewarded: false, error: `loadAd:${loaded.result}` };
+          const error = `loadAd:${loaded.result}`;
+          this.ctx.emit('rewarded_error', { error });
+          return { rewarded: false, error };
         }
         this.adLoaded = true;
       }

@@ -38,6 +38,18 @@ describe('serializeWithinLimit', () => {
     expect(result).toBe('{}');
     expect(utf8ByteLength(result)).toBeLessThanOrEqual(10);
   });
+
+  it('не падает на циклических объектах или ошибке внутри compactFallback', () => {
+    const cyclic: Record<string, unknown> = { a: 1 };
+    cyclic.self = cyclic;
+
+    expect(serializeWithinLimit(cyclic, 100)).toBe('{}');
+    expect(
+      serializeWithinLimit({ ok: true, pad: 'x'.repeat(20) }, 10, () => {
+        throw new Error('fallback crash');
+      }),
+    ).toBe('{}');
+  });
 });
 
 describe('readLocalSave / writeLocalSave', () => {

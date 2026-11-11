@@ -19,10 +19,10 @@ const UI_TEXT: Record<
   }
 > = {
   ru: {
-    subtitle: 'Покерный рогалик • Портрет 720×1280',
+    subtitle: 'Карточный рогалик • Портрет 720×1280',
     stubTitle: 'Базовый каркас запущен',
     stubBody:
-      'Платформенный мост и разблокировка аудио инициализированы. Ядро карт и блайндов будет добавлено в следующих модулях.',
+      'Платформенный мост и разблокировка аудио инициализированы. Ядро карт и раундов будет добавлено в следующих модулях.',
     footer: 'Для открытия отладочных кнопок добавьте ?debug к URL',
     debugFooter: 'Режим отладки активен (?debug)',
     debugTitle: 'Отладка моста (?debug)',
@@ -33,10 +33,10 @@ const UI_TEXT: Record<
     readyLog: 'Ожидание действий…',
   },
   en: {
-    subtitle: 'Poker Roguelike • Portrait 720×1280',
+    subtitle: 'Card Roguelike • Portrait 720×1280',
     stubTitle: 'Base Shell Ready',
     stubBody:
-      'Platform bridge and audio unlock controller are active. Card engine and blinds will be added in upcoming modules.',
+      'Platform bridge and audio unlock controller are active. Card engine and rounds will be added in upcoming modules.',
     footer: 'Append ?debug to the URL to inspect bridge test controls',
     debugFooter: 'Debug mode active (?debug)',
     debugTitle: 'Bridge Debug (?debug)',

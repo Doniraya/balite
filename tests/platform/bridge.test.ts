@@ -194,4 +194,80 @@ describe('createPlatformBridge', () => {
     expect(JSON.parse(localStorage.getItem('balite_merge_local') || '{}')).toEqual(loaded);
     bridge.audio.dispose();
   });
+
+  it('синхронизирует game_api_pause/resume с AudioUnlock и переносит битые cloudData в loadPlayerData', async () => {
+    window.history.replaceState({}, '', '/?platform=yandex');
+    localStorage.setItem('balite_bad_cloud', JSON.stringify({ level: 4 }));
+    const listeners: Record<string, () => void> = {};
+    const getData = vi.fn().mockResolvedValue('not-an-object');
+
+    (globalThis as Record<string, unknown>).YaGames = {
+      init: vi.fn().mockResolvedValue({
+        environment: { i18n: { lang: 'ru' } },
+        features: { LoadingAPI: { ready: vi.fn() }, GameplayAPI: { start: vi.fn(), stop: vi.fn() } },
+        getPlayer: vi.fn().mockResolvedValue({
+          getData,
+          setData: vi.fn().mockResolvedValue(undefined),
+        }),
+        on: vi.fn((evt: string, cb: () => void) => {
+          listeners[evt] = cb;
+          return () => {};
+        }),
+      }),
+    };
+
+    const bridge = createPlatformBridge({ localBackupKey: 'balite_bad_cloud' });
+    bridge.audio.install();
+    await bridge.init();
+
+    listeners.game_api_pause?.();
+    expect(bridge.audio.isMutedByPlatform()).toBe(true);
+    listeners.game_api_resume?.();
+    expect(bridge.audio.isMutedByPlatform()).toBe(false);
+
+    expect(await bridge.loadPlayerData()).toEqual({ level: 4 });
+
+    getData.mockRejectedValueOnce(new Error('cloud down'));
+    expect(await bridge.loadPlayerData()).toEqual({ level: 4 });
+
+    bridge.audio.dispose();
+  });
+
+  it('сохраняет накопленные патчи в памяти при отказе localStorage', async () => {
+    window.history.replaceState({}, '', '/?platform=yandex');
+    const saved: Array<Record<string, unknown>> = [];
+
+    (globalThis as Record<string, unknown>).YaGames = {
+      init: vi.fn().mockResolvedValue({
+        environment: { i18n: { lang: 'ru' } },
+        features: { LoadingAPI: { ready: vi.fn() }, GameplayAPI: { start: vi.fn(), stop: vi.fn() } },
+        getPlayer: vi.fn().mockResolvedValue({
+          getData: vi.fn().mockResolvedValue({}),
+          setData: vi.fn((payload: Record<string, unknown>) => {
+            saved.push({ ...payload });
+            return Promise.resolve();
+          }),
+        }),
+        on: vi.fn(() => () => {}),
+      }),
+    };
+
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('storage blocked');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('storage blocked');
+    });
+
+    const bridge = createPlatformBridge<{ a?: number; b?: number }>();
+    await bridge.init();
+
+    await Promise.all([
+      bridge.savePlayerData({ a: 1 }),
+      bridge.savePlayerData({ b: 2 }),
+    ]);
+
+    expect(saved).toEqual([{ a: 1 }, { a: 1, b: 2 }]);
+    bridge.audio.dispose();
+  });
 });

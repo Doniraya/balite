@@ -8,6 +8,18 @@ export function utf8ByteLength(str: string): number {
   return unescape(encodeURIComponent(str)).length;
 }
 
+export function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function safeJsonStringify(value: unknown): string | null {
+  try {
+    return JSON.stringify(value) ?? '{}';
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Сериализует объект сохранения с учётом лимита облачного хранилища площадки.
  */
@@ -18,25 +30,25 @@ export function serializeWithinLimit<TSave>(
 ): string {
   if (maxBytes <= 0) return '';
 
-  const fullJson = JSON.stringify(data) ?? '{}';
-  if (utf8ByteLength(fullJson) <= maxBytes) {
+  const fullJson = safeJsonStringify(data);
+  if (fullJson !== null && utf8ByteLength(fullJson) <= maxBytes) {
     return fullJson;
   }
 
   if (compactFallback) {
-    const compactJson = JSON.stringify(compactFallback(data)) ?? '{}';
-    if (utf8ByteLength(compactJson) <= maxBytes) {
-      return compactJson;
+    try {
+      const compactJson = safeJsonStringify(compactFallback(data));
+      if (compactJson !== null && utf8ByteLength(compactJson) <= maxBytes) {
+        return compactJson;
+      }
+    } catch {
+      // При сбое compactFallback безопасно откатываемся к пустому валидному JSON
     }
   }
 
   if (maxBytes >= 2) return '{}';
   if (maxBytes === 1) return '0';
   return '';
-}
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 /**

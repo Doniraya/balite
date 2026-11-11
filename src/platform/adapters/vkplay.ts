@@ -40,14 +40,15 @@ export class VkPlayAdapter<TSave extends Record<string, unknown> = Record<string
 
   async init(): Promise<void> {
     try {
-      const appId =
+      const rawAppId =
         this.ctx.vkPlayAppId || this.ctx.params.vkplay_appid || this.ctx.params.appid || this.ctx.params.app_id || '';
+      const safeAppId = /^[a-zA-Z0-9_-]+$/.test(rawAppId) ? encodeURIComponent(rawAppId) : '';
 
-      if (!this.getIframeApiGlobal() && appId) {
+      if (!this.getIframeApiGlobal() && safeAppId) {
         try {
-          await loadScriptOnce(`https://vkplay.ru/app/${appId}/static/mailru.core.js`, 5000);
+          await loadScriptOnce(`https://vkplay.ru/app/${safeAppId}/static/mailru.core.js`, 5000);
         } catch {
-          await loadScriptOnce(`https://store.my.games/app/${appId}/static/mailru.core.js`, 5000);
+          await loadScriptOnce(`https://store.my.games/app/${safeAppId}/static/mailru.core.js`, 5000);
         }
       }
 
@@ -56,7 +57,7 @@ export class VkPlayAdapter<TSave extends Record<string, unknown> = Record<string
 
       if (typeof rawApi === 'function') {
         this.client = await withTimeout(
-          Promise.resolve(rawApi({ appid: appId || undefined })),
+          Promise.resolve(rawApi({ appid: rawAppId || undefined })),
           5000,
           'iframeApi',
         );
@@ -89,7 +90,7 @@ export class VkPlayAdapter<TSave extends Record<string, unknown> = Record<string
         30000,
         'iframeApi.showAds:interstitial',
       );
-      const shown = typeof res === 'boolean' ? res : Boolean(res?.result ?? true);
+      const shown = typeof res === 'boolean' ? res : Boolean(res?.result);
       this.ctx.emit('interstitial_close', { shown });
       return { shown };
     } catch (err) {
@@ -116,7 +117,7 @@ export class VkPlayAdapter<TSave extends Record<string, unknown> = Record<string
         60000,
         'iframeApi.showAds:rewarded',
       );
-      const rewarded = typeof res === 'boolean' ? res : Boolean(res?.result ?? true);
+      const rewarded = typeof res === 'boolean' ? res : Boolean(res?.result);
       if (rewarded) {
         this.ctx.emit('rewarded_rewarded', {});
       }

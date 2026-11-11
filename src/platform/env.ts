@@ -95,17 +95,23 @@ export function normalizeLang(
 }
 
 function extractHost(raw: string): string {
-  const trimmed = raw.trim();
+  const trimmed = raw.trim().toLowerCase();
   if (!trimmed) return '';
   if (trimmed.includes('://')) {
     try {
-      return new URL(trimmed).hostname;
+      return new URL(trimmed).hostname.toLowerCase();
     } catch {
       return trimmed;
     }
   }
-  return trimmed;
+  return trimmed.split(/[/:?#]/)[0] ?? '';
 }
+
+const RE_YANDEX_HOST =
+  /(?:^|\.)(?:yandex\.(?:ru|com|net|by|kz|uz|az|tj|tm|kg|md|ee|lv|lt|ua|ge|am|fr|co\.il|com\.am|com\.ge|com\.tr)|playhop\.com|yastatic\.net)$/i;
+const RE_VK_HOST = /(?:^|\.)(?:vk\.com|vk\.ru|vk-apps\.com|mvk\.com)$/i;
+const RE_OK_HOST = /(?:^|\.)(?:ok\.ru|odnoklassniki\.ru|mycdn\.me|apiok\.ru)$/i;
+const RE_VKPLAY_HOST = /(?:^|\.)(?:vkplay\.ru|vkplay\.live|store\.my\.games)$/i;
 
 /**
  * Определяет игровую площадку по явным параметрам, глобальным SDK-объектам и домену.
@@ -136,14 +142,15 @@ export function detectPlatformId(
     return 'vk';
   }
 
+  const okServerHost = params.api_server ? extractHost(params.api_server) : '';
   if (
-    (params.api_server && /ok\.ru|odnoklassniki/i.test(params.api_server)) ||
+    (okServerHost && /(?:^|\.)(?:ok\.ru|odnoklassniki\.ru)$/i.test(okServerHost)) ||
     (params.sig && params.session_key && params.logged_user_id)
   ) {
     return 'ok';
   }
 
-  if (params.vkplay_appid || ((params.appid || params.app_id) && !params.vk_app_id)) {
+  if (params.vkplay_appid) {
     return 'vkplay';
   }
 
@@ -155,25 +162,15 @@ export function detectPlatformId(
     return 'vk';
   }
 
-  const host = extractHost(win?.location?.hostname ?? '');
-  const refHost = extractHost(referrerHost);
-  const combinedHost = `${host} ${refHost}`.trim();
+  const hosts = [extractHost(win?.location?.hostname ?? ''), extractHost(referrerHost)].filter(Boolean);
 
-  if (!combinedHost) return 'mock';
+  if (hosts.some((h) => RE_YANDEX_HOST.test(h))) return 'yandex';
+  if (hosts.some((h) => RE_VK_HOST.test(h))) return 'vk';
+  if (hosts.some((h) => RE_OK_HOST.test(h))) return 'ok';
+  if (hosts.some((h) => RE_VKPLAY_HOST.test(h))) return 'vkplay';
 
-  if (/(?:^|\s|\.)(?:yandex\.[a-z.]+|playhop\.com|yastatic\.net)(?:$|\/|:|\s)/i.test(combinedHost)) {
-    return 'yandex';
-  }
-
-  if (/(?:^|\s|\.)(?:vk\.com|vk\.ru|vk-apps\.com|mvk\.com)(?:$|\/|:|\s)/i.test(combinedHost)) {
-    return 'vk';
-  }
-
-  if (/(?:^|\s|\.)(?:ok\.ru|odnoklassniki\.ru|mycdn\.me|apiok\.ru)(?:$|\/|:|\s)/i.test(combinedHost)) {
-    return 'ok';
-  }
-
-  if (/(?:^|\s|\.)vkplay\.ru(?:$|\/|:|\s)|\.vkplay\./i.test(combinedHost)) {
+  // Общие параметры appid/app_id проверяются только если домен не определил площадку
+  if ((params.appid || params.app_id) && !params.vk_app_id) {
     return 'vkplay';
   }
 

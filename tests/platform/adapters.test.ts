@@ -114,6 +114,29 @@ describe('YandexAdapter', () => {
     const adapter = new YandexAdapter(ctx);
     await expect(adapter.init()).resolves.toBeUndefined();
     expect(await adapter.showInterstitial()).toEqual({ shown: false });
+
+    // В режиме isDebug при недоступном SDK должен работать sandbox-оверлей
+    const debugCtx = makeContext({ isDebug: true, sandboxMockDelayMs: 5 }).ctx;
+    const debugAdapter = new YandexAdapter(debugCtx);
+    await expect(debugAdapter.init()).resolves.toBeUndefined();
+    expect(await debugAdapter.showInterstitial()).toEqual({ shown: true });
+    expect(await debugAdapter.showRewarded()).toEqual({ rewarded: true });
+  });
+
+  it('не зависает при таймауте загрузки /sdk.js и удаляет зависший script-тег из DOM', async () => {
+    vi.useFakeTimers();
+    try {
+      const { ctx } = makeContext({ isDebug: false });
+      const adapter = new YandexAdapter(ctx);
+      const initPromise = adapter.init();
+      expect(document.head.querySelector('script[src*="/sdk.js"]')).not.toBeNull();
+
+      await vi.advanceTimersByTimeAsync(5001);
+      await initPromise;
+      expect(document.head.querySelector('script[src*="/sdk.js"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('передаёт весь объект mergedData в player.setData без фильтрации полей Slime и работает с рекламой/лидербордами', async () => {
@@ -222,6 +245,22 @@ describe('VkAdapter', () => {
     vkBridgeMock.send.mockResolvedValueOnce({ result: true });
     expect(await adapter.showRewarded()).toEqual({ rewarded: true });
   });
+
+  it('не вызывает VKWebAppInit вне iframe VK и проверяет supportsAsync до эмиссии *_open', async () => {
+    vkBridgeMock.isEmbedded.mockReturnValue(false);
+    vkBridgeMock.supportsAsync.mockResolvedValue(false);
+
+    const { ctx, events } = makeContext({
+      params: { platform: 'vk' },
+      isDebug: false,
+    });
+    const adapter = new VkAdapter(ctx);
+    await adapter.init();
+
+    expect(vkBridgeMock.send).not.toHaveBeenCalledWith('VKWebAppInit');
+    expect(await adapter.showInterstitial()).toEqual({ shown: false });
+    expect(events).toEqual([]);
+  });
 });
 
 describe('OkAdapter', () => {
@@ -308,5 +347,18 @@ describe('VkPlayAdapter', () => {
     expect(await adapter.showInterstitial()).toEqual({ shown: true });
     expect(await adapter.showRewarded()).toEqual({ rewarded: true });
     expect(showAds).toHaveBeenCalledTimes(2);
+  });
+
+  it('не засчитывает rewarded/shown при пустом результате {} от iframeApi.showAds', async () => {
+    const showAds = vi.fn().mockResolvedValue({});
+    (globalThis as Record<string, unknown>).iframeApi = vi.fn().mockResolvedValue({ showAds });
+
+    const { ctx, events } = makeContext({ vkPlayAppId: '999' });
+    const adapter = new VkPlayAdapter(ctx);
+    await adapter.init();
+
+    expect(await adapter.showInterstitial()).toEqual({ shown: false });
+    expect(await adapter.showRewarded()).toEqual({ rewarded: false });
+    expect(events.map((e) => e.event)).not.toContain('rewarded_rewarded');
   });
 });

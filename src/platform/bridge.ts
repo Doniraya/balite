@@ -1,7 +1,7 @@
 import { createPlatformAdapter } from './adapters';
 import { createAudioUnlockController } from './audioUnlock';
 import { detectPlatformId, getAllUrlParams, normalizeLang } from './env';
-import { readLocalSave, writeLocalSave } from './storage';
+import { isPlainRecord, readLocalSave, writeLocalSave } from './storage';
 import type {
   AdapterContext,
   InterstitialResult,
@@ -21,10 +21,6 @@ const DEFAULT_BRIDGE_CONFIG: PlatformBridgeConfig<Record<string, unknown>> = {
   maxStorageBytes: 4000,
   sandboxMockDelayMs: 420,
 };
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 
 function parseDebugFlag(params: Record<string, string>): boolean {
   if (params.debug === undefined) return false;
@@ -50,6 +46,12 @@ export function createPlatformBridge<
   const listeners = new Set<PlatformEventListener>();
 
   const emit = (event: PlatformEventName, payload: Record<string, unknown>): void => {
+    if (event === 'game_api_pause') {
+      audio.setPlatformPaused(true);
+    } else if (event === 'game_api_resume') {
+      audio.setPlatformPaused(false);
+    }
+
     for (const listener of listeners) {
       try {
         listener(event, payload);
@@ -78,6 +80,17 @@ export function createPlatformBridge<
   let adShowing = false;
   let currentLang: SupportedLang = normalizeLang(params.lang);
   let saveQueuePromise: Promise<void> = Promise.resolve();
+  let inMemoryBackup: Partial<TSave> = {};
+
+  const readBackupState = (): Partial<TSave> => {
+    const stored = readLocalSave<TSave>(cfg.localBackupKey, cfg.sanitizeSave);
+    return { ...inMemoryBackup, ...stored };
+  };
+
+  const writeBackupState = (data: Partial<TSave>): void => {
+    inMemoryBackup = { ...data };
+    writeLocalSave(cfg.localBackupKey, data);
+  };
 
   const sanitizeCloudObject = (raw: unknown): Partial<TSave> => {
     if (!isPlainRecord(raw)) return {};
@@ -161,7 +174,8 @@ export function createPlatformBridge<
   };
 
   const loadPlayerData = async (): Promise<Partial<TSave>> => {
-    const localData = readLocalSave<TSave>(cfg.localBackupKey, cfg.sanitizeSave);
+    await saveQueuePromise;
+
     let rawCloud: unknown = {};
     try {
       rawCloud = await adapter.loadPlayerData();
@@ -169,24 +183,25 @@ export function createPlatformBridge<
       rawCloud = {};
     }
 
+    const localData = readBackupState();
     const cloudData = sanitizeCloudObject(rawCloud);
     const merged = (
       cfg.mergeSave ? cfg.mergeSave(localData, cloudData) : { ...localData, ...cloudData }
     ) as Partial<TSave>;
 
-    writeLocalSave(cfg.localBackupKey, merged);
+    writeBackupState(merged);
     return merged;
   };
 
   const savePlayerData = (patch: Partial<TSave>): Promise<boolean> => {
     const run = async (): Promise<boolean> => {
-      const current = readLocalSave<TSave>(cfg.localBackupKey, cfg.sanitizeSave);
+      const current = readBackupState();
       const safePatch = isPlainRecord(patch) ? patch : ({} as Partial<TSave>);
       const merged = (
         cfg.mergeSave ? cfg.mergeSave(current, safePatch) : { ...current, ...safePatch }
       ) as TSave;
 
-      writeLocalSave(cfg.localBackupKey, merged);
+      writeBackupState(merged);
 
       try {
         return await adapter.savePlayerData(merged);
