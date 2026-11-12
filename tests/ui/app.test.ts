@@ -273,6 +273,11 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
       expect(mounted.getState().seed).toBe('RESTORE1');
       expect(root.querySelector('[data-belt="hand"] [data-card-id="hand_a"]')).not.toBeNull();
       expect(mock.bridge.gameplayStart).toHaveBeenCalledTimes(1);
+
+      const readyIdx = mock.callLog.indexOf('ready');
+      const gameplayStartIdx = mock.callLog.indexOf('gameplayStart');
+      expect(readyIdx).toBeGreaterThanOrEqual(0);
+      expect(gameplayStartIdx).toBeGreaterThan(readyIdx);
     });
 
     it('на стартовом deck_select с сохранённым снимком держит кнопку Продолжить забег и восстанавливает по клику', async () => {

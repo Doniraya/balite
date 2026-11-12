@@ -1314,9 +1314,11 @@ export function mountBaliteApp(
     }
 
     selectedCardIds = normalizeSelectedCardIds(runState, [], null);
-    initialized = true;
     render();
+    // Сигнал готовности должен уйти строго до первого вызова gameplayStart()
     bridge.ready();
+    initialized = true;
+    syncGameplayState();
   })();
 
   const destroy = (): void => {
