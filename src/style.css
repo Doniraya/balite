@@ -1,12 +1,12 @@
 :root {
   color-scheme: dark;
-  --bg-outer: #090d16;
+  --bg-outer: #0d1d1b;
   --bg-felt: #142823;
   --bg-felt-deep: #0c1816;
-  --panel-bg: rgba(15, 22, 34, 0.86);
-  --panel-border: rgba(255, 255, 255, 0.14);
-  --text-main: #f3f6fc;
-  --text-muted: #98a6be;
+  --panel-bg: rgba(15, 29, 25, 0.9);
+  --panel-border: rgba(235, 200, 118, 0.28);
+  --text-main: #f3efe6;
+  --text-muted: #a6b7ad;
   --accent-gold: #f5b942;
   --accent-red: #e84a5f;
   --accent-blue: #3a86ff;
@@ -25,170 +25,164 @@ body {
   width: 100%;
   height: 100dvh;
   overflow: hidden;
-  background: radial-gradient(circle at center, #131c2e 0%, var(--bg-outer) 78%);
-  color: var(--text-main);
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  overscroll-behavior: none;
+  touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
-  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  color: var(--text-main);
+  /* Базовый цветной фон на случай задержки первого кадра canvas */
+  background: radial-gradient(circle at 50% 25%, #193832 0%, var(--bg-outer) 78%);
 }
 
 #app {
+  position: relative;
   width: 100%;
   height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
 
+/* Живой фоновый холст на весь экран для десктопа (требование 1.6.2.1) */
+.backdrop-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Портретная сцена 9:16 с безопасными отступами (safe-area) без скролла страницы */
 .stage-portrait {
   position: relative;
+  z-index: 1;
   width: min(100vw, calc(100dvh * 9 / 16));
   height: min(100dvh, calc(100vw * 16 / 9));
   aspect-ratio: 9 / 16;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  --stage-pad: clamp(16px, 3vh, 28px);
   padding:
-    max(var(--stage-pad), env(safe-area-inset-top))
-    max(var(--stage-pad), env(safe-area-inset-right))
-    max(var(--stage-pad), env(safe-area-inset-bottom))
-    max(var(--stage-pad), env(safe-area-inset-left));
+    env(safe-area-inset-top, 0px)
+    env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px)
+    env(safe-area-inset-left, 0px);
   background: radial-gradient(circle at 50% 24%, var(--bg-felt) 0%, var(--bg-felt-deep) 82%);
   border: 1px solid var(--panel-border);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.56);
   overflow: hidden;
 }
 
-.stage-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+.stage-screen-host {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.brand {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.stage-portrait .run-shell {
+  min-height: 0;
 }
 
-.brand-title {
-  margin: 0;
-  font-size: clamp(28px, 5vw, 38px);
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  color: var(--accent-gold);
-  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.45);
+.stage-overlay-host {
+  position: relative;
+  z-index: 50;
 }
 
-.brand-subtitle {
-  margin: 0;
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-.status-chips {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.chip {
+/* Всплывающие поп-апы TracePlayer поверх Пояса 3 */
+.trace-popup {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 26;
   padding: 4px 10px;
   border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  color: var(--text-main);
-}
-
-.hero-card {
-  margin: auto 0;
-  padding: 24px 20px;
-  border-radius: 16px;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.hero-card h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.hero-card p {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.45;
-  color: var(--text-muted);
-}
-
-.debug-panel {
-  padding: 14px;
-  border-radius: 14px;
-  background: rgba(11, 16, 26, 0.9);
-  border: 1px solid rgba(245, 185, 66, 0.35);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.debug-title {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--accent-gold);
-}
-
-.debug-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.debug-btn {
-  min-height: 44px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--panel-border);
-  background: #1d283b;
-  color: var(--text-main);
   font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: #ffffff;
+  background: rgba(15, 28, 24, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.48);
+  pointer-events: none;
+  animation: trace-popup-rise 0.85s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.debug-btn:hover {
-  background: #283751;
+.trace-popup--chips {
+  background: rgba(30, 88, 198, 0.96);
+  border-color: #93c5fd;
 }
 
-.debug-btn:active {
-  transform: translateY(1px);
+.trace-popup--mult {
+  background: rgba(196, 52, 46, 0.96);
+  border-color: #fca5a5;
 }
 
-.debug-log {
-  margin: 0;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.35);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 12px;
-  color: #cfe0ff;
-  white-space: pre-wrap;
-  word-break: break-word;
+.trace-popup--xmult {
+  background: linear-gradient(135deg, #c026d3 0%, #db2777 100%);
+  border-color: #f9a8d4;
 }
 
-.stage-footer {
-  text-align: center;
-  font-size: 12px;
-  color: var(--text-muted);
+.trace-popup--dollars {
+  background: rgba(180, 122, 16, 0.96);
+  border-color: #fde68a;
+  color: #fffbeb;
+}
+
+.trace-popup--shatter,
+.trace-popup--debuff,
+.trace-popup--boss {
+  background: rgba(138, 28, 36, 0.96);
+  border-color: #fda4af;
+}
+
+.trace-popup--level,
+.trace-popup--tag {
+  background: rgba(28, 128, 86, 0.96);
+  border-color: #86efac;
+}
+
+@keyframes trace-popup-rise {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -10%) scale(0.76);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -60%) scale(1.08);
+  }
+  75% {
+    opacity: 1;
+    transform: translate(-50%, -95%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -140%) scale(0.92);
+  }
+}
+
+/* Акцент подсветки триггеров карт и реликвий во время анимации */
+.is-triggering {
+  filter: drop-shadow(0 0 12px rgba(244, 197, 82, 0.85));
+}
+
+.inventory-slot[data-highlighted='true'],
+.hand-card-slot[data-highlighted='true'],
+.play-zone__card.is-highlighted {
+  z-index: 6;
+}
+
+@media (max-width: 540px) {
+  .stage-portrait {
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
 }
