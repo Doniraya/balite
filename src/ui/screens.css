@@ -24,19 +24,29 @@
   max-width: 720px;
   max-height: 1280px;
   margin: 0 auto;
-  padding: 8px;
-  gap: 6px;
+  padding: clamp(5px, 0.75dvh, 8px);
+  gap: clamp(4px, 0.6dvh, 6px);
   box-sizing: border-box;
   overflow: hidden;
   color: var(--screen-text);
   background: radial-gradient(
     circle at 50% 24%,
-    var(--screen-bg-top) 0%,
-    #0e1f19 60%,
-    var(--screen-bg-bottom) 100%
+    rgba(23, 52, 41, 0.72) 0%,
+    rgba(14, 31, 25, 0.78) 60%,
+    rgba(8, 18, 14, 0.86) 100%
   );
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* На фазах без руки карт Арена забирает всё свободное место, а Пояс 4 сжимается под строку с кнопкой Колоды */
+.run-shell--compact-hand,
+.run-shell[data-has-hand='false'] {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.run-shell[data-has-hand='false'][data-empty-hand-belt='true'] {
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .belt {
@@ -44,9 +54,13 @@
   min-height: 0;
   border: 1px solid var(--screen-border);
   border-radius: 12px;
-  background: var(--screen-panel);
-  padding: 6px 8px;
+  background: rgba(12, 26, 21, 0.82);
+  padding: clamp(4px, 0.6dvh, 6px) clamp(6px, 0.8vw, 8px);
   box-sizing: border-box;
+}
+
+.belt--hand.belt--empty {
+  display: none;
 }
 
 /* Базовые доступные тап-цели (минимум 44×44px для мобильной модерации) */
@@ -132,8 +146,8 @@
 
 .hud-grid {
   display: grid;
-  grid-template-columns: 1.1fr 1.25fr 1fr;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.18fr) minmax(0, 1.16fr);
+  gap: clamp(4px, 0.7dvh, 8px);
   align-items: stretch;
   height: 100%;
 }
@@ -142,20 +156,20 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: clamp(6px, 1vw, 12px);
   height: 100%;
-  padding: 0 8px;
+  padding: 0 clamp(4px, 0.8vw, 8px);
 }
 
 .hud-title-bar__brand {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: clamp(2px, 0.4dvh, 4px);
 }
 
 .hud-title-bar__name {
   margin: 0;
-  font-size: 28px;
+  font-size: clamp(20px, min(4.8vw, 3dvh), 28px);
   font-weight: 800;
   letter-spacing: 0.04em;
   color: var(--screen-gold);
@@ -163,7 +177,7 @@
 
 .hud-title-bar__sub {
   margin: 0;
-  font-size: 13px;
+  font-size: clamp(11px, min(2.4vw, 1.45dvh), 13px);
   color: var(--screen-muted);
 }
 
@@ -171,7 +185,7 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 4px;
+  gap: clamp(2px, 0.4dvh, 4px);
   min-width: 0;
 }
 
@@ -179,18 +193,19 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  font-size: 12px;
+  gap: 4px;
+  font-size: clamp(10px, min(2.3vw, 1.35dvh), 12px);
   font-weight: 700;
   color: var(--screen-gold);
 }
 
 .hud-round-pill {
-  padding: 2px 7px;
+  padding: 2px 6px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
   color: var(--screen-text);
-  font-size: 11px;
+  font-size: clamp(9.5px, min(2.1vw, 1.25dvh), 11px);
+  white-space: nowrap;
 }
 
 .hud-boss-btn {
@@ -202,7 +217,7 @@
   width: 100%;
   min-width: 44px;
   min-height: 44px;
-  padding: 6px 8px;
+  padding: clamp(4px, 0.6dvh, 6px) clamp(5px, 0.8dvh, 8px);
   border-radius: 10px;
   border: 1px solid var(--screen-border);
   background: rgba(22, 46, 37, 0.9);
@@ -218,7 +233,7 @@
 }
 
 .hud-boss-btn__title {
-  font-size: 13px;
+  font-size: clamp(11px, min(2.5vw, 1.5dvh), 13px);
   font-weight: 800;
   color: var(--screen-gold);
   white-space: nowrap;
@@ -228,7 +243,7 @@
 }
 
 .hud-boss-btn__desc {
-  font-size: 11px;
+  font-size: clamp(9.5px, min(2.1vw, 1.25dvh), 11px);
   color: var(--screen-muted);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -247,8 +262,9 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 6px;
-  padding: 4px 8px;
+  gap: clamp(2px, 0.45dvh, 6px);
+  min-width: 0;
+  padding: clamp(3px, 0.5dvh, 4px) clamp(5px, 0.8dvh, 8px);
   border-radius: 10px;
   background: rgba(7, 15, 12, 0.72);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -258,11 +274,11 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 6px;
+  gap: 4px;
 }
 
 .hud-score-box__label {
-  font-size: 11px;
+  font-size: clamp(9.5px, min(2.1vw, 1.25dvh), 11px);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--screen-muted);
@@ -271,18 +287,18 @@
 .hud-score-box__numbers {
   display: inline-flex;
   align-items: baseline;
-  gap: 4px;
+  gap: 3px;
   font-variant-numeric: tabular-nums;
 }
 
 .hud-score-box__value {
-  font-size: 20px;
+  font-size: clamp(15px, min(3.4vw, 2dvh), 20px);
   font-weight: 900;
   color: var(--screen-text);
 }
 
 .hud-score-box__target {
-  font-size: 12px;
+  font-size: clamp(10px, min(2.3vw, 1.35dvh), 12px);
   font-weight: 700;
   color: var(--screen-gold);
 }
@@ -291,11 +307,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 4px;
+  min-width: 0;
 }
 
 .hud-hand-row__name {
-  font-size: 14px;
+  font-size: clamp(11px, min(2.6vw, 1.5dvh), 14px);
   font-weight: 800;
   color: var(--screen-text);
   white-space: nowrap;
@@ -305,9 +322,9 @@
 
 .hud-hand-row__level {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: clamp(9.5px, min(2.1vw, 1.25dvh), 11px);
   font-weight: 700;
-  padding: 2px 6px;
+  padding: 1px 5px;
   border-radius: 6px;
   background: rgba(244, 197, 82, 0.16);
   color: var(--screen-gold);
@@ -317,7 +334,7 @@
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 6px;
+  gap: clamp(4px, 0.6dvh, 6px);
 }
 
 .hud-pill {
@@ -325,7 +342,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 3px 6px;
+  padding: clamp(2px, 0.35dvh, 3px) clamp(4px, 0.6dvh, 6px);
   border-radius: 8px;
   font-variant-numeric: tabular-nums;
 }
@@ -339,18 +356,18 @@
 }
 
 .hud-pill__label {
-  font-size: 10px;
+  font-size: clamp(9px, min(2vw, 1.15dvh), 10px);
   opacity: 0.88;
 }
 
 .hud-pill__val {
-  font-size: 17px;
+  font-size: clamp(13px, min(3vw, 1.8dvh), 17px);
   font-weight: 900;
   line-height: 1.1;
 }
 
 .hud-formula__x {
-  font-size: 15px;
+  font-size: clamp(12px, min(2.8vw, 1.6dvh), 15px);
   font-weight: 900;
   color: var(--screen-gold);
 }
@@ -359,13 +376,14 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 6px;
+  gap: clamp(3px, 0.5dvh, 6px);
+  min-width: 0;
 }
 
 .hud-stats-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(2px, 0.4dvh, 4px);
 }
 
 .hud-stat {
@@ -373,30 +391,46 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 4px 2px;
+  min-width: 0;
+  padding: clamp(2px, 0.4dvh, 4px) 2px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.05);
 }
 
 .hud-stat__label {
-  font-size: 10px;
+  font-size: clamp(8.5px, min(2vw, 1.15dvh), 10px);
   color: var(--screen-muted);
+  white-space: nowrap;
 }
 
 .hud-stat__value {
-  font-size: 15px;
+  font-size: clamp(11.5px, min(2.7vw, 1.55dvh), 15px);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .hud-stat__value--gold {
   color: var(--screen-gold);
 }
 
-.hud-buttons-row {
+.hud-buttons-row,
+.hud-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(3px, 0.5dvh, 6px);
+  min-width: 0;
+}
+
+.hud-buttons-row .ui-btn,
+.hud-actions .ui-btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 4px clamp(3px, 0.6vw, 8px);
+  font-size: clamp(9.5px, min(2.2vw, 1.3dvh), 12px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ==================== ПОЯС 2: ИНВЕНТАРЬ ==================== */
@@ -405,7 +439,7 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 6px;
+  gap: clamp(3px, 0.5dvh, 6px);
   overflow: hidden;
 }
 
@@ -413,17 +447,18 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
+  min-height: 34px;
   height: 100%;
   text-align: center;
   color: var(--screen-muted);
-  font-size: 13px;
+  font-size: clamp(11px, min(2.5vw, 1.4dvh), 13px);
 }
 
 .inventory-strips {
   display: grid;
-  grid-template-columns: 1.45fr 1fr;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  gap: clamp(4px, 0.7vw, 8px);
   flex: 1;
   min-height: 0;
 }
@@ -431,10 +466,10 @@
 .inventory-strip {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: clamp(2px, 0.4dvh, 4px);
   min-width: 0;
   min-height: 0;
-  padding: 4px 6px;
+  padding: clamp(3px, 0.45dvh, 4px) clamp(4px, 0.6dvh, 6px);
   border-radius: 10px;
   background: rgba(6, 14, 11, 0.55);
 }
@@ -443,7 +478,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: clamp(10px, min(2.2vw, 1.3dvh), 11px);
   font-weight: 700;
   color: var(--screen-muted);
 }
@@ -456,12 +491,26 @@
 .inventory-strip__items {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: clamp(4px, 0.55dvh, 6px);
   flex: 1;
   min-height: 48px;
+  padding: 2px 0;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
+}
+
+.inventory-slot-placeholder {
+  flex-shrink: 0;
+  width: var(--card-compact-width, 58px);
+  min-width: 44px;
+  min-height: 44px;
+  aspect-ratio: 5 / 7;
+  border-radius: 8px;
+  border: 1.5px dashed rgba(235, 200, 118, 0.22);
+  background: rgba(255, 255, 255, 0.025);
+  box-sizing: border-box;
+  pointer-events: none;
 }
 
 .inventory-slot {
@@ -529,8 +578,8 @@
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 4px;
+  gap: clamp(4px, 0.7dvh, 8px);
+  padding: clamp(2px, 0.4dvh, 4px);
 }
 
 .arena-stage[data-animating='true'] {
@@ -595,7 +644,7 @@
 
 .arena-title {
   margin: 0;
-  font-size: 17px;
+  font-size: clamp(14px, min(3.4vw, 1.9dvh), 17px);
   font-weight: 800;
   color: var(--screen-gold);
 }
@@ -603,8 +652,8 @@
 /* Выбор колоды */
 .deck-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(6px, 0.8dvh, 8px);
 }
 
 .deck-option {
@@ -612,8 +661,8 @@
   flex-direction: column;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 4px;
-  padding: 8px 10px;
+  gap: clamp(3px, 0.5dvh, 4px);
+  padding: clamp(6px, 0.8dvh, 8px) clamp(8px, 1vw, 10px);
   border-radius: 10px;
   border: 1px solid var(--screen-border);
   background: rgba(14, 31, 24, 0.92);
@@ -635,18 +684,18 @@
 }
 
 .deck-option__name {
-  font-size: 14px;
+  font-size: clamp(12.5px, min(2.8vw, 1.6dvh), 14px);
   font-weight: 800;
   color: var(--screen-gold);
 }
 
 .deck-option__status {
-  font-size: 11px;
+  font-size: clamp(10px, min(2.2vw, 1.25dvh), 11px);
   color: var(--screen-muted);
 }
 
 .deck-option__desc {
-  font-size: 12px;
+  font-size: clamp(11px, min(2.4vw, 1.4dvh), 12px);
   color: var(--screen-text);
   opacity: 0.9;
 }
@@ -654,26 +703,26 @@
 .seed-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: clamp(6px, 0.8vw, 8px);
   flex-wrap: wrap;
 }
 
 .seed-bar__label {
-  font-size: 12px;
+  font-size: clamp(11px, min(2.4vw, 1.4dvh), 12px);
   font-weight: 700;
   color: var(--screen-muted);
 }
 
 .seed-bar__input {
   flex: 1;
-  min-width: 130px;
+  min-width: 120px;
   min-height: 44px;
-  padding: 8px 10px;
+  padding: 6px 10px;
   border-radius: 10px;
   border: 1px solid var(--screen-border);
   background: rgba(5, 12, 9, 0.88);
   color: var(--screen-text);
-  font-size: 14px;
+  font-size: clamp(12.5px, min(2.8vw, 1.6dvh), 14px);
   box-sizing: border-box;
 }
 
@@ -690,17 +739,19 @@
 /* Выбор Стража */
 .blinds-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(5px, 0.7dvh, 8px);
   flex: 1;
+  min-height: 0;
 }
 
 .blind-card {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 6px;
-  padding: 8px;
+  gap: clamp(4px, 0.6dvh, 6px);
+  min-width: 0;
+  padding: clamp(5px, 0.8dvh, 8px);
   border-radius: 10px;
   border: 1px solid var(--screen-border);
   background: rgba(13, 29, 23, 0.92);
@@ -717,14 +768,14 @@
 }
 
 .blind-card__status {
-  font-size: 11px;
+  font-size: clamp(9.5px, min(2.1vw, 1.25dvh), 11px);
   font-weight: 800;
   text-transform: uppercase;
   color: var(--screen-gold);
 }
 
 .blind-card__title {
-  font-size: 14px;
+  font-size: clamp(12px, min(2.7vw, 1.55dvh), 14px);
   font-weight: 800;
 }
 
@@ -732,7 +783,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 12px;
+  font-size: clamp(10.5px, min(2.3vw, 1.35dvh), 12px);
   color: var(--screen-muted);
 }
 
@@ -742,7 +793,7 @@
   border-radius: 6px;
   background: rgba(217, 70, 62, 0.2);
   color: #ffc3c3;
-  font-size: 11px;
+  font-size: clamp(9.5px, min(2.1vw, 1.25dvh), 11px);
   font-weight: 700;
 }
 
@@ -756,13 +807,19 @@
   border: 1px dashed rgba(244, 197, 82, 0.45);
   background: rgba(0, 0, 0, 0.24);
   color: var(--screen-text);
+  font-size: clamp(10px, min(2.2vw, 1.3dvh), 12px);
   text-align: left;
 }
 
 .blind-card__actions {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: clamp(4px, 0.6dvh, 6px);
+}
+
+.blind-card__actions .ui-btn {
+  padding: 6px clamp(4px, 0.8vw, 10px);
+  font-size: clamp(10.5px, min(2.3vw, 1.35dvh), 13px);
 }
 
 /* Игровая Play Zone */
@@ -770,13 +827,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: clamp(4px, 0.8vw, 10px);
   flex: 1;
-  min-height: 150px;
-  padding: 10px;
+  min-height: 0;
+  padding: clamp(6px, 0.9dvh, 10px);
   border-radius: 12px;
   border: 1px dashed rgba(244, 197, 82, 0.24);
   background: rgba(6, 16, 12, 0.42);
+}
+
+.play-zone .card-frame {
+  --card-width: clamp(64px, min(14vw, 8.2dvh), 86px);
 }
 
 .play-zone__card {
@@ -801,17 +862,17 @@
 .cashout-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: clamp(4px, 0.6dvh, 6px);
 }
 
 .cashout-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px;
+  padding: clamp(5px, 0.7dvh, 6px) 10px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.05);
-  font-size: 13px;
+  font-size: clamp(11.5px, min(2.5vw, 1.45dvh), 13px);
 }
 
 .cashout-row--zero {
@@ -828,23 +889,24 @@
 /* Лавка (shop) */
 .shop-header-actions {
   display: flex;
-  gap: 8px;
+  gap: clamp(4px, 0.7vw, 8px);
 }
 
 .shop-sections {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: clamp(5px, 0.8dvh, 10px);
 }
 
 .shop-row {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: clamp(3px, 0.5dvh, 5px);
+  min-width: 0;
 }
 
 .shop-row__title {
-  font-size: 11px;
+  font-size: clamp(10px, min(2.2vw, 1.3dvh), 11px);
   font-weight: 700;
   text-transform: uppercase;
   color: var(--screen-muted);
@@ -853,30 +915,56 @@
 .shop-items {
   display: flex;
   align-items: stretch;
-  gap: 8px;
+  gap: clamp(5px, 0.8dvh, 8px);
   overflow-x: auto;
   padding-bottom: 2px;
 }
 
+.shop-offers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(clamp(104px, 24%, 150px), 1fr));
+  gap: clamp(6px, 0.8dvh, 8px);
+  overflow: visible;
+  padding-bottom: 0;
+}
+
+.shop-packs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(6px, 0.8dvh, 8px);
+  overflow: visible;
+  padding-bottom: 0;
+}
+
 .shop-bottom-grid {
   display: grid;
-  grid-template-columns: 1fr 1.6fr;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: clamp(6px, 0.8dvh, 8px);
 }
 
 .shop-slot-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
+  justify-content: flex-start;
+  gap: clamp(3px, 0.45dvh, 5px);
+  width: 100%;
   min-width: 84px;
   min-height: 44px;
-  padding: 6px;
+  padding: clamp(5px, 0.7dvh, 8px);
   border-radius: 10px;
   border: 1px solid var(--screen-border);
   background: rgba(16, 35, 27, 0.9);
   color: var(--screen-text);
+}
+
+.shop-slot-btn .card-frame {
+  --card-width: clamp(82px, min(19vw, 10.6dvh), 116px);
+}
+
+.shop-slot-btn .card-frame__title {
+  font-size: clamp(8.5px, min(2vw, 1.1dvh), 10.5px);
+  line-height: 1.15;
 }
 
 .shop-slot-btn--sold,
@@ -884,33 +972,40 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
+  height: 100%;
   min-width: 84px;
-  min-height: 44px;
+  min-height: 84px;
   padding: 8px;
+  box-sizing: border-box;
   border-radius: 10px;
   border: 1px dashed rgba(255, 255, 255, 0.16);
   color: var(--screen-muted);
-  font-size: 12px;
+  font-size: clamp(11px, min(2.3vw, 1.35dvh), 12px);
+  text-align: center;
 }
 
 .shop-slot-btn__price {
-  font-size: 12px;
+  font-size: clamp(11px, min(2.5vw, 1.45dvh), 13px);
   font-weight: 800;
   color: var(--screen-gold);
 }
 
 .shop-slot-btn__warn {
-  font-size: 10px;
+  font-size: clamp(9px, min(2vw, 1.15dvh), 10px);
+  line-height: 1.15;
+  text-align: center;
   color: #ff9c9c;
 }
 
 /* Бустер (booster) */
 .booster-choices {
   display: flex;
+  flex-wrap: wrap;
   align-items: stretch;
   justify-content: center;
-  gap: 10px;
-  overflow-x: auto;
+  gap: clamp(6px, 0.8dvh, 10px);
+  overflow: visible;
   padding: 4px 0;
 }
 
@@ -919,9 +1014,11 @@
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  min-width: 116px;
-  padding: 8px;
+  gap: clamp(4px, 0.6dvh, 6px);
+  flex: 1 1 96px;
+  min-width: 96px;
+  max-width: 140px;
+  padding: clamp(5px, 0.7dvh, 8px);
   border-radius: 10px;
   border: 1px solid var(--screen-border);
   background: rgba(14, 31, 24, 0.92);
@@ -983,12 +1080,13 @@
 
 /* ==================== ПОЯС 4: РУКА И ДЕЙСТВИЯ ==================== */
 
-.belt--hand {
+.belt--hand,
+.hand-belt {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 8px;
-  overflow: hidden;
+  gap: clamp(4px, 0.6dvh, 6px);
+  overflow: visible;
 }
 
 .target-banner {
@@ -996,14 +1094,14 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 10px;
+  padding: clamp(4px, 0.6dvh, 6px) 10px;
   border-radius: 10px;
   border: 1px solid var(--screen-gold);
   background: rgba(45, 36, 12, 0.92);
 }
 
 .target-banner__text {
-  font-size: 12px;
+  font-size: clamp(11px, min(2.4vw, 1.35dvh), 12px);
   font-weight: 700;
   color: var(--screen-gold);
 }
@@ -1020,15 +1118,20 @@
   text-align: center;
 }
 
-.hand-fan {
+.hand-fan,
+.hand-cards {
   display: flex;
   align-items: flex-end;
   justify-content: center;
   flex: 1;
   min-height: 0;
-  padding: 12px 12px 4px;
-  overflow-x: auto;
-  overflow-y: visible;
+  padding: clamp(24px, 3dvh, 30px) 8px clamp(10px, 1.3dvh, 14px);
+  overflow: visible;
+}
+
+.hand-fan .card-frame,
+.hand-cards .card-frame {
+  --card-width: clamp(60px, min(13.5vw, 8.2dvh), 86px);
 }
 
 .hand-card-slot {
@@ -1037,7 +1140,7 @@
   flex-shrink: 0;
   min-width: 44px;
   min-height: 44px;
-  margin-left: -10px;
+  margin-left: calc(-6px - var(--hand-extra-overlap, 0px));
   transform: translateY(var(--fan-offset-y, 0px)) rotate(var(--fan-angle, 0deg));
   transition: transform 0.14s ease, filter 0.14s ease;
   touch-action: pan-y;
@@ -1047,8 +1150,9 @@
   margin-left: 0;
 }
 
+/* Подъём выделенной карты на -24px задаёт внутренняя .card-frame.is-selected, здесь поднимаем только слой */
 .hand-card-slot.is-selected {
-  transform: translateY(calc(var(--fan-offset-y, 0px) - 18px)) rotate(var(--fan-angle, 0deg));
+  transform: translateY(var(--fan-offset-y, 0px)) rotate(var(--fan-angle, 0deg));
   z-index: 6;
 }
 
@@ -1065,8 +1169,8 @@
 
 .hand-actions {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: clamp(4px, 0.6dvh, 6px);
 }
 
 .hand-actions--deck-only {
@@ -1074,33 +1178,37 @@
   justify-content: flex-end;
 }
 
-@media (max-width: 520px) {
+@media (max-width: 540px), (max-height: 980px) {
   .run-shell {
-    padding: 6px;
+    padding: 5px;
     gap: 4px;
   }
 
   .hud-grid {
     gap: 4px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1.2fr);
   }
 
-  .hud-score-box__value {
-    font-size: 16px;
+  .belt--inventory {
+    --card-compact-width: 44px;
   }
 
-  .hud-pill__val {
-    font-size: 14px;
+  .hand-card-slot {
+    margin-left: calc(-12px - var(--hand-extra-overlap, 0px));
   }
 
+  .hand-actions .ui-btn {
+    padding: 4px 3px;
+    font-size: clamp(9.5px, min(2.1vw, 1.25dvh), 12px);
+  }
+}
+
+@media (max-width: 400px) {
   .blinds-grid {
     grid-template-columns: 1fr;
   }
 
   .hand-actions {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .hand-card-slot {
-    margin-left: -16px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }

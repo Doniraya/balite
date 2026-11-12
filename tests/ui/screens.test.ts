@@ -421,6 +421,9 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       expect(inv.textContent).toContain('2/3');
       expect(inv.querySelector('[data-tag-id="tag_double"]')).not.toBeNull();
       expect(inv.querySelector('[data-tag-id="tag_d_six"]')).not.toBeNull();
+      expect(inv.querySelectorAll('[data-empty-slot="relic"]').length).toBe(4);
+      expect(inv.querySelectorAll('[data-empty-slot="consumable"]').length).toBe(1);
+      expect(inv.querySelectorAll('button button, [role="button"] button').length).toBe(0);
 
       const relicEl = inv.querySelector('[data-relic-uid="ruid_1"]') as HTMLElement;
       expect(relicEl.classList.contains('card-frame--triggering') || relicEl.dataset.highlighted === 'true').toBe(true);
@@ -430,6 +433,14 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       const consEl = inv.querySelector('[data-consumable-uid="cuid_2"]') as HTMLElement;
       consEl.click();
       expect(handlers.onInspectConsumable).toHaveBeenCalledWith('cuid_2', 1);
+
+      // При пустом инвентаре рендерятся все 5 рамок Реликвий и 2 рамки Расходников
+      renderRunView(root, createViewModel(base), handlers);
+      const emptyInv = root.querySelector('[data-belt="inventory"]') as HTMLElement;
+      expect(emptyInv.textContent).toContain('0/5');
+      expect(emptyInv.textContent).toContain('0/2');
+      expect(emptyInv.querySelectorAll('[data-empty-slot="relic"]').length).toBe(5);
+      expect(emptyInv.querySelectorAll('[data-empty-slot="consumable"]').length).toBe(2);
     });
 
     it('поддерживает горизонтальный PointerEvents drag (>10px) для REORDER_RELICS и REORDER_CONSUMABLES без вызова инспектора', () => {
@@ -506,11 +517,16 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       blackDeck.click();
       expect(handlers.onSelectDeck).not.toHaveBeenCalledWith('b_black');
 
-      const seedInput = arena.querySelector('input[type="text"]') as HTMLInputElement;
+      const seedLabel = arena.querySelector('label[for="balite-seed-input"]') as HTMLLabelElement;
+      expect(seedLabel).not.toBeNull();
+      const seedInput = arena.querySelector('input#balite-seed-input') as HTMLInputElement;
+      expect(seedInput).not.toBeNull();
+      expect(seedInput.name).toBe('seed');
       expect(seedInput.value).toBe('MY_SEED');
       seedInput.value = 'NEW_SEED';
       seedInput.dispatchEvent(new Event('input', { bubbles: true }));
       expect(handlers.onSeedInput).toHaveBeenCalledWith('NEW_SEED');
+      expect(arena.querySelectorAll('button button, [role="button"] button').length).toBe(0);
 
       findButtonByText(arena, 'Случайный')?.click();
       expect(handlers.onRandomSeed).toHaveBeenCalledTimes(1);
@@ -609,6 +625,9 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       const handZone = root.querySelector('[data-belt="hand"]') as HTMLElement;
       const handCard1 = handZone.querySelector('[data-card-id="hc_1"]') as HTMLElement;
       expect(handCard1.dataset.highlighted).toBe('true');
+      expect(root.querySelectorAll('button button, [role="button"] button').length).toBe(0);
+      expect(handZone.querySelectorAll('.hand-card-slot button').length).toBe(0);
+      expect(refs.arenaEl.querySelectorAll('.play-zone__card button').length).toBe(0);
 
       expect(findButtonByText(handZone, 'Сыграть')?.disabled).toBe(true);
       expect(findButtonByText(handZone, 'Сбросить')?.disabled).toBe(true);
@@ -854,7 +873,12 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       renderRunView(root, createViewModel(state), handlers);
 
       const arena = root.querySelector('[data-belt="arena"]') as HTMLElement;
+      expect(arena.querySelectorAll('button button, [role="button"] button').length).toBe(0);
+      expect(arena.querySelectorAll('.card-frame__price-badge').length).toBe(0);
+
       const offer1 = arena.querySelector('[data-offer-uid="off_1"]') as HTMLElement;
+      expect(offer1.querySelectorAll('button').length).toBe(0);
+      expect(offer1.textContent?.match(/4 з\./g)?.length).toBe(1);
       offer1.click();
       expect(handlers.onInspectOffer).toHaveBeenCalledWith(state.shop!.offers[0]);
 
@@ -862,15 +886,17 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       expect(offer2.textContent).toContain('Продано');
 
       const voucherEl = arena.querySelector('[data-charter-id="v_clearance_sale"]') as HTMLElement;
+      expect(voucherEl.textContent?.match(/10 з\./g)?.length).toBe(1);
       voucherEl.click();
       expect(handlers.onInspectCharter).toHaveBeenCalledWith('v_clearance_sale', 10);
 
       const packEl = arena.querySelector('[data-pack-uid="pack_1"]') as HTMLElement;
+      expect(packEl.textContent?.match(/4 з\./g)?.length).toBe(1);
       packEl.click();
       expect(handlers.onInspectPack).toHaveBeenCalledWith(state.shop!.packs[0]);
 
       const freePackEl = arena.querySelector('[data-pack-uid="pack_free"]') as HTMLElement;
-      expect(freePackEl.textContent).toContain('Бесплатно');
+      expect(freePackEl.textContent?.match(/Бесплатно/g)?.length).toBe(1);
       expect(freePackEl.textContent).not.toContain('0 з.');
 
       findButtonByText(arena, 'Обновить (2 з.)')?.click();
@@ -1089,8 +1115,13 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
           const html = root.innerHTML;
           const visibleText = root.textContent ?? '';
 
+          expect(root.querySelectorAll('button button, [role="button"] button').length).toBe(0);
           expect(html).not.toMatch(/<a\b|href=|https?:\/\//i);
           expect(visibleText).not.toMatch(/\{[a-zA-Z0-9_]+\}/);
+
+          const shell = root.querySelector('.run-shell') as HTMLElement;
+          const expectedHasHand = phase === 'playing';
+          expect(shell.dataset.hasHand).toBe(expectedHasHand ? 'true' : 'false');
 
           for (const pattern of patterns) {
             expect(visibleText, `Найдено запрещённое слово (${lang}, ${phase}): ${pattern}`).not.toMatch(
@@ -1103,17 +1134,21 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       expect(BOSS_DEFINITIONS.bl_hook.reward).toBeGreaterThan(0);
     });
 
-    it('screens.css не содержит :hover и гарантирует min-width/min-height >= 44px для кнопок и интерактивных слотов', async () => {
+    it('screens.css и style.css не содержат :hover, сжимают Пояс 4 без руки, просвечивают фон и гарантируют тап-зоны >= 44px', async () => {
       const fsModule = 'node:fs';
       const { readFileSync } = (await import(/* @vite-ignore */ fsModule)) as {
         readFileSync: (file: string, encoding: 'utf8') => string;
       };
-      const css = readFileSync('src/ui/screens.css', 'utf8');
-      expect(css.length).toBeGreaterThan(100);
-      expect(css).toContain('18fr 18fr 32fr 32fr');
-      expect(css).not.toMatch(/:hover\b/);
-      expect(css).toMatch(/min-height:\s*(?:44|4[5-9]|[5-9]\d)px/);
-      expect(css).toMatch(/min-width:\s*(?:44|4[5-9]|[5-9]\d)px/);
+      const screensCss = readFileSync('src/ui/screens.css', 'utf8');
+      const styleCss = readFileSync('src/style.css', 'utf8');
+      expect(screensCss.length).toBeGreaterThan(100);
+      expect(screensCss).toContain('18fr 18fr 32fr 32fr');
+      expect(screensCss).toContain('auto auto minmax(0, 1fr) auto');
+      expect(screensCss).not.toMatch(/:hover\b/);
+      expect(screensCss).toMatch(/min-height:\s*(?:44|4[5-9]|[5-9]\d)px/);
+      expect(screensCss).toMatch(/min-width:\s*(?:44|4[5-9]|[5-9]\d)px/);
+      expect(styleCss).not.toMatch(/:hover\b/);
+      expect(styleCss).toMatch(/\.stage-portrait[\s\S]*rgba\(\s*16\s*,\s*40\s*,\s*34\s*,\s*0\.\d+\s*\)/);
     });
   });
 });

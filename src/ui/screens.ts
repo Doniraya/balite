@@ -328,7 +328,7 @@ function resolveDropIndex(
   dx: number,
   startRect: DOMRect,
 ): number {
-  const children = Array.from(containerEl.children);
+  const children = Array.from(containerEl.children).slice(0, total);
   const measured = children.map((child) => child.getBoundingClientRect());
   const hasRealLayout =
     startRect.width > 0 && measured.some((rect) => rect.width > 0);
@@ -716,7 +716,7 @@ function renderHudBelt(
 
   statsRow.append(handsStat, discardsStat, goldStat);
 
-  const btnRow = createEl('div', 'hud-buttons-row');
+  const btnRow = createEl('div', 'hud-buttons-row hud-actions');
   btnRow.append(
     createButton(
       translator.t('ui.actions.handReference'),
@@ -760,6 +760,7 @@ function renderInventoryBelt(ctx: RenderContext): HTMLElement {
   const strips = createEl('div', 'inventory-strips');
 
   // Лента Реликвий
+  const maxRelics = getEffectiveMaxRelics(state);
   const relicStrip = createEl('div', 'inventory-strip');
   const relicHead = createEl('div', 'inventory-strip__head');
   relicHead.append(
@@ -769,7 +770,7 @@ function renderInventoryBelt(ctx: RenderContext): HTMLElement {
       'inventory-strip__count',
       translator.t('ui.hud.slotsCount', {
         count: state.relics.length,
-        max: getEffectiveMaxRelics(state),
+        max: maxRelics,
       }),
     ),
   );
@@ -786,12 +787,13 @@ function renderInventoryBelt(ctx: RenderContext): HTMLElement {
       slot.dataset.highlighted = 'true';
     }
 
+    // Передаём interactive: false, чтобы не вкладывать кнопку внутрь слота с role="button"
     const frame = renderEntityCardFrame({
       kind: 'relic',
       relic,
       translator,
       compact: true,
-      interactive: true,
+      interactive: false,
       triggering: isHighlighted,
     });
     slot.append(frame);
@@ -817,9 +819,19 @@ function renderInventoryBelt(ctx: RenderContext): HTMLElement {
 
     relicItemsEl.append(slot);
   });
+
+  // Контурные заглушки для свободных слотов Реликвий, чтобы игрок видел ёмкость панели
+  const emptyRelicCount = Math.max(0, maxRelics - state.relics.length);
+  for (let i = 0; i < emptyRelicCount; i += 1) {
+    const placeholder = createEl('div', 'inventory-slot-placeholder');
+    placeholder.setAttribute('aria-hidden', 'true');
+    placeholder.dataset.emptySlot = 'relic';
+    relicItemsEl.append(placeholder);
+  }
   relicStrip.append(relicHead, relicItemsEl);
 
   // Лента Расходников
+  const maxConsumables = getEffectiveMaxConsumables(state);
   const consStrip = createEl('div', 'inventory-strip');
   const consHead = createEl('div', 'inventory-strip__head');
   consHead.append(
@@ -829,7 +841,7 @@ function renderInventoryBelt(ctx: RenderContext): HTMLElement {
       'inventory-strip__count',
       translator.t('ui.hud.slotsCount', {
         count: state.consumables.length,
-        max: getEffectiveMaxConsumables(state),
+        max: maxConsumables,
       }),
     ),
   );
@@ -843,12 +855,13 @@ function renderInventoryBelt(ctx: RenderContext): HTMLElement {
     slot.dataset.consumableUid = consumable.uid;
     slot.dataset.index = String(index);
 
+    // Передаём interactive: false, чтобы не вкладывать кнопку внутрь слота с role="button"
     const frame = renderEntityCardFrame({
       kind: 'consumable',
       consumable,
       translator,
       compact: true,
-      interactive: true,
+      interactive: false,
       selected: isTargeting,
     });
     slot.append(frame);
@@ -877,6 +890,15 @@ function renderInventoryBelt(ctx: RenderContext): HTMLElement {
 
     consItemsEl.append(slot);
   });
+
+  // Контурные заглушки для свободных слотов Расходников
+  const emptyConsumableCount = Math.max(0, maxConsumables - state.consumables.length);
+  for (let i = 0; i < emptyConsumableCount; i += 1) {
+    const placeholder = createEl('div', 'inventory-slot-placeholder');
+    placeholder.setAttribute('aria-hidden', 'true');
+    placeholder.dataset.emptySlot = 'consumable';
+    consItemsEl.append(placeholder);
+  }
   consStrip.append(consHead, consItemsEl);
   strips.append(relicStrip, consStrip);
   beltEl.append(strips);
@@ -946,11 +968,14 @@ function renderDeckSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void {
 
   const seedBar = createEl('div', 'seed-bar');
   const seedLabel = createEl('label', 'seed-bar__label', translator.t('ui.deckSelect.seedLabel'));
+  seedLabel.htmlFor = 'balite-seed-input';
   const seedInput = createEl('input', 'seed-bar__input');
+  seedInput.id = 'balite-seed-input';
+  seedInput.name = 'seed';
   seedInput.type = 'text';
+  seedInput.autocomplete = 'off';
   seedInput.value = vm.seedInput;
   seedInput.placeholder = translator.t('ui.deckSelect.seedPlaceholder');
-  seedInput.setAttribute('aria-label', translator.t('ui.deckSelect.seedLabel'));
   seedInput.addEventListener('input', () => handlers.onSeedInput(seedInput.value));
 
   const randomBtn = createButton(
@@ -1097,12 +1122,13 @@ function renderPlayingArena(ctx: RenderContext, arenaEl: HTMLElement): void {
       slot.dataset.shattered = 'true';
     }
 
+    // Слот сам обрабатывает нажатие при !isAnimating, поэтому внутри card-frame кнопка не нужна
     const frame = renderPlayingCardFrame({
       card,
       translator: vm.translator,
       triggering: highlighted,
       disabled: shattered,
-      interactive: !vm.isAnimating,
+      interactive: false,
     });
     slot.append(frame);
     cleanups.push(attachCardTilt(frame));
@@ -1111,6 +1137,12 @@ function renderPlayingArena(ctx: RenderContext, arenaEl: HTMLElement): void {
       slot.setAttribute('role', 'button');
       slot.tabIndex = 0;
       slot.addEventListener('click', () => handlers.onInspectPlayingCard(card));
+      slot.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          handlers.onInspectPlayingCard(card);
+        }
+      });
     }
 
     playZone.append(slot);
@@ -1215,7 +1247,7 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
   // Полка товаров
   const shelfRow = createEl('div', 'shop-row');
   shelfRow.append(createEl('span', 'shop-row__title', translator.t('ui.shop.shelfTitle')));
-  const shelfItems = createEl('div', 'shop-items');
+  const shelfItems = createEl('div', 'shop-items shop-offers-grid');
 
   for (const offer of shop.offers) {
     if (offer.sold) {
@@ -1231,16 +1263,15 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
     slotBtn.type = 'button';
     slotBtn.dataset.offerUid = offer.uid;
 
+    // Не передаём price/free и interactive: кнопка-обёртка уже кликабельна и выводит цену снизу
     let frame: HTMLElement;
     if (offer.kind === 'relic') {
       frame = renderEntityCardFrame({
         kind: 'relic',
         relic: offer.relic,
         translator,
-        price: offer.cost,
-        free: offer.cost === 0,
-        compact: true,
-        interactive: true,
+        compact: false,
+        interactive: false,
         disabled: !affordable,
       });
     } else if (offer.kind === 'consumable') {
@@ -1248,18 +1279,16 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
         kind: 'consumable',
         consumable: offer.consumable,
         translator,
-        price: offer.cost,
-        free: offer.cost === 0,
-        compact: true,
-        interactive: true,
+        compact: false,
+        interactive: false,
         disabled: !affordable,
       });
     } else {
       frame = renderPlayingCardFrame({
         card: offer.card,
         translator,
-        compact: true,
-        interactive: true,
+        compact: false,
+        interactive: false,
         disabled: !affordable,
       });
     }
@@ -1297,10 +1326,8 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
       kind: 'charter',
       charterId: voucher.charterId,
       translator,
-      price: voucher.cost,
-      free: voucher.cost === 0,
-      compact: true,
-      interactive: true,
+      compact: false,
+      interactive: false,
       disabled: !affordable,
     });
     cleanups.push(attachCardTilt(frame));
@@ -1325,7 +1352,7 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
 
   const packsRow = createEl('div', 'shop-row');
   packsRow.append(createEl('span', 'shop-row__title', translator.t('ui.shop.packsTitle')));
-  const packsList = createEl('div', 'shop-items');
+  const packsList = createEl('div', 'shop-items shop-packs-grid');
   for (const pack of shop.packs) {
     if (pack.purchased) {
       const soldPack = createEl('div', 'shop-slot-btn--sold', translator.t('ui.shop.sold'));
@@ -1343,10 +1370,8 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
       packType: pack.type,
       packSize: pack.size,
       translator,
-      price: pack.cost,
-      free: pack.cost === 0,
-      compact: true,
-      interactive: true,
+      compact: false,
+      interactive: false,
       disabled: !affordable,
     });
     cleanups.push(attachCardTilt(frame));
@@ -1416,6 +1441,7 @@ function renderBoosterArena(ctx: RenderContext, arenaEl: HTMLElement): void {
         relic: choice.relic,
         translator,
         compact: true,
+        interactive: false,
         disabled: choice.picked,
       });
       nameText = translator.getRelicText(choice.relic.id).name;
@@ -1430,6 +1456,7 @@ function renderBoosterArena(ctx: RenderContext, arenaEl: HTMLElement): void {
         consumable: choice.consumable,
         translator,
         compact: true,
+        interactive: false,
         disabled: choice.picked,
       });
       nameText = translator.getConsumableText(choice.consumable.id).name;
@@ -1443,6 +1470,7 @@ function renderBoosterArena(ctx: RenderContext, arenaEl: HTMLElement): void {
         card: choice.card,
         translator,
         compact: true,
+        interactive: false,
         disabled: choice.picked,
       });
       nameText = frame.getAttribute('aria-label') ?? '';
@@ -1708,7 +1736,7 @@ function isPlayHandBlocked(
 function renderHandBelt(ctx: RenderContext): HTMLElement {
   const { vm, handlers, cardById, cleanups } = ctx;
   const { state, translator } = vm;
-  const beltEl = createEl('section', 'belt belt--hand');
+  const beltEl = createEl('section', 'belt belt--hand hand-belt');
   beltEl.dataset.belt = 'hand';
 
   const isBoosterHand =
@@ -1736,6 +1764,8 @@ function renderHandBelt(ctx: RenderContext): HTMLElement {
         ),
       );
       beltEl.append(actions);
+    } else {
+      beltEl.classList.add('belt--empty');
     }
     return beltEl;
   }
@@ -1750,8 +1780,17 @@ function renderHandBelt(ctx: RenderContext): HTMLElement {
   }
 
   const handIds = isBoosterHand ? state.booster!.drawnHandCardIds : state.handIds;
-  const fanEl = createEl('div', 'hand-fan');
+  const fanEl = createEl('div', 'hand-fan hand-cards');
   const midIndex = (handIds.length - 1) / 2;
+  const isDenseHand = handIds.length > 8;
+  const angleStep = isDenseHand ? 1.2 : 1.7;
+  const arcFactor = isDenseHand ? 0.55 : 0.85;
+  // Адаптивное перекрытие карт, чтобы 8–10+ карт веера помещались без горизонтального и вертикального скроллбаров
+  const extraOverlapPx =
+    handIds.length <= 6
+      ? 0
+      : Math.min(34, (handIds.length - 6) * 4 + Math.max(0, handIds.length - 10) * 2);
+  fanEl.style.setProperty('--hand-extra-overlap', `${extraOverlapPx}px`);
 
   handIds.forEach((cardId, index) => {
     const card = cardById.get(cardId);
@@ -1760,8 +1799,8 @@ function renderHandBelt(ctx: RenderContext): HTMLElement {
     const selected = vm.selectedCardIds.includes(cardId);
     const highlighted = vm.highlightedHandCardId === cardId;
     const offsetFromCenter = index - midIndex;
-    const angleDeg = offsetFromCenter * 1.8;
-    const arcY = Math.abs(offsetFromCenter) * Math.abs(offsetFromCenter) * 0.9;
+    const angleDeg = offsetFromCenter * angleStep;
+    const arcY = Math.abs(offsetFromCenter) * Math.abs(offsetFromCenter) * arcFactor;
 
     const slot = createEl(
       'div',
@@ -1769,6 +1808,7 @@ function renderHandBelt(ctx: RenderContext): HTMLElement {
     );
     slot.setAttribute('role', 'button');
     slot.tabIndex = 0;
+    slot.setAttribute('aria-pressed', String(selected));
     slot.dataset.cardId = cardId;
     slot.dataset.zone = 'hand';
     slot.dataset.index = String(index);
@@ -1778,12 +1818,13 @@ function renderHandBelt(ctx: RenderContext): HTMLElement {
     slot.style.setProperty('--fan-angle', `${angleDeg.toFixed(2)}deg`);
     slot.style.setProperty('--fan-offset-y', `${arcY.toFixed(1)}px`);
 
+    // Слот сам является интерактивной картой руки, поэтому card-frame рендерим с interactive: false
     const frame = renderPlayingCardFrame({
       card,
       translator,
       selected,
       triggering: highlighted,
-      interactive: true,
+      interactive: false,
     });
     slot.append(frame);
     cleanups.push(attachCardTilt(frame));
@@ -1901,13 +1942,27 @@ export function renderRunView(
 
   root.replaceChildren();
 
-  const shell = createEl('div', 'run-shell');
+  const isBoosterHand =
+    vm.state.phase === 'booster' &&
+    vm.state.booster !== null &&
+    vm.state.booster.drawnHandCardIds.length > 0;
+  const hasHandCards = vm.state.phase === 'playing' || isBoosterHand;
+
+  const shell = createEl(
+    'div',
+    `run-shell ${hasHandCards ? '' : 'run-shell--compact-hand'}`.trim(),
+  );
   shell.dataset.phase = vm.state.phase;
+  shell.dataset.hasHand = hasHandCards ? 'true' : 'false';
 
   const hud = renderHudBelt(ctx);
   const inventoryBelt = renderInventoryBelt(ctx);
   const arena = renderArenaBelt(ctx);
   const handBelt = renderHandBelt(ctx);
+
+  if (handBelt.childElementCount === 0) {
+    shell.dataset.emptyHandBelt = 'true';
+  }
 
   shell.append(hud.beltEl, inventoryBelt, arena.beltEl, handBelt);
   root.append(shell);
