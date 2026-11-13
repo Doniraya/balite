@@ -1,4 +1,10 @@
-import type { GameSettings, TraceEvent } from '../engine/types';
+import {
+  CELESTIAL_IDS,
+  RUNE_IDS,
+  type ConsumableId,
+  type GameSettings,
+  type TraceEvent,
+} from '../engine/types';
 import type { AudioUnlockController } from '../platform/types';
 
 /**
@@ -21,6 +27,7 @@ export interface BaliteAudioController {
   getSettings(): BaliteAudioSettings;
   isMuted(): boolean;
   playButton(): void;
+  playCardHover(): void;
   playCardSelect(): void;
   playCardDeselect(): void;
   playCardDeal(): void;
@@ -28,6 +35,9 @@ export interface BaliteAudioController {
   playMultHit(comboIndex?: number): void;
   playRelicTrigger(comboIndex?: number): void;
   playGoldDelta(positive?: boolean): void;
+  playBoosterOpen(): void;
+  playConsumable(kind?: 'celestial' | 'scroll' | 'rune'): void;
+  playFlameThreshold(): void;
   playShatter(): void;
   playDebuff(): void;
   playBuy(): void;
@@ -36,6 +46,32 @@ export interface BaliteAudioController {
   playLose(): void;
   playForTraceEvent(event: TraceEvent, comboIndex: number): void;
   dispose(): void;
+}
+
+/** Внутренние хуки расширения контроллера для гибридного аудиодвижка. */
+export interface BaliteAudioHooks {
+  /** Если возвращает true, процедурный фоновый эмбиент подавляется (например, играет BGM-сэмпл). */
+  readonly suppressAmbient?: () => boolean;
+  /** Вызывается сразу после ленивого создания графа Web Audio. */
+  readonly onContextReady?: (nodes: {
+    readonly ctx: AudioContext;
+    readonly masterGain: GainNode;
+    readonly sfxGain: GainNode;
+    readonly musicGain: GainNode;
+  }) => void;
+  /** Вызывается при каждом обновлении состояния громкости/мьюта/разблокировки. */
+  readonly onSyncState?: (state: {
+    readonly ctx: AudioContext | null;
+    readonly masterGain: GainNode | null;
+    readonly sfxGain: GainNode | null;
+    readonly musicGain: GainNode | null;
+    readonly muted: boolean;
+    readonly unlocked: boolean;
+    readonly sfxVolume: number;
+    readonly musicVolume: number;
+  }) => void;
+  /** Вызывается при освобождении ресурсов. */
+  readonly onDispose?: () => void;
 }
 
 type AudioContextConstructor = new () => AudioContext;
@@ -74,6 +110,140 @@ const DEFAULT_SFX_VOLUME = 0.8;
 const DEFAULT_MUSIC_VOLUME = 0.4;
 const MAX_COMBO_STEP = 24;
 const MIN_POSITIVE_VALUE = 0.0001;
+const CELESTIAL_ID_SET = new Set<string>(CELESTIAL_IDS);
+const RUNE_ID_SET = new Set<string>(RUNE_IDS);
+
+/**
+ * Определяет звуковую категорию расходника по его идентификатору.
+ */
+export function resolveConsumableSoundKind(
+  consumableId: ConsumableId,
+): 'celestial' | 'scroll' | 'rune' {
+  if (CELESTIAL_ID_SET.has(consumableId)) return 'celestial';
+  if (RUNE_ID_SET.has(consumableId)) return 'rune';
+  return 'scroll';
+}
+
+/**
+ * Маршрутизирует событие трассировки на методы BaliteAudioController (общий для synth и hybrid).
+ */
+export function dispatchTraceAudioEvent(
+  audio: BaliteAudioController,
+  event: TraceEvent,
+  comboIndex: number,
+): void {
+  switch (event.type) {
+    case 'CARD_TRIGGER': {
+      if (event.xMult !== undefined && event.xMult !== 1) {
+        audio.playMultHit(comboIndex);
+      } else if (event.multDelta && event.multDelta !== 0) {
+        audio.playMultHit(comboIndex);
+      } else if (event.dollarsDelta && event.dollarsDelta !== 0) {
+        audio.playGoldDelta(event.dollarsDelta > 0);
+      } else {
+        audio.playChipHit(comboIndex);
+      }
+      return;
+    }
+    case 'HAND_CARD_TRIGGER':
+    case 'RELIC_TRIGGER': {
+      if (event.xMult !== undefined && event.xMult !== 1) {
+        audio.playMultHit(comboIndex);
+      } else if (event.multDelta && event.multDelta !== 0) {
+        audio.playMultHit(comboIndex);
+      } else if (event.dollarsDelta && event.dollarsDelta !== 0) {
+        audio.playGoldDelta(event.dollarsDelta > 0);
+      } else if ('chipsDelta' in event && event.chipsDelta && event.chipsDelta !== 0) {
+        audio.playChipHit(comboIndex);
+      } else {
+        audio.playRelicTrigger(comboIndex);
+      }
+      return;
+    }
+    case 'CONSUMABLE_TRIGGER': {
+      if (event.locKey === 'consumable_nope') {
+        audio.playDebuff();
+      } else {
+        audio.playConsumable(resolveConsumableSoundKind(event.consumableId));
+      }
+      return;
+    }
+    case 'SCORE_UPDATE': {
+      if (event.handScore > 0) {
+        audio.playChipHit(comboIndex);
+      }
+      return;
+    }
+    case 'DOLLAR_DELTA': {
+      if (event.delta !== 0) {
+        audio.playGoldDelta(event.delta > 0);
+      }
+      return;
+    }
+    case 'CARD_SHATTER': {
+      audio.playShatter();
+      return;
+    }
+    case 'CARD_ENHANCEMENT_STRIPPED': {
+      audio.playDebuff();
+      return;
+    }
+    case 'RELIC_DESTROYED': {
+      if (event.reason === 'sold') {
+        audio.playGoldDelta(true);
+      } else {
+        audio.playShatter();
+      }
+      return;
+    }
+    case 'CARD_DEBUFFED':
+    case 'HAND_DEBUFFED': {
+      audio.playDebuff();
+      return;
+    }
+    case 'BOSS_TRIGGER': {
+      if (event.locKey === 'boss_disabled') {
+        audio.playRelicTrigger(comboIndex);
+      } else {
+        audio.playDebuff();
+      }
+      return;
+    }
+    case 'TAG_TRIGGER': {
+      if (event.locKey === 'tag_fizzled') {
+        audio.playDebuff();
+      } else {
+        audio.playRelicTrigger(comboIndex);
+      }
+      return;
+    }
+    case 'HAND_LEVEL_UP': {
+      audio.playRelicTrigger(comboIndex);
+      return;
+    }
+    case 'BLIND_DEFEATED':
+    case 'RUN_WON': {
+      audio.playWin();
+      return;
+    }
+    case 'RUN_LOST': {
+      audio.playLose();
+      return;
+    }
+    case 'PHASE_CHANGED': {
+      if (event.to === 'playing' || event.to === 'shop' || event.to === 'booster') {
+        audio.playCardDeal();
+      } else if (event.to === 'blind_select' || event.to === 'cashout') {
+        audio.playButton();
+      }
+      return;
+    }
+    default: {
+      const exhaustive: never = event;
+      return exhaustive;
+    }
+  }
+}
 
 function clampUnit(value: number | undefined, fallback: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -434,6 +604,7 @@ function scheduleNoiseBurst(
 export function createBaliteAudio(
   platformAudio?: AudioUnlockController,
   initialSettings?: Partial<Pick<GameSettings, 'soundEnabled' | 'sfxVolume' | 'musicVolume'>>,
+  hooks?: BaliteAudioHooks,
 ): BaliteAudioController {
   let soundEnabled =
     typeof initialSettings?.soundEnabled === 'boolean'
@@ -483,7 +654,8 @@ export function createBaliteAudio(
       !ctx ||
       !musicGain ||
       isMuted() ||
-      musicVolume <= 0
+      musicVolume <= 0 ||
+      hooks?.suppressAmbient?.()
     ) {
       return;
     }
@@ -497,21 +669,28 @@ export function createBaliteAudio(
       const oscillators: OscillatorNode[] = [];
       const nodes: AudioNode[] = [];
 
-      // Мягкий астральный аккорд (A2 + E3) с медленным дыханием громкости через LFO
+      // Мягкий средневеково-алхимический аккорд (A2 + E3 + C4) с плавным входом и тёплой фильтрацией
       const mixGain = ctx.createGain();
-      setParamImmediate(mixGain.gain, 0.08, now);
+      setParamImmediate(mixGain.gain, MIN_POSITIVE_VALUE, now);
+      if (typeof mixGain.gain.linearRampToValueAtTime === 'function') {
+        mixGain.gain.linearRampToValueAtTime(0.055, now + 1.2);
+      } else {
+        mixGain.gain.value = 0.055;
+      }
       nodes.push(mixGain);
 
       let destinationForPad: AudioNode = mixGain;
+      let filterRef: BiquadFilterNode | null = null;
       if (typeof ctx.createBiquadFilter === 'function') {
         const filter = ctx.createBiquadFilter();
         filter.type = 'lowpass';
         if (filter.frequency) {
-          filter.frequency.value = 380;
+          filter.frequency.value = 340;
         }
         filter.connect(mixGain);
         nodes.push(filter);
         destinationForPad = filter;
+        filterRef = filter;
       }
 
       mixGain.connect(musicGain);
@@ -519,6 +698,7 @@ export function createBaliteAudio(
       const droneSpecs: ReadonlyArray<{ type: OscillatorType; freq: number }> = [
         { type: 'sine', freq: 110 },
         { type: 'triangle', freq: 164.81 },
+        { type: 'sine', freq: 261.63 },
       ];
 
       for (const drone of droneSpecs) {
@@ -539,11 +719,17 @@ export function createBaliteAudio(
       const lfoDepth = ctx.createGain();
       lfo.type = 'sine';
       if (lfo.frequency) {
-        lfo.frequency.value = 0.11;
+        lfo.frequency.value = 0.075;
       }
-      setParamImmediate(lfoDepth.gain, 0.025, now);
-      lfo.connect(lfoDepth);
-      lfoDepth.connect(mixGain.gain);
+      if (filterRef && filterRef.frequency) {
+        setParamImmediate(lfoDepth.gain, 95, now);
+        lfo.connect(lfoDepth);
+        lfoDepth.connect(filterRef.frequency);
+      } else {
+        setParamImmediate(lfoDepth.gain, 0.015, now);
+        lfo.connect(lfoDepth);
+        lfoDepth.connect(mixGain.gain);
+      }
       if (typeof lfo.start === 'function') {
         lfo.start(now);
       }
@@ -579,15 +765,23 @@ export function createBaliteAudio(
       setParamImmediate(musicGain.gain, muted ? 0 : musicVolume, now);
     }
 
-    if (muted || !unlocked || musicVolume <= 0 || disposed) {
+    if (muted || !unlocked || musicVolume <= 0 || disposed || hooks?.suppressAmbient?.()) {
       stopAmbient();
-      return;
-    }
-
-    if (ctx) {
+    } else if (ctx) {
       tryResumeContext(ctx);
       startAmbient();
     }
+
+    hooks?.onSyncState?.({
+      ctx,
+      masterGain,
+      sfxGain,
+      musicGain,
+      muted,
+      unlocked,
+      sfxVolume,
+      musicVolume,
+    });
   };
 
   const ensureContext = (): AudioContext | null => {
@@ -622,6 +816,12 @@ export function createBaliteAudio(
       cachedNoiseBuffer = createNoiseBuffer(created);
 
       syncOutputState();
+      hooks?.onContextReady?.({
+        ctx: created,
+        masterGain: master,
+        sfxGain: sfx,
+        musicGain: music,
+      });
       platformAudio?.registerContext(created);
       return created;
     } catch {
@@ -695,11 +895,35 @@ export function createBaliteAudio(
     if (!out) return;
     scheduleTone(out.ctx, out.dest, {
       type: 'triangle',
-      startFreq: 560,
+      startFreq: 520,
       endFreq: 260,
       duration: 0.045,
-      attack: 0.002,
-      gain: 0.16,
+      attack: 0.005,
+      gain: 0.14,
+      filterType: 'lowpass',
+      filterStartFreq: 1600,
+      filterEndFreq: 900,
+    });
+  };
+
+  const playCardHover = (): void => {
+    const out = prepareSfx();
+    if (!out) return;
+    scheduleTone(out.ctx, out.dest, {
+      type: 'sine',
+      startFreq: 680,
+      endFreq: 820,
+      duration: 0.028,
+      attack: 0.004,
+      gain: 0.055,
+    });
+    scheduleNoiseBurst(out.ctx, out.dest, cachedNoiseBuffer, {
+      duration: 0.022,
+      gain: 0.035,
+      filterType: 'bandpass',
+      startFreq: 2200,
+      endFreq: 3000,
+      q: 1.6,
     });
   };
 
@@ -867,23 +1091,107 @@ export function createBaliteAudio(
     });
   };
 
+  const playBoosterOpen = (): void => {
+    const out = prepareSfx();
+    if (!out) return;
+    scheduleNoiseBurst(out.ctx, out.dest, cachedNoiseBuffer, {
+      duration: 0.11,
+      gain: 0.09,
+      filterType: 'bandpass',
+      startFreq: 950,
+      endFreq: 2600,
+      q: 1.3,
+    });
+    scheduleNoteSequence(out.ctx, out.dest, [392, 493.88, 587.33, 783.99], {
+      stepSec: 0.045,
+      duration: 0.13,
+      lastDuration: 0.24,
+      gain: 0.13,
+      type: 'triangle',
+      lastType: 'sine',
+      attack: 0.008,
+    });
+  };
+
+  const playConsumable = (kind: 'celestial' | 'scroll' | 'rune' = 'scroll'): void => {
+    const out = prepareSfx();
+    if (!out) return;
+    if (kind === 'celestial') {
+      scheduleNoteSequence(out.ctx, out.dest, [880, 1174.66, 1567.98], {
+        stepSec: 0.055,
+        duration: 0.16,
+        lastDuration: 0.3,
+        gain: 0.13,
+        type: 'sine',
+        attack: 0.008,
+      });
+      return;
+    }
+    if (kind === 'rune') {
+      scheduleNoteSequence(out.ctx, out.dest, [293.66, 440, 659.25, 880], {
+        stepSec: 0.05,
+        duration: 0.15,
+        lastDuration: 0.28,
+        gain: 0.13,
+        type: 'triangle',
+        lastType: 'sine',
+        attack: 0.01,
+        filterStartFreq: 1800,
+        filterEndFreq: 750,
+      });
+      return;
+    }
+    scheduleNoteSequence(out.ctx, out.dest, [523.25, 659.25, 783.99, 987.77], {
+      stepSec: 0.045,
+      duration: 0.13,
+      lastDuration: 0.25,
+      gain: 0.135,
+      type: 'sine',
+      attack: 0.007,
+    });
+  };
+
+  const playFlameThreshold = (): void => {
+    const out = prepareSfx();
+    if (!out) return;
+    scheduleNoiseBurst(out.ctx, out.dest, cachedNoiseBuffer, {
+      duration: 0.24,
+      gain: 0.11,
+      filterType: 'lowpass',
+      startFreq: 320,
+      endFreq: 1450,
+      q: 1.1,
+    });
+    scheduleTone(out.ctx, out.dest, {
+      type: 'triangle',
+      startFreq: 329.63,
+      endFreq: 659.25,
+      duration: 0.22,
+      attack: 0.012,
+      gain: 0.14,
+      filterType: 'lowpass',
+      filterStartFreq: 1600,
+      filterEndFreq: 950,
+    });
+  };
+
   const playShatter = (): void => {
     const out = prepareSfx();
     if (!out) return;
     scheduleNoiseBurst(out.ctx, out.dest, cachedNoiseBuffer, {
       duration: 0.22,
-      gain: 0.2,
+      gain: 0.18,
       filterType: 'highpass',
-      startFreq: 2200,
-      endFreq: 900,
+      startFreq: 2100,
+      endFreq: 850,
     });
     scheduleTone(out.ctx, out.dest, {
       type: 'triangle',
       startFreq: 1760,
       endFreq: 740,
       duration: 0.16,
-      attack: 0.002,
-      gain: 0.14,
+      attack: 0.005,
+      gain: 0.13,
     });
     scheduleTone(out.ctx, out.dest, {
       type: 'sine',
@@ -891,8 +1199,8 @@ export function createBaliteAudio(
       endFreq: 1046,
       delay: 0.025,
       duration: 0.17,
-      attack: 0.002,
-      gain: 0.11,
+      attack: 0.005,
+      gain: 0.1,
     });
   };
 
@@ -983,131 +1291,10 @@ export function createBaliteAudio(
     });
   };
 
-  const playScoringEvent = (
-    comboIndex: number,
-    values: {
-      readonly chipsDelta?: number;
-      readonly multDelta?: number;
-      readonly xMult?: number;
-      readonly dollarsDelta?: number;
-    },
-    fallback: () => void,
-  ): void => {
-    if (
-      (values.xMult !== undefined && values.xMult !== 1) ||
-      (values.multDelta !== undefined && values.multDelta !== 0)
-    ) {
-      playMultHit(comboIndex);
-    } else if (values.chipsDelta !== undefined && values.chipsDelta !== 0) {
-      playChipHit(comboIndex);
-    } else if (values.dollarsDelta !== undefined && values.dollarsDelta !== 0) {
-      playGoldDelta(values.dollarsDelta > 0);
-    } else {
-      fallback();
-    }
-  };
-
-  const playForTraceEvent = (event: TraceEvent, comboIndex: number): void => {
-    switch (event.type) {
-      case 'CARD_TRIGGER': {
-        playScoringEvent(comboIndex, event, () => playChipHit(comboIndex));
-        return;
-      }
-      case 'HAND_CARD_TRIGGER':
-      case 'RELIC_TRIGGER': {
-        playScoringEvent(comboIndex, event, () => playRelicTrigger(comboIndex));
-        return;
-      }
-      case 'CONSUMABLE_TRIGGER': {
-        if (event.locKey === 'consumable_nope') {
-          playDebuff();
-        } else if (event.xMult !== undefined && event.xMult !== 1) {
-          playMultHit(comboIndex);
-        } else {
-          playRelicTrigger(comboIndex);
-        }
-        return;
-      }
-      case 'SCORE_UPDATE': {
-        if (event.handScore > 0) {
-          playChipHit(comboIndex);
-        }
-        return;
-      }
-      case 'DOLLAR_DELTA': {
-        if (event.delta !== 0) {
-          playGoldDelta(event.delta > 0);
-        }
-        return;
-      }
-      case 'CARD_SHATTER': {
-        playShatter();
-        return;
-      }
-      case 'CARD_ENHANCEMENT_STRIPPED': {
-        playDebuff();
-        return;
-      }
-      case 'RELIC_DESTROYED': {
-        if (event.reason === 'sold') {
-          playGoldDelta(true);
-        } else {
-          playShatter();
-        }
-        return;
-      }
-      case 'CARD_DEBUFFED':
-      case 'HAND_DEBUFFED': {
-        playDebuff();
-        return;
-      }
-      case 'BOSS_TRIGGER': {
-        if (event.locKey === 'boss_disabled') {
-          playRelicTrigger(comboIndex);
-        } else {
-          playDebuff();
-        }
-        return;
-      }
-      case 'TAG_TRIGGER': {
-        if (event.locKey === 'tag_fizzled') {
-          playDebuff();
-        } else {
-          playRelicTrigger(comboIndex);
-        }
-        return;
-      }
-      case 'HAND_LEVEL_UP': {
-        playRelicTrigger(comboIndex);
-        return;
-      }
-      case 'BLIND_DEFEATED':
-      case 'RUN_WON': {
-        playWin();
-        return;
-      }
-      case 'RUN_LOST': {
-        playLose();
-        return;
-      }
-      case 'PHASE_CHANGED': {
-        if (event.to === 'playing' || event.to === 'shop' || event.to === 'booster') {
-          playCardDeal();
-        } else if (event.to === 'blind_select' || event.to === 'cashout') {
-          playButton();
-        }
-        return;
-      }
-      default: {
-        const exhaustive: never = event;
-        return exhaustive;
-      }
-    }
-  };
-
   const dispose = (): void => {
     if (disposed) return;
     disposed = true;
+    hooks?.onDispose?.();
 
     if (unsubscribeMute) {
       unsubscribeMute();
@@ -1142,12 +1329,13 @@ export function createBaliteAudio(
     cachedNoiseBuffer = null;
   };
 
-  return {
+  const controller: BaliteAudioController = {
     unlock,
     setSettings,
     getSettings,
     isMuted,
     playButton,
+    playCardHover,
     playCardSelect,
     playCardDeselect,
     playCardDeal,
@@ -1155,13 +1343,19 @@ export function createBaliteAudio(
     playMultHit,
     playRelicTrigger,
     playGoldDelta,
+    playBoosterOpen,
+    playConsumable,
+    playFlameThreshold,
     playShatter,
     playDebuff,
     playBuy,
     playReroll,
     playWin,
     playLose,
-    playForTraceEvent,
+    playForTraceEvent: (event, comboIndex) =>
+      dispatchTraceAudioEvent(controller, event, comboIndex),
     dispose,
   };
+
+  return controller;
 }

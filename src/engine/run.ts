@@ -33,6 +33,7 @@ import type {
   DispatchResult,
   DollarDeltaSource,
   GameCommand,
+  HandSortMode,
   PackOffer,
   PlayingCard,
   RelicEffectResult,
@@ -169,7 +170,81 @@ function clearStaleForcedSelections(state: RunState): RunState {
 }
 
 /**
- * Добирает карты из drawPileIds в handIds до текущего эффективного размера руки.
+ * Сортирует список идентификаторов карт в руке по выбранному режиму ('rank' | 'suit').
+ */
+function sortHandIdsByMode(
+  deck: readonly PlayingCard[],
+  ids: readonly string[],
+  mode: HandSortMode = 'rank',
+): string[] {
+  if (ids.length <= 1) {
+    return [...ids];
+  }
+  const cardMap = buildCardLookup(deck);
+  const cards = ids
+    .map((id) => cardMap.get(id))
+    .filter((card): card is PlayingCard => card !== undefined);
+  const sorted = mode === 'rank' ? sortCardsByRank(cards) : sortCardsBySuit(cards);
+  return sorted.map((card) => card.id);
+}
+
+/**
+ * Сортирует временную руку открытого бустера по текущему режиму сортировки.
+ */
+function sortBoosterHandIfPresent(state: RunState): RunState {
+  if (!state.booster || state.booster.drawnHandCardIds.length === 0) {
+    return state;
+  }
+  return {
+    ...state,
+    booster: {
+      ...state.booster,
+      drawnHandCardIds: sortHandIdsByMode(
+        state.deck,
+        state.booster.drawnHandCardIds,
+        state.handSortMode ?? 'rank',
+      ),
+    },
+  };
+}
+
+/**
+ * При изменении состава или характеристик карт после применения расходника
+ * синхронизирует порядок карт в активной руке или руке бустера.
+ */
+function sortAffectedHandAfterConsumable(
+  prevState: RunState,
+  nextState: RunState,
+): RunState {
+  const mode = nextState.handSortMode ?? 'rank';
+  let work = nextState;
+
+  if (
+    work.phase === 'playing' &&
+    work.handIds.length > 0 &&
+    (work.handIds !== prevState.handIds || work.deck !== prevState.deck)
+  ) {
+    work = {
+      ...work,
+      handIds: sortHandIdsByMode(work.deck, work.handIds, mode),
+    };
+  }
+
+  if (
+    work.booster &&
+    work.booster.drawnHandCardIds.length > 0 &&
+    (work.booster.drawnHandCardIds !== prevState.booster?.drawnHandCardIds ||
+      work.deck !== prevState.deck)
+  ) {
+    work = sortBoosterHandIfPresent(work);
+  }
+
+  return work;
+}
+
+/**
+ * Добирает карты из drawPileIds в handIds до текущего эффективного размера руки
+ * и автоматически сортирует руку по текущему handSortMode.
  */
 function replenishHandFromDrawPile(state: RunState): RunState {
   const effectiveHandSize = Math.max(0, state.handSize + state.tempHandSizeBonus);
@@ -185,7 +260,11 @@ function replenishHandFromDrawPile(state: RunState): RunState {
   return {
     ...state,
     drawPileIds: rest,
-    handIds: [...state.handIds, ...drawn],
+    handIds: sortHandIdsByMode(
+      state.deck,
+      [...state.handIds, ...drawn],
+      state.handSortMode ?? 'rank',
+    ),
   };
 }
 
@@ -361,11 +440,11 @@ function openTagCharmBoosters(
   const boosterRes = generateBoosterState(work, packOffer, true);
   events.push(...boosterRes.events);
 
-  const nextState: RunState = {
+  const nextState = sortBoosterHandIfPresent({
     ...boosterRes.nextState,
     phase: 'booster',
     previousPhase: returnPhase,
-  };
+  });
 
   if (state.phase !== 'booster') {
     events.push({
@@ -395,11 +474,11 @@ function closeOrAdvanceBooster(state: RunState, events: TraceEvent[]): RunState 
       true,
     );
     events.push(...boosterRes.events);
-    return {
+    return sortBoosterHandIfPresent({
       ...boosterRes.nextState,
       phase: 'booster',
       previousPhase: returnPhase,
-    };
+    });
   }
 
   const targetPhase = state.previousPhase ?? 'shop';
@@ -510,6 +589,7 @@ function advanceToNextBlindOrAnte(state: RunState): RunState {
     return {
       ...state,
       currentBlindIndex: nextIndex,
+      anteBlinds: updateBlindSlotStatus(state.anteBlinds, nextIndex, 'current'),
       targetScore: state.anteBlinds[nextIndex].targetScore,
       score: 0,
       handsPlayedThisRound: {},
@@ -595,6 +675,7 @@ export function createInitialRunState(deckId: DeckId, seed: string): RunState {
     deck,
     drawPileIds,
     handIds: [],
+    handSortMode: 'rank',
     discardPileIds: [],
     relics: [],
     consumables: [],
@@ -612,8 +693,13 @@ export function createInitialRunState(deckId: DeckId, seed: string): RunState {
     nextCardUid: deck.length + 1,
     stats: {
       bestHandScore: 0,
+      bestHandType: null,
       handsPlayed: 0,
+      cardsPlayed: 0,
       discardsUsed: 0,
+      cardsDiscarded: 0,
+      cardsPurchased: 0,
+      rerollsCount: 0,
       cardsDestroyed: 0,
       dollarsSpent: 0,
     },
@@ -713,7 +799,8 @@ function handleSkipBlind(state: RunState): DispatchResult {
   }
 
   const nextIndex = (state.currentBlindIndex + 1) as 0 | 1 | 2;
-  const nextBlinds = updateBlindSlotStatus(state.anteBlinds, state.currentBlindIndex, 'skipped');
+  const skippedBlinds = updateBlindSlotStatus(state.anteBlinds, state.currentBlindIndex, 'skipped');
+  const nextBlinds = updateBlindSlotStatus(skippedBlinds, nextIndex, 'current');
 
   const prepared: RunState = {
     ...state,
@@ -948,6 +1035,7 @@ function handleDiscardCards(state: RunState, cardIds: readonly string[]): Dispat
     stats: {
       ...state.stats,
       discardsUsed: state.stats.discardsUsed + 1,
+      cardsDiscarded: state.stats.cardsDiscarded + cardIds.length,
     },
   };
   work = clearStaleForcedSelections(work);
@@ -1013,23 +1101,16 @@ function handleDiscardCards(state: RunState, cardIds: readonly string[]): Dispat
 }
 
 /**
- * Сортирует текущую руку (в бою или временную руку бустера) по рангу или по масти.
+ * Сортирует текущую руку (в бою или временную руку бустера) по рангу или по масти
+ * и сохраняет выбранный режим сортировки в состоянии забега.
  */
 function handleSortHand(state: RunState, by: 'rank' | 'suit'): DispatchResult {
-  const cardMap = buildCardLookup(state.deck);
-  const sortIds = (ids: readonly string[]): string[] => {
-    const cards = ids
-      .map((id) => cardMap.get(id))
-      .filter((card): card is PlayingCard => card !== undefined);
-    const sorted = by === 'rank' ? sortCardsByRank(cards) : sortCardsBySuit(cards);
-    return sorted.map((card) => card.id);
-  };
-
   if (state.phase === 'playing') {
     return {
       nextState: {
         ...state,
-        handIds: sortIds(state.handIds),
+        handSortMode: by,
+        handIds: sortHandIdsByMode(state.deck, state.handIds, by),
       },
       events: [],
     };
@@ -1039,9 +1120,10 @@ function handleSortHand(state: RunState, by: 'rank' | 'suit'): DispatchResult {
     return {
       nextState: {
         ...state,
+        handSortMode: by,
         booster: {
           ...state.booster,
-          drawnHandCardIds: sortIds(state.booster.drawnHandCardIds),
+          drawnHandCardIds: sortHandIdsByMode(state.deck, state.booster.drawnHandCardIds, by),
         },
       },
       events: [],
@@ -1139,10 +1221,14 @@ function handleUseConsumable(
     return { nextState: state, events: [] };
   }
 
-  return applyConsumable(state, consumable, targetCardIds, {
+  const applied = applyConsumable(state, consumable, targetCardIds, {
     relicRegistry: getRelicDefinition,
     resolveRelicTarget,
   });
+  return {
+    nextState: sortAffectedHandAfterConsumable(state, applied.nextState),
+    events: applied.events,
+  };
 }
 
 /**
@@ -1258,6 +1344,19 @@ function markShopOfferSold(shop: ShopState, offerUid: string): ShopState {
 }
 
 /**
+ * Увеличивает счётчик купленных в магазине карт/предметов текущего забега.
+ */
+function incrementCardsPurchased(state: RunState): RunState {
+  return {
+    ...state,
+    stats: {
+      ...state.stats,
+      cardsPurchased: state.stats.cardsPurchased + 1,
+    },
+  };
+}
+
+/**
  * Покупает товар на верхней полке магазина (Реликвия, Расходник или Карта).
  */
 function handleBuyShopOffer(
@@ -1285,11 +1384,11 @@ function handleBuyShopOffer(
     }
 
     let work = applyDollarChange(state, -offer.cost, 'shop', events);
-    work = {
+    work = incrementCardsPurchased({
       ...work,
       shop: markShopOfferSold(work.shop!, offerUid),
       relics: [...work.relics, offer.relic],
-    };
+    });
     return { nextState: work, events };
   }
 
@@ -1308,12 +1407,16 @@ function handleBuyShopOffer(
         return { nextState: state, events: [] };
       }
 
-      const applied = applyConsumable(paidState, offer.consumable, [], {
+      const paidPurchased = incrementCardsPurchased(paidState);
+      const applied = applyConsumable(paidPurchased, offer.consumable, [], {
         relicRegistry: getRelicDefinition,
         resolveRelicTarget,
       });
       events.push(...applied.events);
-      return { nextState: applied.nextState, events };
+      return {
+        nextState: sortAffectedHandAfterConsumable(paidPurchased, applied.nextState),
+        events,
+      };
     }
 
     if (
@@ -1324,22 +1427,22 @@ function handleBuyShopOffer(
     }
 
     let work = applyDollarChange(state, -offer.cost, 'shop', events);
-    work = {
+    work = incrementCardsPurchased({
       ...work,
       shop: markShopOfferSold(work.shop!, offerUid),
       consumables: [...work.consumables, offer.consumable],
-    };
+    });
     return { nextState: work, events };
   }
 
   // Игральная карта добавляется в колоду и активирует хук onCardAdded (j_hologram)
   let work = applyDollarChange(state, -offer.cost, 'shop', events);
-  work = {
+  work = incrementCardsPurchased({
     ...work,
     shop: markShopOfferSold(work.shop!, offerUid),
     deck: [...work.deck, offer.card],
     drawPileIds: [...work.drawPileIds, offer.card.id],
-  };
+  });
 
   work = runRelicHookSweep(
     work,
@@ -1373,13 +1476,13 @@ function handleBuyCharter(state: RunState): DispatchResult {
 
   const events: TraceEvent[] = [];
   let work = applyDollarChange(state, -voucher.cost, 'shop', events);
-  work = {
+  work = incrementCardsPurchased({
     ...work,
     shop: {
       ...work.shop!,
       voucher: { ...voucher, sold: true },
     },
-  };
+  });
   work = redeemCharter(work, voucher.charterId);
 
   return { nextState: work, events };
@@ -1399,7 +1502,7 @@ function handleOpenPack(state: RunState, packUid: string): DispatchResult {
 
   const events: TraceEvent[] = [];
   let work = applyDollarChange(state, -pack.cost, 'shop', events);
-  work = {
+  work = incrementCardsPurchased({
     ...work,
     shop: {
       ...work.shop!,
@@ -1407,16 +1510,16 @@ function handleOpenPack(state: RunState, packUid: string): DispatchResult {
         item.uid === packUid ? { ...item, purchased: true } : item,
       ),
     },
-  };
+  });
 
   const generated = generateBoosterState(work, pack, false);
   events.push(...generated.events);
 
-  work = {
+  work = sortBoosterHandIfPresent({
     ...generated.nextState,
     phase: 'booster',
     previousPhase: 'shop',
-  };
+  });
   events.push({
     type: 'PHASE_CHANGED',
     from: 'shop',
@@ -1510,7 +1613,10 @@ function handlePickBoosterItem(
       resolveRelicTarget,
     });
     events.push(...applied.events);
-    work = markBoosterChoicePicked(applied.nextState, choiceUid);
+    work = markBoosterChoicePicked(
+      sortAffectedHandAfterConsumable(work, applied.nextState),
+      choiceUid,
+    );
   }
 
   if (work.booster && work.booster.remainingPicks === 0) {

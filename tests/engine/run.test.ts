@@ -12,6 +12,8 @@ import {
   resolveRelicTarget,
   restoreRunStateFromSnapshot,
   serializeRunStateToSnapshot,
+  sortCardsByRank,
+  sortCardsBySuit,
   type DispatchResult,
   type GameCommand,
   type PlayingCard,
@@ -107,12 +109,13 @@ describe('Конечный автомат забега Balite (Stage 5B: run.ts 
     expect(bossSkipAttempt.nextState.currentBlindIndex).toBe(2);
     expect(bossSkipAttempt.events).toEqual([]);
 
-    // Пропуск Малого Стража даёт tag_double
+    // Пропуск Малого Стража даёт tag_double и активирует Старшего Стража
     const step1 = dispatch(withDoubleAndCharmTags, { type: 'SKIP_BLIND' });
     expect(step1.nextState.phase).toBe('blind_select');
     expect(step1.nextState.currentBlindIndex).toBe(1);
     expect(step1.nextState.skipsCount).toBe(1);
     expect(step1.nextState.anteBlinds[0].status).toBe('skipped');
+    expect(step1.nextState.anteBlinds[1].status).toBe('current');
     expect(step1.nextState.pendingTags).toContain('tag_double');
 
     // Пропуск Старшего Стража с tag_charm активирует tag_double -> 2 бесплатных Мега-набора Свитков подряд
@@ -377,6 +380,8 @@ describe('Конечный автомат забега Balite (Stage 5B: run.ts 
     expect(toBig.nextState.phase).toBe('blind_select');
     expect(toBig.nextState.ante).toBe(1);
     expect(toBig.nextState.currentBlindIndex).toBe(1);
+    expect(toBig.nextState.anteBlinds[0].status).toBe('defeated');
+    expect(toBig.nextState.anteBlinds[1].status).toBe('current');
 
     const bigPlay = dispatch(toBig.nextState, { type: 'SELECT_BLIND' }).nextState;
     const bigWin = dispatch(bigPlay, {
@@ -762,7 +767,7 @@ describe('Конечный автомат забега Balite (Stage 5B: run.ts 
 
     for (const event of collectedEvents) {
       if ('locKey' in event && event.locKey !== undefined) {
-        expect(validKeys.has(event.locKey), `Неизвестный locKey: ${event.locKey}`).toBe(true);
+      expect(validKeys.has(event.locKey), `Неизвестный locKey: ${event.locKey}`).toBe(true);
         const params = 'locParams' in event ? event.locParams : undefined;
         const ruText = formatMessage('ru', event.locKey, params);
         const enText = formatMessage('en', event.locKey, params);
@@ -772,5 +777,131 @@ describe('Конечный автомат забега Balite (Stage 5B: run.ts 
         expect(enText).not.toMatch(/\{[^}]+\}/);
       }
     }
+  });
+
+  it('отслеживает cardsPlayed, cardsDiscarded, cardsPurchased, rerollsCount и bestHandType на протяжении забега', () => {
+    const base = createInitialRunState('b_red', 'END_SCREEN_STATS');
+    const selected = dispatch(base, { type: 'SELECT_BLIND' }).nextState;
+
+    // Сброс 3 карт увеличивает cardsDiscarded на 3 и discardsUsed на 1
+    const discardIds = selected.handIds.slice(0, 3);
+    const afterDiscard = dispatch(selected, {
+      type: 'DISCARD_CARDS',
+      cardIds: discardIds,
+    }).nextState;
+    expect(afterDiscard.stats.discardsUsed).toBe(1);
+    expect(afterDiscard.stats.cardsDiscarded).toBe(3);
+
+    // Розыгрыш 2 карт увеличивает cardsPlayed на 2 и фиксирует bestHandType
+    const playIds = afterDiscard.handIds.slice(0, 2);
+    const afterPlay = dispatch(afterDiscard, {
+      type: 'PLAY_HAND',
+      cardIds: playIds,
+    }).nextState;
+    expect(afterPlay.stats.handsPlayed).toBe(1);
+    expect(afterPlay.stats.cardsPlayed).toBe(2);
+    expect(afterPlay.stats.bestHandType).toBe(afterPlay.lastPlayedHandType);
+
+    // Переходим к магазину с запасом золота и проверяем переброс + покупку товара, грамоты и пака
+    const richShop = dispatch(
+      { ...afterPlay, score: afterPlay.targetScore, dollars: 100 },
+      { type: 'PLAY_HAND', cardIds: afterPlay.handIds.slice(0, 1) },
+    ).nextState;
+    expect(richShop.phase).toBe('cashout');
+
+    const inShop = dispatch(richShop, { type: 'CLAIM_CASHOUT' }).nextState;
+    expect(inShop.phase).toBe('shop');
+    expect(inShop.stats.cardsPlayed).toBe(3);
+
+    const afterReroll = dispatch(inShop, { type: 'REROLL_SHOP' }).nextState;
+    expect(afterReroll.stats.rerollsCount).toBe(1);
+
+    const firstOffer = afterReroll.shop!.offers[0]!;
+    const afterBuyOffer = dispatch(afterReroll, {
+      type: 'BUY_SHOP_OFFER',
+      offerUid: firstOffer.uid,
+    }).nextState;
+    expect(afterBuyOffer.stats.cardsPurchased).toBe(1);
+
+    const afterBuyCharter = dispatch(afterBuyOffer, { type: 'BUY_CHARTER' }).nextState;
+    expect(afterBuyCharter.stats.cardsPurchased).toBe(2);
+
+    const firstPack = afterBuyCharter.shop!.packs[0]!;
+    const afterOpenPack = dispatch(afterBuyCharter, {
+      type: 'OPEN_PACK',
+      packUid: firstPack.uid,
+    }).nextState;
+    expect(afterOpenPack.stats.cardsPurchased).toBe(3);
+  });
+
+  it('автосортирует руку при раздаче (rank по умолчанию), после PLAY_HAND, DISCARD_CARDS и в режиме suit', () => {
+    const initial = createInitialRunState('b_red', 'AUTO_SORT_HAND');
+    expect(initial.handSortMode).toBe('rank');
+
+    // При выборе Стража карты сразу приходят отсортированными по достоинству
+    const dealt = dispatch(initial, { type: 'SELECT_BLIND' }).nextState;
+    const mapRank = new Map(dealt.deck.map((c) => [c.id, c]));
+    const expectedDealtOrder = sortCardsByRank(
+      dealt.handIds.map((id) => mapRank.get(id)!),
+    ).map((c) => c.id);
+    expect(dealt.handIds).toEqual(expectedDealtOrder);
+
+    // После розыгрыша руки оставшиеся и добранные карты отсортированы по достоинству
+    const afterPlayRank = dispatch(dealt, {
+      type: 'PLAY_HAND',
+      cardIds: dealt.handIds.slice(0, 2),
+    }).nextState;
+    const expectedAfterPlayRank = sortCardsByRank(
+      afterPlayRank.handIds.map((id) => new Map(afterPlayRank.deck.map((c) => [c.id, c])).get(id)!),
+    ).map((c) => c.id);
+    expect(afterPlayRank.handIds).toEqual(expectedAfterPlayRank);
+
+    // Переключаем сортировку на масть -> запоминается handSortMode: 'suit'
+    const sortedBySuit = dispatch(afterPlayRank, {
+      type: 'SORT_HAND',
+      by: 'suit',
+    }).nextState;
+    expect(sortedBySuit.handSortMode).toBe('suit');
+
+    // После сброса и добора новых карт рука автоматически отсортирована по масти
+    const afterDiscardSuit = dispatch(sortedBySuit, {
+      type: 'DISCARD_CARDS',
+      cardIds: sortedBySuit.handIds.slice(0, 3),
+    }).nextState;
+    expect(afterDiscardSuit.handSortMode).toBe('suit');
+    const suitMap = new Map(afterDiscardSuit.deck.map((c) => [c.id, c]));
+    const expectedAfterDiscardSuit = sortCardsBySuit(
+      afterDiscardSuit.handIds.map((id) => suitMap.get(id)!),
+    ).map((c) => c.id);
+    expect(afterDiscardSuit.handIds).toEqual(expectedAfterDiscardSuit);
+
+    // После ещё одного розыгрыша порядок по масти также сохраняется
+    const afterPlaySuit = dispatch(afterDiscardSuit, {
+      type: 'PLAY_HAND',
+      cardIds: afterDiscardSuit.handIds.slice(0, 2),
+    }).nextState;
+    const suitMap2 = new Map(afterPlaySuit.deck.map((c) => [c.id, c]));
+    const expectedAfterPlaySuit = sortCardsBySuit(
+      afterPlaySuit.handIds.map((id) => suitMap2.get(id)!),
+    ).map((c) => c.id);
+    expect(afterPlaySuit.handIds).toEqual(expectedAfterPlaySuit);
+
+    // При добавлении карт в руку от расходника (c_cryptid) рука также остаётся отсортированной
+    const withCryptid: RunState = {
+      ...afterPlaySuit,
+      consumables: [createConsumableInstance('c_cryptid', 'cons_cryptid', 'base')],
+    };
+    const targetCardId = withCryptid.handIds[0]!;
+    const afterCryptid = dispatch(withCryptid, {
+      type: 'USE_CONSUMABLE',
+      consumableUid: 'cons_cryptid',
+      targetCardIds: [targetCardId],
+    }).nextState;
+    expect(afterCryptid.handIds.length).toBe(withCryptid.handIds.length + 2);
+    const suitMap3 = new Map(afterCryptid.deck.map((c) => [c.id, c]));
+    const expectedAfterCryptid = sortCardsBySuit(
+      afterCryptid.handIds.map((id) => suitMap3.get(id)!),
+    ).map((c) => c.id);
+    expect(afterCryptid.handIds).toEqual(expectedAfterCryptid);
   });
 });

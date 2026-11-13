@@ -179,8 +179,13 @@ function createOversizedRunState(): RunState {
     nextCardUid: 53,
     stats: {
       bestHandScore: 2150,
+      bestHandType: 'Flush',
       handsPlayed: 11,
+      cardsPlayed: 42,
       discardsUsed: 5,
+      cardsDiscarded: 15,
+      cardsPurchased: 6,
+      rerollsCount: 2,
       cardsDestroyed: 0,
       dollarsSpent: 20,
     },
@@ -291,10 +296,18 @@ describe('baliteSave и createBalitePlatformBridge', () => {
     });
     await bridge.init();
 
+    const initialMeta = createInitialMetaSave(5000, { unlockedDecks: ['b_red', 'b_blue'] });
     const meta = {
-      ...createInitialMetaSave(5000, { unlockedDecks: ['b_red', 'b_blue'] }),
+      ...initialMeta,
       discoveredRelics: ['j_constellation', 'j_hologram'] as const,
-      stats: { runsStarted: 3, runsWon: 1, highestAnte: 8, bestHandScore: 15000, totalHandsPlayed: 70 },
+      stats: {
+        ...initialMeta.stats,
+        runsStarted: 3,
+        runsWon: 1,
+        highestAnte: 8,
+        bestHandScore: 15000,
+        totalHandsPlayed: 70,
+      },
     };
     const runState = createOversizedRunState();
     const snapshot = serializeRunStateToSnapshot(runState, 11, 5000);

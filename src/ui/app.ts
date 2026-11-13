@@ -1,21 +1,39 @@
-import { createBaliteAudio, type BaliteAudioController } from '../audio/synth';
+import { createHybridBaliteAudio } from '../audio/hybridAudio';
+import type { BaliteAudioController } from '../audio/synth';
 import {
+  CELESTIAL_IDS,
   DECK_IDS,
+  RUNE_IDS,
+  SCROLL_IDS,
+  advanceActiveRunTracker,
+  applyDebugCardMods,
+  applyDebugVoucher,
   canUseConsumable,
   createInitialMetaSave,
   createInitialRunState,
   createPlayerSaveData,
   dispatch,
+  forceDebugBlindWin,
+  forceDebugRunEnd,
+  giveDebugConsumable,
+  giveDebugRelic,
   restoreRunStateFromSnapshot,
   serializeRunStateToSnapshot,
+  setDebugResources,
+  updateMetaStatsFromRunState,
 } from '../engine';
 import type {
+  AnimationSpeed,
   BossId,
   CharterId,
   ConsumableId,
+  ConsumableKind,
+  CrtMode,
   DeckId,
+  Edition,
   GameCommand,
   GameSettings,
+  HandType,
   MetaSave,
   PackOffer,
   PlayerSaveData,
@@ -27,7 +45,14 @@ import type {
   ShopOffer,
   TraceEvent,
 } from '../engine/types';
-import { createTranslator, syncDocumentLanguage, type Translator } from '../i18n';
+import {
+  createTranslator,
+  isDevOriginalTermsEnabled,
+  readStoredDevOriginalTermsFlag,
+  setDevOriginalTermsEnabled,
+  syncDocumentLanguage,
+  type Translator,
+} from '../i18n';
 import {
   createBalitePlatformBridge,
   loadBaliteSave,
@@ -35,23 +60,56 @@ import {
 } from '../platform/baliteSave';
 import type { PlatformBridge } from '../platform/types';
 import { createBackdropCanvas, type BackdropController, type BackdropMood } from './backdropCanvas';
+import { createCardAnimator, type CardAnimatorOptions } from './cardAnimator';
+import { initCardTiltController, type CardTiltController, type CardTiltOptions } from './cardTilt';
 import {
   getConsumableTargetRequirement,
   renderInspectorOverlay,
   type InspectTarget,
 } from './inspector';
 import {
+  renderDebugPanel,
+  type DebugPanelTab,
+  type DebugSpawnFilter,
+} from './debugPanel';
+import {
   renderDeckModal,
   renderHandReferenceModal,
   renderSettingsModal,
+  type SettingsModalTab,
 } from './modals';
+import { APP_VERSION, renderMainMenu } from './mainMenu';
+import {
+  createCashoutTimeline,
+  createNumberRoller,
+  type CashoutTimelineController,
+  type NumberRollerController,
+  type NumberRollerOptions,
+} from './numberRoller';
+import {
+  createParticleCanvas,
+  type ParticleCanvasController,
+  type ParticleCanvasOptions,
+} from './particleCanvas';
 import {
   renderRunView,
   type ScreenActionHandlers,
   type ScreenRefs,
   type ScreenViewModel,
 } from './screens';
-import { playTraceEvents, type TracePlayerHandle, type TracePopupPayload } from './tracePlayer';
+import { initHoverTooltip, type HoverTooltipController } from './tooltip';
+import {
+  computeScoreFlameIntensity,
+  createScoreFlame,
+  type ScoreFlameController,
+  type ScoreFlameOptions,
+} from './scoreFlame';
+import {
+  playTraceEvents,
+  type TraceJuiceTarget,
+  type TracePlayerHandle,
+  type TracePopupPayload,
+} from './tracePlayer';
 
 /**
  * Стандартный интервал между показами межстраничной рекламы (3 минуты).
@@ -62,6 +120,17 @@ const DEFAULT_AD_COOLDOWN_MS = 180_000;
  * Алфавит для генерации читаемых случайных кодов забега без похожих символов.
  */
 const SEED_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+const CELESTIAL_ID_SET = new Set<string>(CELESTIAL_IDS);
+const SCROLL_ID_SET = new Set<string>(SCROLL_IDS);
+const RUNE_ID_SET = new Set<string>(RUNE_IDS);
+
+function resolveConsumableKind(consumableId: ConsumableId): ConsumableKind {
+  if (CELESTIAL_ID_SET.has(consumableId)) return 'celestial';
+  if (RUNE_ID_SET.has(consumableId)) return 'rune';
+  if (SCROLL_ID_SET.has(consumableId)) return 'scroll';
+  return 'scroll';
+}
 
 /**
  * Публичный дескриптор смонтированного приложения Balite.
@@ -78,10 +147,18 @@ export interface BaliteAppHandle {
  */
 export interface MountBaliteAppOptions {
   bridge?: PlatformBridge<PlayerSaveData>;
+  audio?: BaliteAudioController;
   scheduleTimeout?: typeof setTimeout;
   clearScheduledTimeout?: typeof clearTimeout;
   initialNowMs?: () => number;
   adCooldownMs?: number;
+  cardAnimatorOptions?: Omit<CardAnimatorOptions, 'flightLayer' | 'getSpeed'>;
+  cardTiltOptions?: Omit<CardTiltOptions, 'container'>;
+  scoreFlameOptions?: Omit<ScoreFlameOptions, 'container' | 'chipsAnchor' | 'multAnchor'>;
+  numberRollerOptions?: Partial<
+    Pick<NumberRollerOptions, 'now' | 'requestFrame' | 'cancelFrame' | 'reducedMotion' | 'durationMs'>
+  >;
+  particleCanvasOptions?: Partial<Omit<ParticleCanvasOptions, 'container' | 'speed'>>;
 }
 
 /**
@@ -98,7 +175,7 @@ interface ConsumableTargetModeState {
 /**
  * Тип открытого полноэкранного модального окна поверх сцены.
  */
-type ActiveModalKind = 'hand_reference' | 'deck' | 'settings';
+type ActiveModalKind = 'hand_reference' | 'deck' | 'settings' | 'debug';
 
 /**
  * Цветовая карта импульсов фона по типам всплывающих событий TracePlayer.
@@ -231,6 +308,7 @@ function updateMetaFromRunState(
     runStarted?: boolean;
     handPlayed?: boolean;
     runWon?: boolean;
+    runLost?: boolean;
     settingsPatch?: Partial<GameSettings>;
     revision: number;
     updatedAt: number;
@@ -253,7 +331,7 @@ function updateMetaFromRunState(
     }
   }
 
-  return {
+  const nextMetaWithoutTracker: MetaSave = {
     ...meta,
     revision: flags.revision,
     updatedAt: flags.updatedAt,
@@ -265,13 +343,21 @@ function updateMetaFromRunState(
     discoveredConsumables: appendUniqueIds(meta.discoveredConsumables, consumableIds),
     discoveredCharters: appendUniqueIds(meta.discoveredCharters, charterIds),
     discoveredBosses: appendUniqueIds(meta.discoveredBosses, bossIds),
-    stats: {
-      runsStarted: meta.stats.runsStarted + (flags.runStarted ? 1 : 0),
-      runsWon: meta.stats.runsWon + (flags.runWon ? 1 : 0),
-      highestAnte: Math.max(meta.stats.highestAnte, state.ante),
-      bestHandScore: Math.max(meta.stats.bestHandScore, state.stats.bestHandScore),
-      totalHandsPlayed: meta.stats.totalHandsPlayed + (flags.handPlayed ? 1 : 0),
-    },
+    stats: updateMetaStatsFromRunState(meta.stats, state, {
+      runStarted: flags.runStarted,
+      handPlayed: flags.handPlayed,
+      runWon: flags.runWon,
+      runLost: flags.runLost,
+    }),
+  };
+
+  return {
+    ...nextMetaWithoutTracker,
+    activeRunTracker: advanceActiveRunTracker(
+      meta,
+      nextMetaWithoutTracker,
+      Boolean(flags.runStarted),
+    ),
   };
 }
 
@@ -391,15 +477,34 @@ export function mountBaliteApp(
 
   const stageEl = document.createElement('div');
   stageEl.className = 'stage-portrait';
+  stageEl.dataset.cardTiltManaged = 'true';
+
+  const syncAnimationSpeedCss = (speed: AnimationSpeed): void => {
+    stageEl.style.setProperty('--anim-speed', String(speed));
+  };
+
+  const syncCrtModeCss = (crtMode: CrtMode): void => {
+    root.dataset.crt = crtMode;
+  };
 
   const screenHostEl = document.createElement('div');
   screenHostEl.className = 'stage-screen-host';
 
+  // Слой призрачных перелётов карт поверх сцены (не перехватывает пользовательский ввод)
+  const flightLayerEl = document.createElement('div');
+  flightLayerEl.className = 'card-flight-layer';
+  flightLayerEl.setAttribute('aria-hidden', 'true');
+
   const overlayHostEl = document.createElement('div');
   overlayHostEl.className = 'stage-overlay-host';
 
-  stageEl.append(screenHostEl, overlayHostEl);
-  root.append(canvasEl, stageEl);
+  // Декоративный ретро-оверлей CRT поверх всей сцены (не перехватывает ввод)
+  const crtOverlayEl = document.createElement('div');
+  crtOverlayEl.className = 'crt-overlay';
+  crtOverlayEl.setAttribute('aria-hidden', 'true');
+
+  stageEl.append(screenHostEl, flightLayerEl, overlayHostEl);
+  root.append(canvasEl, stageEl, crtOverlayEl);
 
   const backdrop: BackdropController = createBackdropCanvas(canvasEl);
 
@@ -415,7 +520,37 @@ export function mountBaliteApp(
 
   let translator: Translator = createTranslator(saveData.meta.settings.lang);
   syncDocumentLanguage(saveData.meta.settings.lang);
-  const audio: BaliteAudioController = createBaliteAudio(bridge.audio, saveData.meta.settings);
+  syncAnimationSpeedCss(saveData.meta.settings.animationSpeed);
+  syncCrtModeCss(saveData.meta.settings.crtMode);
+  const audio: BaliteAudioController =
+    options.audio ?? createHybridBaliteAudio(bridge.audio, saveData.meta.settings);
+  const cardAnimator = createCardAnimator({
+    ...options.cardAnimatorOptions,
+    flightLayer: flightLayerEl,
+    getSpeed: () => saveData.meta.settings.animationSpeed,
+  });
+  const cardTiltController: CardTiltController = initCardTiltController({
+    ...options.cardTiltOptions,
+    container: stageEl,
+  });
+  const particleCanvas: ParticleCanvasController = createParticleCanvas({
+    ...options.particleCanvasOptions,
+    container: stageEl,
+    speed: () => saveData.meta.settings.animationSpeed,
+  });
+
+  // Плавающий hover-тултип для десктопного курсора на всём стейдже (включая модалку Колоды)
+  let hoverTooltip: HoverTooltipController | null = null;
+  const mountHoverTooltip = (): void => {
+    hoverTooltip?.destroy();
+    hoverTooltip = initHoverTooltip({
+      container: stageEl,
+      mountParent: root,
+      defaultHiddenTitle: translator.t('ui.tooltip.hiddenTitle'),
+      defaultHiddenDescription: translator.t('ui.tooltip.hiddenDescription'),
+    });
+  };
+  mountHoverTooltip();
 
   // Слушатели первого пользовательского жеста для разблокировки Web Audio
   let destroyed = false;
@@ -431,15 +566,257 @@ export function mountBaliteApp(
   let consumableTargetMode: ConsumableTargetModeState | null = null;
   let activeInspectTarget: InspectTarget | null = null;
   let activeModal: ActiveModalKind | null = null;
+  let activeSettingsTab: SettingsModalTab = 'hub';
+  let activeDebugTab: DebugPanelTab = 'combat';
+  let activeDebugSpawnFilter: DebugSpawnFilter = 'relics';
+  let debugSearchQuery = '';
+  let debugSpawnEdition: Edition = 'base';
+  let debugCardScope: 'selected' | 'all' = 'selected';
+  const debugPanelLogs: string[] = ['ready'];
+  let showMainMenu = true;
 
   let isAnimating = false;
   let animationDisplayState: RunState | null = null;
+  let animationLiveScore: ScreenViewModel['liveScore'] = null;
   let playedCardIds: string[] = [];
   let shatteredCardIds: string[] = [];
   let activeTraceHandle: TracePlayerHandle | null = null;
   let animationRunToken = 0;
   let screenRefs: ScreenRefs | null = null;
   let popupOffsetStep = 0;
+  let scoreFlame: ScoreFlameController | null = null;
+  let scoreFlameContainer: HTMLElement | null = null;
+  let lastHudPhase: RunState['phase'] | null = null;
+  let exactMultOverride: number | null = null;
+  let activeCashoutTimeline: CashoutTimelineController | null = null;
+  let cashoutStartedKey: string | null = null;
+  let cashoutFinishedKey: string | null = null;
+  let victoryConfettiKey: string | null = null;
+  let isSkippingTrace = false;
+
+  const scoreRoller: NumberRollerController = createNumberRoller({
+    initialValue: 0,
+    durationMs: 260,
+    ...options.numberRollerOptions,
+    speed: () => saveData.meta.settings.animationSpeed,
+    onUpdate: (_val, formatted) => {
+      if (screenRefs && !destroyed) {
+        screenRefs.scoreEl.textContent = formatted;
+      }
+    },
+  });
+
+  const chipsRoller: NumberRollerController = createNumberRoller({
+    initialValue: 0,
+    durationMs: 200,
+    ...options.numberRollerOptions,
+    speed: () => saveData.meta.settings.animationSpeed,
+    onUpdate: (_val, formatted) => {
+      if (screenRefs && !destroyed) {
+        screenRefs.chipsEl.textContent = formatted;
+      }
+    },
+  });
+
+  const multRoller: NumberRollerController = createNumberRoller({
+    initialValue: 0,
+    durationMs: 200,
+    ...options.numberRollerOptions,
+    speed: () => saveData.meta.settings.animationSpeed,
+    onUpdate: (_val, formatted) => {
+      if (screenRefs && !destroyed && exactMultOverride === null) {
+        screenRefs.multEl.textContent = formatted;
+      }
+    },
+  });
+
+  const setMultDisplay = (value: number, immediate = false): void => {
+    if (Number.isInteger(value)) {
+      exactMultOverride = null;
+      if (immediate) {
+        multRoller.snap(value);
+        if (screenRefs && !destroyed) {
+          screenRefs.multEl.textContent = String(value);
+        }
+      } else {
+        multRoller.setTarget(value);
+      }
+      return;
+    }
+
+    exactMultOverride = value;
+    multRoller.snap(Math.round(value));
+    if (screenRefs && !destroyed) {
+      screenRefs.multEl.textContent = String(value);
+    }
+  };
+
+  const destroyCashoutTimeline = (): void => {
+    activeCashoutTimeline?.destroy();
+    activeCashoutTimeline = null;
+  };
+
+  const emitConsumableParticles = (
+    kind: ConsumableKind,
+    preferredEl?: HTMLElement | null,
+    targetCardIds?: readonly string[],
+  ): void => {
+    if (destroyed) return;
+    if (preferredEl) {
+      particleCanvas.emitAtElement(kind, preferredEl);
+      return;
+    }
+    if (targetCardIds && targetCardIds.length > 0) {
+      let emitted = false;
+      for (const cardId of targetCardIds) {
+        const cardEl =
+          screenHostEl.querySelector<HTMLElement>(`[data-zone="play"][data-card-id="${cardId}"]`) ??
+          screenHostEl.querySelector<HTMLElement>(`[data-card-id="${cardId}"]`);
+        if (cardEl) {
+          particleCanvas.emitAtElement(kind, cardEl);
+          emitted = true;
+        }
+      }
+      if (emitted) return;
+    }
+    if (screenRefs?.arenaEl) {
+      particleCanvas.emitAtElement(kind, screenRefs.arenaEl);
+    }
+  };
+
+  const syncHudRollers = (state: RunState, refs: ScreenRefs): void => {
+    if (isAnimating) {
+      lastHudPhase = state.phase;
+      return;
+    }
+
+    const phaseChanged = state.phase !== lastHudPhase;
+    lastHudPhase = state.phase;
+
+    const targetScore = Number(refs.scoreEl.textContent) || 0;
+    const targetChips = refs.previewChips;
+    const targetMult = refs.previewMult;
+
+    if (phaseChanged || state.phase !== 'playing') {
+      exactMultOverride = null;
+      scoreRoller.snap(targetScore);
+      chipsRoller.snap(targetChips);
+      setMultDisplay(targetMult, true);
+      return;
+    }
+
+    scoreRoller.setTarget(targetScore);
+    chipsRoller.setTarget(targetChips);
+    setMultDisplay(targetMult, false);
+
+    // Синхронизируем свежесозданный DOM с текущим значением роллеров без визуального скачка
+    refs.scoreEl.textContent = String(scoreRoller.getCurrent());
+    refs.chipsEl.textContent = String(chipsRoller.getCurrent());
+    refs.multEl.textContent =
+      exactMultOverride !== null ? String(exactMultOverride) : String(multRoller.getCurrent());
+  };
+
+  const syncCashoutTimeline = (state: RunState, refs: ScreenRefs): void => {
+    if (isAnimating || !refs.cashout) {
+      destroyCashoutTimeline();
+      if (!isAnimating && state.phase !== 'cashout') {
+        cashoutStartedKey = null;
+        cashoutFinishedKey = null;
+      }
+      return;
+    }
+
+    const cashoutRefs = refs.cashout;
+    if (cashoutFinishedKey === cashoutRefs.key || cashoutStartedKey === cashoutRefs.key) {
+      // Повторная перерисовка того же экрана кэшаута не перезапускает таймлайн
+      cashoutFinishedKey = cashoutRefs.key;
+      destroyCashoutTimeline();
+      for (const row of cashoutRefs.rows) {
+        row.rowElement.dataset.cashoutRevealed = 'true';
+        row.rowElement.style.opacity = '1';
+      }
+      return;
+    }
+
+    cashoutStartedKey = cashoutRefs.key;
+    destroyCashoutTimeline();
+
+    activeCashoutTimeline = createCashoutTimeline({
+      ...options.numberRollerOptions,
+      speed: () => saveData.meta.settings.animationSpeed,
+      rows: cashoutRefs.rows.map((row) => ({
+        rowElement: row.rowElement,
+        valueElement: row.valueElement,
+        amount: row.amount,
+        isTotal: row.isTotal,
+        formatAmount: (v) => translator.t('ui.hud.goldAmount', { dollars: v }),
+      })),
+      totalElement: cashoutRefs.claimBtnEl,
+      formatTotal: (v) => translator.t('ui.actions.claimCashout', { dollars: v }),
+      onComplete: () => {
+        cashoutFinishedKey = cashoutRefs.key;
+      },
+    });
+
+    refs.arenaEl.addEventListener('click', (event) => {
+      const target = event.target as Element | null;
+      if (target?.closest('button') === cashoutRefs.claimBtnEl) return;
+      if (activeCashoutTimeline && !activeCashoutTimeline.isFinished()) {
+        activeCashoutTimeline.skip();
+        cashoutFinishedKey = cashoutRefs.key;
+      }
+    });
+
+    activeCashoutTimeline.start();
+  };
+
+  let lastScoreFlameIntensity = 0;
+
+  const destroyScoreFlame = (): void => {
+    scoreFlame?.destroy();
+    scoreFlame = null;
+    scoreFlameContainer = null;
+  };
+
+  /** Обновляет интенсивность пламени и проигрывает звук порога один раз при переходе 0 -> >0. */
+  const setScoreFlameIntensityWithSound = (intensity: number): void => {
+    const normalized = Number.isFinite(intensity) && intensity > 0 ? intensity : 0;
+    if (lastScoreFlameIntensity <= 0 && normalized > 0) {
+      audio.playFlameThreshold();
+    }
+    lastScoreFlameIntensity = normalized;
+    scoreFlame?.setIntensity(normalized);
+  };
+
+  const syncScoreFlame = (state: RunState, refs: ScreenRefs): void => {
+    if (state.phase === 'deck_select' || refs.formulaEl.closest('.hud-refs-standby') !== null) {
+      lastScoreFlameIntensity = 0;
+      destroyScoreFlame();
+      return;
+    }
+
+    if (scoreFlameContainer !== refs.formulaEl) {
+      destroyScoreFlame();
+      scoreFlameContainer = refs.formulaEl;
+      scoreFlame = createScoreFlame({
+        ...options.scoreFlameOptions,
+        container: refs.formulaEl,
+        chipsAnchor: refs.chipsPillEl,
+        multAnchor: refs.multPillEl,
+      });
+    }
+
+    const intensity =
+      state.phase === 'playing'
+        ? computeScoreFlameIntensity(
+            refs.previewScore,
+            refs.previewChips,
+            refs.previewMult,
+            refs.previewTargetScore,
+          )
+        : 0;
+    setScoreFlameIntensityWithSound(intensity);
+  };
 
   const activeTimers = new Set<ReturnType<typeof setTimeout>>();
 
@@ -467,8 +844,12 @@ export function mountBaliteApp(
     activeTraceHandle = null;
     isAnimating = false;
     animationDisplayState = null;
+    animationLiveScore = null;
     playedCardIds = [];
     shatteredCardIds = [];
+    cardAnimator.cancelAll();
+    destroyCashoutTimeline();
+    particleCanvas.clear();
   };
 
   const nextMonotonicRevisionAndTime = (): { revision: number; updatedAt: number } => {
@@ -488,6 +869,7 @@ export function mountBaliteApp(
     }
 
     const shouldPlay =
+      !showMainMenu &&
       isActiveRunPhase(runState.phase) &&
       activeModal === null &&
       !platformPaused &&
@@ -505,6 +887,7 @@ export function mountBaliteApp(
   const closeOverlays = (): void => {
     activeInspectTarget = null;
     activeModal = null;
+    activeSettingsTab = 'hub';
     overlayHostEl.replaceChildren();
     syncGameplayState();
   };
@@ -523,6 +906,8 @@ export function mountBaliteApp(
     const isTerminal = isTerminalRunPhase(nextState.phase);
     const shouldMarkWon =
       nextState.phase === 'victory' && !completionRecordedForCurrentRun;
+    const shouldMarkLost =
+      nextState.phase === 'game_over' && !completionRecordedForCurrentRun;
     if (isTerminal) {
       completionRecordedForCurrentRun = true;
     }
@@ -531,6 +916,7 @@ export function mountBaliteApp(
       runStarted: flags.runStarted,
       handPlayed: flags.handPlayed,
       runWon: shouldMarkWon,
+      runLost: shouldMarkLost,
       settingsPatch: flags.settingsPatch,
       revision,
       updatedAt,
@@ -612,23 +998,26 @@ export function mountBaliteApp(
       backdrop.spawnParticles(0.5, 0.45, POPUP_COLORS[popup.kind], 14);
     }
 
-    const lifeMs = Math.max(350, Math.round(900 / saveData.meta.settings.animationSpeed));
+    const lifeMs = Math.max(350, Math.round(780 / saveData.meta.settings.animationSpeed));
     registerTimeout(() => {
       el.remove();
     }, lifeMs);
   };
 
   const renderOverlay = (): void => {
+    hoverTooltip?.hide();
     overlayHostEl.replaceChildren();
     if (destroyed) return;
 
     if (activeModal === 'hand_reference') {
       overlayHostEl.append(renderHandReferenceModal(runState, translator, closeOverlays));
+      cardTiltController.refresh();
       return;
     }
 
     if (activeModal === 'deck') {
       overlayHostEl.append(renderDeckModal(runState, translator, closeOverlays));
+      cardTiltController.refresh();
       return;
     }
 
@@ -638,13 +1027,160 @@ export function mountBaliteApp(
         renderSettingsModal({
           settings: saveData.meta.settings,
           translator,
+          meta: saveData.meta,
+          version: APP_VERSION,
+          initialTab: activeSettingsTab,
+          canReturnToMainMenu: !showMainMenu && isActiveRunPhase(runState.phase),
           platformId: bridge.getPlatformId(),
           isDebug,
+          ...(import.meta.env.DEV && isDebug
+            ? {
+                devOriginalTermsEnabled: isDevOriginalTermsEnabled(),
+                onToggleDevOriginalTerms: (enabled: boolean) => {
+                  void setDevOriginalTermsEnabled(enabled, true).then(() => {
+                    if (destroyed) return;
+                    translator = createTranslator(saveData.meta.settings.lang);
+                    mountHoverTooltip();
+                    render();
+                    renderOverlay();
+                  });
+                },
+              }
+            : {}),
           onChangeSettings: handleSettingsPatch,
           onClose: closeOverlays,
+          onTabChange: (tab) => {
+            activeSettingsTab = tab;
+          },
+          onReturnToMainMenu: () => {
+            audio.playButton();
+            exitRunToMenu(true);
+          },
+          onOpenDebugPanel: isDebug
+            ? () => {
+                audio.playButton();
+                activeInspectTarget = null;
+                activeModal = 'debug';
+                syncGameplayState();
+                renderOverlay();
+              }
+            : undefined,
           onDebugAction: isDebug ? handleDebugAction : undefined,
         }),
       );
+      cardTiltController.refresh();
+      return;
+    }
+
+    if (activeModal === 'debug') {
+      if (!bridge.isDebugMode()) {
+        activeModal = null;
+        return;
+      }
+      overlayHostEl.append(
+        renderDebugPanel({
+          state: runState,
+          selectedCardIds,
+          translator,
+          platformId: bridge.getPlatformId(),
+          initialTab: activeDebugTab,
+          initialSpawnFilter: activeDebugSpawnFilter,
+          initialSearchQuery: debugSearchQuery,
+          initialSpawnEdition: debugSpawnEdition,
+          initialCardScope: debugCardScope,
+          initialLogs: debugPanelLogs,
+          ...(import.meta.env.DEV
+            ? {
+                devOriginalTermsEnabled: isDevOriginalTermsEnabled(),
+                onToggleDevOriginalTerms: (enabled: boolean) => {
+                  void setDevOriginalTermsEnabled(enabled, true).then(() => {
+                    if (destroyed) return;
+                    translator = createTranslator(saveData.meta.settings.lang);
+                    mountHoverTooltip();
+                    render();
+                    renderOverlay();
+                  });
+                },
+              }
+            : {}),
+          onTabChange: (tab) => {
+            activeDebugTab = tab;
+          },
+          onSpawnFilterChange: (filter) => {
+            activeDebugSpawnFilter = filter;
+          },
+          onSearchQueryChange: (query) => {
+            debugSearchQuery = query;
+          },
+          onSpawnEditionChange: (edition) => {
+            debugSpawnEdition = edition;
+          },
+          onCardScopeChange: (scope) => {
+            debugCardScope = scope;
+          },
+          onUpdateResources: (opts) => {
+            applyDebugRunState(setDebugResources(runState, opts), 'setDebugResources');
+          },
+          onForceBlindWin: () => {
+            applyDebugRunState(forceDebugBlindWin(runState), 'forceDebugBlindWin', true);
+          },
+          onForceRunEnd: (outcome) => {
+            applyDebugRunState(
+              forceDebugRunEnd(runState, outcome),
+              `forceDebugRunEnd:${outcome}`,
+              true,
+            );
+          },
+          onApplyCardMods: (opts) => {
+            applyDebugRunState(applyDebugCardMods(runState, opts), 'applyDebugCardMods');
+          },
+          onTestGlassShatter: () => {
+            const targetId = selectedCardIds[0] ?? runState.handIds[0];
+            closeOverlays();
+            if (!targetId) return;
+            const next = applyDebugCardMods(runState, {
+              cardIds: [targetId],
+              enhancement: 'glass',
+            });
+            if (next !== runState) {
+              runState = next;
+              persistSnapshotAndMeta(runState);
+              render();
+            }
+            const cardEl =
+              screenHostEl.querySelector<HTMLElement>(`[data-zone="hand"][data-card-id="${targetId}"]`) ??
+              screenHostEl.querySelector<HTMLElement>(`[data-card-id="${targetId}"]`);
+            particleCanvas.emitAtElement('shatter', cardEl);
+            cardAnimator.triggerJuice(cardEl, {
+              scaleDelta: 0.28,
+              rotDelta: -0.22,
+              speed: saveData.meta.settings.animationSpeed,
+            });
+            audio.playForTraceEvent({ type: 'CARD_SHATTER', cardId: targetId, reason: 'glass' }, 0);
+          },
+          onGiveRelic: (relicId, edition) => {
+            applyDebugRunState(giveDebugRelic(runState, relicId, edition), `giveRelic:${relicId}`);
+          },
+          onGiveConsumable: (consumableId, edition) => {
+            applyDebugRunState(
+              giveDebugConsumable(runState, consumableId, edition),
+              `giveConsumable:${consumableId}`,
+            );
+          },
+          onApplyVoucher: (charterId) => {
+            applyDebugRunState(applyDebugVoucher(runState, charterId), `applyVoucher:${charterId}`);
+          },
+          onDebugAction: async (action) => {
+            const res = await handleDebugAction(action);
+            debugPanelLogs.unshift(res);
+            if (debugPanelLogs.length > 20) debugPanelLogs.length = 20;
+            return res;
+          },
+          onClose: closeOverlays,
+        }),
+      );
+      cardTiltController.refresh();
+      syncGameplayState();
       return;
     }
 
@@ -718,15 +1254,67 @@ export function mountBaliteApp(
         }),
       );
     }
+    cardTiltController.refresh();
   };
 
   const render = (): void => {
     if (destroyed) return;
+    hoverTooltip?.hide();
+
+    if (showMainMenu && !isAnimating) {
+      cardAnimator.cancelAll();
+      destroyScoreFlame();
+      destroyCashoutTimeline();
+      particleCanvas.clear();
+      lastHudPhase = null;
+      exactMultOverride = null;
+      scoreRoller.snap(0);
+      chipsRoller.snap(0);
+      multRoller.snap(0);
+      stageEl.classList.add('stage-portrait--menu');
+      backdrop.setMood('menu');
+      screenRefs = null;
+      renderMainMenu(
+        screenHostEl,
+        {
+          translator,
+          lang: saveData.meta.settings.lang,
+          version: APP_VERSION,
+          hasSavedRun: savedRunSnapshot !== null,
+        },
+        {
+          onPlay: () => {
+            audio.playButton();
+            showMainMenu = false;
+            render();
+          },
+          onOpenSettings: () => {
+            audio.playButton();
+            activeInspectTarget = null;
+            activeModal = 'settings';
+            activeSettingsTab = 'hub';
+            syncGameplayState();
+            renderOverlay();
+          },
+          onToggleLanguage: () => {
+            audio.playButton();
+            const nextLang = saveData.meta.settings.lang === 'ru' ? 'en' : 'ru';
+            handleSettingsPatch({ lang: nextLang });
+          },
+        },
+      );
+      cardTiltController.refresh();
+      syncGameplayState();
+      return;
+    }
+
+    stageEl.classList.remove('stage-portrait--menu');
     const viewState = isAnimating && animationDisplayState ? animationDisplayState : runState;
     backdrop.setMood(resolveBackdropMood(viewState));
 
     const vm: ScreenViewModel = {
       state: viewState,
+      meta: saveData.meta,
       translator,
       selectedCardIds,
       playedCardIds: isAnimating ? playedCardIds : [],
@@ -734,7 +1322,9 @@ export function mountBaliteApp(
       highlightedCardId: null,
       highlightedHandCardId: null,
       highlightedRelicUid: null,
+      liveScore: isAnimating ? animationLiveScore : null,
       isAnimating,
+      isDebug: bridge.isDebugMode(),
       unlockedDecks: saveData.meta.unlockedDecks,
       selectedDeckId,
       seedInput,
@@ -742,7 +1332,30 @@ export function mountBaliteApp(
       consumableTargetMode,
     };
 
+    const hasExistingRunShell = screenHostEl.querySelector('.run-shell') !== null;
+    const layoutSnapshot = hasExistingRunShell ? cardAnimator.captureSnapshot(screenHostEl) : null;
+
     screenRefs = renderRunView(screenHostEl, vm, screenHandlers);
+    syncScoreFlame(viewState, screenRefs);
+    syncHudRollers(viewState, screenRefs);
+    syncCashoutTimeline(viewState, screenRefs);
+
+    if (!isAnimating && viewState.phase === 'victory') {
+      const winKey = `${viewState.seed}:${viewState.ante}:${viewState.score}`;
+      if (victoryConfettiKey !== winKey) {
+        victoryConfettiKey = winKey;
+        particleCanvas.emitConfetti();
+      }
+    } else if (viewState.phase === 'deck_select') {
+      victoryConfettiKey = null;
+    }
+
+    if (layoutSnapshot) {
+      cardAnimator.animateFromSnapshot(screenHostEl, layoutSnapshot, {
+        speed: saveData.meta.settings.animationSpeed,
+      });
+    }
+    cardTiltController.refresh();
     syncGameplayState();
   };
 
@@ -792,6 +1405,32 @@ export function mountBaliteApp(
     isAnimating = true;
     playedCardIds = [...playedIds];
     shatteredCardIds = [];
+
+    const scoreEvent = events.find(
+      (ev): ev is Extract<TraceEvent, { readonly type: 'SCORE_UPDATE' }> =>
+        ev.type === 'SCORE_UPDATE',
+    );
+    const initialHandType: HandType = scoreEvent?.handType ?? 'High Card';
+    const baseLevel = prevState.handLevels[initialHandType];
+    let runningChips = baseLevel.chips;
+    let runningMult = baseLevel.mult;
+    const activeSlot = prevState.anteBlinds[prevState.currentBlindIndex];
+    if (
+      activeSlot?.kind === 'boss' &&
+      activeSlot.bossId === 'bl_flint' &&
+      !prevState.activeBossDisabled
+    ) {
+      runningChips = Math.max(Math.floor(runningChips * 0.5 + 0.5), 0);
+      runningMult = Math.max(Math.floor(runningMult * 0.5 + 0.5), 1);
+    }
+
+    animationLiveScore = {
+      chips: runningChips,
+      mult: runningMult,
+      totalScore: prevState.score,
+      targetScore: prevState.targetScore,
+      handType: initialHandType,
+    };
     animationDisplayState = {
       ...prevState,
       handIds: prevState.handIds.filter((id) => !playedIds.includes(id)),
@@ -801,15 +1440,91 @@ export function mountBaliteApp(
 
     render();
 
+    exactMultOverride = null;
+    scoreRoller.snap(prevState.score);
+    chipsRoller.snap(runningChips);
+    setMultDisplay(runningMult, true);
+
+    const triggerTraceJuice = (target: TraceJuiceTarget): void => {
+      let targetEl: HTMLElement | null = null;
+      switch (target.kind) {
+        case 'card':
+          targetEl = screenHostEl.querySelector<HTMLElement>(
+            `[data-zone="play"][data-card-id="${target.cardId}"]`,
+          );
+          break;
+        case 'hand_card':
+          targetEl = screenHostEl.querySelector<HTMLElement>(
+            `[data-zone="hand"][data-card-id="${target.cardId}"]`,
+          );
+          break;
+        case 'relic':
+          targetEl = screenHostEl.querySelector<HTMLElement>(
+            `[data-relic-uid="${target.relicUid}"]`,
+          );
+          break;
+        case 'chips':
+          targetEl = screenRefs?.chipsPillEl ?? null;
+          break;
+        case 'mult':
+          targetEl = screenRefs?.multPillEl ?? null;
+          break;
+      }
+      cardAnimator.triggerJuice(targetEl, {
+        scaleDelta: target.scaleDelta,
+        rotDelta: target.rotDelta,
+        speed: saveData.meta.settings.animationSpeed,
+      });
+    };
+
     const handle = playTraceEvents(events, saveData.meta.settings.animationSpeed, {
       translator,
       audio,
-      onScore: (chips, mult, totalScore, _targetScore, handType) => {
+      onScore: (chips, mult, totalScore, targetScore, handType) => {
         if (!screenRefs || destroyed || animationRunToken !== currentToken) return;
-        screenRefs.chipsEl.textContent = String(chips);
-        screenRefs.multEl.textContent = String(mult);
-        screenRefs.scoreEl.textContent = String(totalScore);
+        runningChips = chips;
+        runningMult = mult;
+        animationLiveScore = { chips, mult, totalScore, targetScore, handType };
+        chipsRoller.setTarget(chips);
+        setMultDisplay(mult, false);
+        scoreRoller.setTarget(totalScore);
         screenRefs.handTypeEl.textContent = translator.getHandText(handType).name;
+        setScoreFlameIntensityWithSound(
+          computeScoreFlameIntensity(totalScore, chips, mult, targetScore),
+        );
+      },
+      onFormulaDelta: ({ chipsDelta, multDelta, xMult }) => {
+        if (!screenRefs || destroyed || animationRunToken !== currentToken) return;
+        runningChips = Math.max(0, runningChips + chipsDelta);
+        runningMult = Math.max(1, Math.round((runningMult + multDelta) * xMult * 100) / 100);
+        animationLiveScore = {
+          chips: runningChips,
+          mult: runningMult,
+          totalScore: prevState.score,
+          targetScore: prevState.targetScore,
+          handType: initialHandType,
+        };
+        chipsRoller.setTarget(runningChips);
+        setMultDisplay(runningMult, false);
+        setScoreFlameIntensityWithSound(
+          computeScoreFlameIntensity(
+            prevState.score,
+            runningChips,
+            runningMult,
+            prevState.targetScore,
+          ),
+        );
+      },
+      onJuice: (target) => {
+        if (destroyed || animationRunToken !== currentToken) return;
+        triggerTraceJuice(target);
+      },
+      onConsumableTrigger: ({ consumableId, consumableUid, targetCardIds }) => {
+        if (destroyed || animationRunToken !== currentToken) return;
+        const sourceEl = consumableUid
+          ? screenHostEl.querySelector<HTMLElement>(`[data-consumable-uid="${consumableUid}"]`)
+          : null;
+        emitConsumableParticles(resolveConsumableKind(consumableId), sourceEl, targetCardIds);
       },
       onDollars: (totalDollars) => {
         if (!screenRefs || destroyed || animationRunToken !== currentToken) return;
@@ -850,10 +1565,15 @@ export function mountBaliteApp(
         if (!shatteredCardIds.includes(cardId)) {
           shatteredCardIds = [...shatteredCardIds, cardId];
         }
-        const cardSlot = screenHostEl.querySelector(`[data-card-id="${cardId}"]`);
+        const cardSlot =
+          screenHostEl.querySelector<HTMLElement>(`[data-zone="play"][data-card-id="${cardId}"]`) ??
+          screenHostEl.querySelector<HTMLElement>(`[data-card-id="${cardId}"]`);
         if (cardSlot) {
           cardSlot.classList.add('is-shattered');
           cardSlot.setAttribute('data-shattered', 'true');
+        }
+        if (!isSkippingTrace) {
+          particleCanvas.emitAtElement('shatter', cardSlot);
         }
         backdrop.spawnParticles(0.5, 0.5, POPUP_COLORS.shatter, 18);
       },
@@ -876,6 +1596,7 @@ export function mountBaliteApp(
       activeTraceHandle = null;
       isAnimating = false;
       animationDisplayState = null;
+      animationLiveScore = null;
       playedCardIds = [];
       shatteredCardIds = [];
       selectedCardIds = normalizeSelectedCardIds(runState, [], consumableTargetMode);
@@ -911,12 +1632,68 @@ export function mountBaliteApp(
       return;
     }
 
-    if (command.type === 'BUY_SHOP_OFFER' || command.type === 'BUY_CHARTER' || command.type === 'OPEN_PACK') {
+    let usedConsumableKind: ConsumableKind | null = null;
+    if (command.type === 'USE_CONSUMABLE') {
+      const used = prevState.consumables.find((item) => item.uid === command.consumableUid);
+      if (used) {
+        usedConsumableKind = resolveConsumableKind(used.id);
+        const sourceEl = screenHostEl.querySelector<HTMLElement>(
+          `[data-consumable-uid="${used.uid}"]`,
+        );
+        emitConsumableParticles(
+          usedConsumableKind,
+          sourceEl,
+          command.targetCardIds,
+        );
+      }
+    } else if (command.type === 'BUY_SHOP_OFFER' && command.useImmediately) {
+      const offer = prevState.shop?.offers.find((item) => item.uid === command.offerUid);
+      if (offer?.kind === 'consumable') {
+        usedConsumableKind = resolveConsumableKind(offer.consumable.id);
+        const sourceEl = screenHostEl.querySelector<HTMLElement>(
+          `[data-offer-uid="${offer.uid}"]`,
+        );
+        emitConsumableParticles(usedConsumableKind, sourceEl);
+      }
+    } else if (command.type === 'PICK_BOOSTER_ITEM') {
+      const choice = prevState.booster?.choices.find((item) => item.uid === command.choiceUid);
+      if (choice?.kind === 'consumable') {
+        usedConsumableKind = resolveConsumableKind(choice.consumable.id);
+        const sourceEl = screenHostEl.querySelector<HTMLElement>(
+          `[data-choice-uid="${choice.uid}"]`,
+        );
+        emitConsumableParticles(
+          usedConsumableKind,
+          sourceEl,
+          command.targetCardIds,
+        );
+      }
+    }
+
+    if (command.type === 'START_RUN') {
+      victoryConfettiKey = null;
+      cashoutStartedKey = null;
+      cashoutFinishedKey = null;
+      particleCanvas.clear();
+    }
+
+    const hasConsumableTrace = result.events.some((ev) => ev.type === 'CONSUMABLE_TRIGGER');
+    const stateChanged = runState !== prevState || result.events.length > 0;
+
+    if (command.type === 'OPEN_PACK') {
+      if (stateChanged) {
+        audio.playBoosterOpen();
+      }
+    } else if (command.type === 'BUY_SHOP_OFFER' || command.type === 'BUY_CHARTER') {
       audio.playBuy();
     } else if (command.type === 'REROLL_SHOP' || command.type === 'REROLL_BOSS') {
       audio.playReroll();
-    } else {
+    } else if (usedConsumableKind === null) {
       audio.playButton();
+    }
+    // Если расходник применён без CONSUMABLE_TRIGGER в событиях — озвучиваем его явно без дубля с playForTraceEvent
+    if (usedConsumableKind !== null && stateChanged && !hasConsumableTrace) {
+      audio.playConsumable(usedConsumableKind);
     }
     playNonBlockingAudioAndBanner(result.events);
 
@@ -932,6 +1709,7 @@ export function mountBaliteApp(
 
   function startNewRunInternal(): void {
     cancelActiveAnimation();
+    showMainMenu = false;
     const cleanSeed = seedInput.trim() || createRandomSeed();
     seedInput = cleanSeed;
     completionRecordedForCurrentRun = false;
@@ -941,8 +1719,9 @@ export function mountBaliteApp(
     applyGameCommand({ type: 'START_RUN', deckId: selectedDeckId, seed: cleanSeed });
   }
 
-  function returnToDeckSelectInternal(): void {
+  function exitRunToMenu(targetShowMainMenu: boolean): void {
     cancelActiveAnimation();
+    showMainMenu = targetShowMainMenu;
     consumableTargetMode = null;
     selectedCardIds = [];
     closeOverlays();
@@ -962,6 +1741,10 @@ export function mountBaliteApp(
     render();
   }
 
+  function returnToDeckSelectInternal(): void {
+    exitRunToMenu(false);
+  }
+
   function handleSettingsPatch(patch: Partial<GameSettings>): void {
     const langChanged = Boolean(patch.lang && patch.lang !== saveData.meta.settings.lang);
     const nextSettings: GameSettings = {
@@ -972,6 +1755,15 @@ export function mountBaliteApp(
     if (langChanged && patch.lang) {
       translator = createTranslator(patch.lang);
       syncDocumentLanguage(patch.lang);
+      mountHoverTooltip();
+    }
+
+    if (patch.animationSpeed !== undefined) {
+      syncAnimationSpeedCss(nextSettings.animationSpeed);
+    }
+
+    if (patch.crtMode !== undefined) {
+      syncCrtModeCss(nextSettings.crtMode);
     }
 
     audio.setSettings(nextSettings);
@@ -988,6 +1780,36 @@ export function mountBaliteApp(
     // При смене громкости/скорости не пересоздаём DOM модалки, чтобы не срывать ползунок
     if (langChanged) {
       render();
+      renderOverlay();
+    }
+  }
+
+  function applyDebugRunState(
+    nextState: RunState,
+    actionLabel: string,
+    closeAfter = false,
+  ): void {
+    if (destroyed || !bridge.isDebugMode() || nextState === runState) return;
+    cancelActiveAnimation();
+    runState = nextState;
+    consumableTargetMode = null;
+    selectedCardIds = normalizeSelectedCardIds(runState, selectedCardIds, null);
+    if (!isTerminalRunPhase(runState.phase)) {
+      completionRecordedForCurrentRun = false;
+    }
+    if (runState.phase === 'deck_select') {
+      victoryConfettiKey = null;
+    }
+    persistSnapshotAndMeta(runState, {
+      flush: isTerminalRunPhase(runState.phase) || runState.phase === 'cashout',
+    });
+    debugPanelLogs.unshift(actionLabel);
+    if (debugPanelLogs.length > 20) debugPanelLogs.length = 20;
+    if (closeAfter) {
+      closeOverlays();
+    }
+    render();
+    if (!closeAfter) {
       renderOverlay();
     }
   }
@@ -1058,6 +1880,7 @@ export function mountBaliteApp(
     onResumeSavedRun: () => {
       if (!savedRunSnapshot) return;
       audio.playButton();
+      showMainMenu = false;
       const restored = restoreRunStateFromSnapshot(savedRunSnapshot);
       runState =
         restored.phase === 'deck_select'
@@ -1075,6 +1898,12 @@ export function mountBaliteApp(
       render();
     },
     onCommand: (command) => {
+      if (command.type === 'CLAIM_CASHOUT') {
+        if (activeCashoutTimeline && !activeCashoutTimeline.isFinished()) {
+          activeCashoutTimeline.skip();
+        }
+        cashoutFinishedKey = cashoutStartedKey;
+      }
       if (command.type === 'NEXT_ROUND' && runState.phase === 'shop') {
         runWithLogicalPauseAd(() => applyGameCommand(command));
         return;
@@ -1226,12 +2055,27 @@ export function mountBaliteApp(
       audio.playButton();
       activeInspectTarget = null;
       activeModal = 'settings';
+      activeSettingsTab = 'hub';
       syncGameplayState();
       renderOverlay();
     },
+    onOpenDebugPanel: bridge.isDebugMode()
+      ? () => {
+          audio.playButton();
+          activeInspectTarget = null;
+          activeModal = 'debug';
+          syncGameplayState();
+          renderOverlay();
+        }
+      : undefined,
     onSkipAnimation: () => {
       if (isAnimating && activeTraceHandle) {
-        activeTraceHandle.skip();
+        isSkippingTrace = true;
+        try {
+          activeTraceHandle.skip();
+        } finally {
+          isSkippingTrace = false;
+        }
       }
     },
     onReturnToDeckSelect: () => {
@@ -1240,6 +2084,15 @@ export function mountBaliteApp(
         return;
       }
       returnToDeckSelectInternal();
+    },
+    onBackToMainMenu: () => {
+      audio.playButton();
+      if (isTerminalRunPhase(runState.phase)) {
+        runWithLogicalPauseAd(() => exitRunToMenu(true));
+        return;
+      }
+      showMainMenu = true;
+      render();
     },
   };
 
@@ -1254,6 +2107,14 @@ export function mountBaliteApp(
   const handleKeyDown = (event: KeyboardEvent): void => {
     if (destroyed) return;
     handleFirstGesture();
+    if (event.key === 'F9' && bridge.isDebugMode()) {
+      event.preventDefault();
+      activeInspectTarget = null;
+      activeModal = activeModal === 'debug' ? null : 'debug';
+      syncGameplayState();
+      renderOverlay();
+      return;
+    }
     if (event.key === 'Escape' && (activeModal !== null || activeInspectTarget !== null)) {
       closeOverlays();
     }
@@ -1262,8 +2123,69 @@ export function mountBaliteApp(
   const handleWindowResize = (): void => {
     if (!destroyed) {
       backdrop.resize();
+      scoreFlame?.resize();
+      particleCanvas.resize();
     }
   };
+
+  // Озвучка наведения мышью (pointer: fine) на открытую активную карту в руке с троттлингом >= 60 мс
+  const CARD_HOVER_THROTTLE_MS = 60;
+  let lastCardHoverAudioAtMs: number | null = null;
+  const handleHandCardPointerOver = (event: Event): void => {
+    if (destroyed || isAnimating || activeModal !== null || activeInspectTarget !== null) {
+      return;
+    }
+    if (runState.phase !== 'playing' && runState.phase !== 'booster') {
+      return;
+    }
+    const pointerType = (event as Partial<PointerEvent>).pointerType;
+    if (pointerType === 'touch' || pointerType === 'pen') {
+      return;
+    }
+    const isFinePointer =
+      pointerType === 'mouse' ||
+      (typeof window !== 'undefined' &&
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(pointer: fine)').matches);
+    if (!isFinePointer) {
+      return;
+    }
+
+    const targetEl = event.target instanceof Element ? event.target : null;
+    const slot = targetEl?.closest<HTMLElement>('.hand-card-slot[data-zone="hand"][data-card-id]');
+    if (!slot) {
+      return;
+    }
+
+    const related = (event as Partial<MouseEvent>).relatedTarget;
+    if (related && typeof Node !== 'undefined' && related instanceof Node && slot.contains(related)) {
+      return;
+    }
+
+    if (slot.getAttribute('aria-disabled') === 'true' || slot.classList.contains('is-disabled')) {
+      return;
+    }
+
+    const isFaceDown =
+      slot.dataset.tooltipFacing === 'back' ||
+      slot.dataset.faceDown === 'true' ||
+      slot.classList.contains('is-face-down') ||
+      slot.querySelector('[data-face-down="true"], .is-face-down') !== null;
+    if (isFaceDown) {
+      return;
+    }
+
+    const currentMs = now();
+    if (
+      lastCardHoverAudioAtMs !== null &&
+      currentMs - lastCardHoverAudioAtMs < CARD_HOVER_THROTTLE_MS
+    ) {
+      return;
+    }
+    lastCardHoverAudioAtMs = currentMs;
+    audio.playCardHover();
+  };
+  screenHostEl.addEventListener('pointerover', handleHandCardPointerOver);
 
   const gestureEvents = ['pointerdown', 'touchstart', 'click'] as const;
   for (const eventName of gestureEvents) {
@@ -1298,18 +2220,27 @@ export function mountBaliteApp(
     if (destroyed) return;
 
     saveData = loaded;
+    if (import.meta.env.DEV && readStoredDevOriginalTermsFlag()) {
+      await setDevOriginalTermsEnabled(true, false);
+      if (destroyed) return;
+    }
     translator = createTranslator(saveData.meta.settings.lang);
     syncDocumentLanguage(saveData.meta.settings.lang);
+    syncAnimationSpeedCss(saveData.meta.settings.animationSpeed);
+    syncCrtModeCss(saveData.meta.settings.crtMode);
+    mountHoverTooltip();
     audio.setSettings(saveData.meta.settings);
 
     selectedDeckId = saveData.meta.unlockedDecks[0] ?? 'b_red';
     savedRunSnapshot = saveData.activeRun;
 
     if (saveData.activeRun && saveData.activeRun.phase !== 'deck_select') {
+      showMainMenu = false;
       runState = restoreRunStateFromSnapshot(saveData.activeRun);
       selectedDeckId = runState.deckId;
       completionRecordedForCurrentRun = isTerminalRunPhase(runState.phase);
     } else {
+      showMainMenu = true;
       runState = createDeckSelectState(selectedDeckId, seedInput);
     }
 
@@ -1327,6 +2258,16 @@ export function mountBaliteApp(
 
     activeTraceHandle?.cancel();
     activeTraceHandle = null;
+    cardTiltController.destroy();
+    delete stageEl.dataset.cardTiltManaged;
+    lastScoreFlameIntensity = 0;
+    destroyScoreFlame();
+    destroyCashoutTimeline();
+    scoreRoller.destroy();
+    chipsRoller.destroy();
+    multRoller.destroy();
+    particleCanvas.destroy();
+    cardAnimator.destroy();
     clearAllTimeouts();
 
     if (gameplayStarted) {
@@ -1337,14 +2278,18 @@ export function mountBaliteApp(
     for (const eventName of gestureEvents) {
       root.removeEventListener(eventName, handleFirstGesture, { capture: true });
     }
+    screenHostEl.removeEventListener('pointerover', handleHandCardPointerOver);
     if (typeof window !== 'undefined') {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('resize', handleWindowResize);
     }
     unsubscribeBridge();
 
+    hoverTooltip?.destroy();
+    hoverTooltip = null;
     audio.dispose();
     backdrop.destroy();
+    delete root.dataset.crt;
     root.replaceChildren();
 
     if (ownsBridge) {

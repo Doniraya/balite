@@ -6,8 +6,10 @@ import {
   type BackdropMood,
 } from '../../src/ui/backdropCanvas';
 import {
+  DEFAULT_BASE_STEP_MS,
   getStepDelayMs,
   playTraceEvents,
+  resolveSpeed,
   type TracePlayerHandlers,
   type TracePopupPayload,
 } from '../../src/ui/tracePlayer';
@@ -53,16 +55,37 @@ describe('Проигрыватель TraceEvent (tracePlayer)', () => {
     vi.restoreAllMocks();
   });
 
-  it('масштабирует задержку шага в getStepDelayMs обратно пропорционально AnimationSpeed (1 / 2 / 4)', () => {
+  it('масштабирует задержку шага в getStepDelayMs обратно пропорционально AnimationSpeed (0.5 / 1 / 2 / 4) и откалиброван до ~620-680мс на 1x', () => {
+    expect(DEFAULT_BASE_STEP_MS).toBeGreaterThanOrEqual(620);
+    expect(DEFAULT_BASE_STEP_MS).toBeLessThanOrEqual(680);
+
+    expect(resolveSpeed(0.5)).toBe(0.5);
+    expect(resolveSpeed(1)).toBe(1);
+    expect(resolveSpeed(2)).toBe(2);
+    expect(resolveSpeed(4)).toBe(4);
+    expect(resolveSpeed(undefined)).toBe(1);
+    expect(resolveSpeed(99)).toBe(1);
+
+    expect(getStepDelayMs(0.5, 400)).toBe(800);
     expect(getStepDelayMs(1, 400)).toBe(400);
     expect(getStepDelayMs(2, 400)).toBe(200);
     expect(getStepDelayMs(4, 400)).toBe(100);
     expect(getStepDelayMs(2, 0)).toBe(0);
     expect(getStepDelayMs(2, -10)).toBe(0);
 
+    const d05 = getStepDelayMs(0.5);
     const d1 = getStepDelayMs(1);
     const d2 = getStepDelayMs(2);
     const d4 = getStepDelayMs(4);
+    expect(d05).toBeGreaterThanOrEqual(1240);
+    expect(d05).toBeLessThanOrEqual(1360);
+    expect(d1).toBeGreaterThanOrEqual(620);
+    expect(d1).toBeLessThanOrEqual(680);
+    expect(d2).toBeGreaterThanOrEqual(310);
+    expect(d2).toBeLessThanOrEqual(340);
+    expect(d4).toBeGreaterThanOrEqual(155);
+    expect(d4).toBeLessThanOrEqual(170);
+    expect(d05).toBeGreaterThan(d1);
     expect(d1).toBeGreaterThan(d2);
     expect(d2).toBeGreaterThan(d4);
     expect(d4).toBeGreaterThan(0);
@@ -368,7 +391,7 @@ describe('Проигрыватель TraceEvent (tracePlayer)', () => {
     ]);
   });
 
-  it('завершается тем быстрее, чем выше AnimationSpeed (4x < 2x < 1x)', async () => {
+  it('завершается тем быстрее, чем выше AnimationSpeed (4x < 2x < 1x < 0.5x)', async () => {
     const translator = createTranslator('ru');
     const events: TraceEvent[] = [
       { type: 'CARD_TRIGGER', cardId: 'c1', retriggerIndex: 0, chipsDelta: 10 },
@@ -384,7 +407,7 @@ describe('Проигрыватель TraceEvent (tracePlayer)', () => {
       },
     ];
 
-    const measureDuration = async (speed: 1 | 2 | 4): Promise<number> => {
+    const measureDuration = async (speed: 0.5 | 1 | 2 | 4): Promise<number> => {
       const start = Date.now();
       let doneAt = -1;
       const handle = playTraceEvents(events, speed, { translator });
@@ -396,13 +419,17 @@ describe('Проигрыватель TraceEvent (tracePlayer)', () => {
       return doneAt;
     };
 
+    const t05 = await measureDuration(0.5);
     const t1 = await measureDuration(1);
     const t2 = await measureDuration(2);
     const t4 = await measureDuration(4);
 
+    expect(t05).toBeGreaterThan(t1);
     expect(t1).toBeGreaterThan(t2);
     expect(t2).toBeGreaterThan(t4);
     expect(t4).toBeGreaterThan(0);
+    // Два триггера карт + обновление счёта на 1x дают около 3 шагов (~2000 мс)
+    expect(t1).toBeGreaterThanOrEqual(1800);
   });
 
   it('мгновенно завершает пустую очередь событий', async () => {
@@ -558,8 +585,8 @@ describe('Проигрыватель TraceEvent (tracePlayer)', () => {
     await vi.runAllTimersAsync();
     await handle.promise;
 
-    expect(banners).toEqual(['Масть: Ур. 3', 'Все расклады +1 ур.!']);
-    expect(popups.map((p) => p.text)).toEqual(['Масть: Ур. 3', 'Все расклады +1 ур.!']);
+    expect(banners).toEqual(['Масть: Ур. 3', 'Все комбинации +1 ур.!']);
+    expect(popups.map((p) => p.text)).toEqual(['Масть: Ур. 3', 'Все комбинации +1 ур.!']);
   });
 });
 
@@ -701,3 +728,163 @@ describe('Процедурный фон Canvas (backdropCanvas)', () => {
     controller.destroy();
   });
 });
+
+describe('Story 2.3: синхронизация onJuice и onFormulaDelta в TracePlayer', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('вызывает onJuice и onFormulaDelta для карт, реликвий (включая повторные срабатывания) и плиток Сила/Множ', async () => {
+      const translator = createTranslator('ru');
+      const juiceCalls: Array<{ kind: string; id?: string }> = [];
+      const formulaDeltas: Array<{ chipsDelta: number; multDelta: number; xMult: number }> = [];
+
+      const events: readonly TraceEvent[] = [
+        { type: 'CARD_TRIGGER', cardId: 'c_ace', retriggerIndex: 0, chipsDelta: 11 },
+        { type: 'CARD_TRIGGER', cardId: 'c_ace', retriggerIndex: 1, multDelta: 4 },
+        { type: 'HAND_CARD_TRIGGER', cardId: 'c_king', retriggerIndex: 0, xMult: 1.5 },
+        {
+          type: 'RELIC_TRIGGER',
+          relicUid: 'rel_1',
+          relicId: 'j_joker',
+          hook: 'onScoreRelic',
+          multDelta: 4,
+        },
+        {
+          type: 'SCORE_UPDATE',
+          chips: 41,
+          mult: 12,
+          handScore: 492,
+          totalScore: 492,
+          targetScore: 300,
+          handType: 'High Card',
+        },
+      ];
+
+      const handle = playTraceEvents(events, 2, {
+        translator,
+        onJuice: (target) => {
+          const id =
+            target.kind === 'card' || target.kind === 'hand_card'
+              ? target.cardId
+              : target.kind === 'relic'
+                ? target.relicUid
+                : undefined;
+          juiceCalls.push({ kind: target.kind, id });
+        },
+        onFormulaDelta: (delta) => {
+          formulaDeltas.push(delta);
+        },
+      });
+
+      await vi.runAllTimersAsync();
+      await handle.promise;
+
+      // Оба триггера c_ace вызывают juice_up на карте и соответствующих плитках HUD
+      expect(juiceCalls.filter((c) => c.kind === 'card' && c.id === 'c_ace')).toHaveLength(2);
+      expect(juiceCalls.some((c) => c.kind === 'hand_card' && c.id === 'c_king')).toBe(true);
+      expect(juiceCalls.some((c) => c.kind === 'relic' && c.id === 'rel_1')).toBe(true);
+      expect(juiceCalls.some((c) => c.kind === 'chips')).toBe(true);
+      expect(juiceCalls.some((c) => c.kind === 'mult')).toBe(true);
+
+      expect(formulaDeltas).toEqual([
+        { chipsDelta: 11, multDelta: 0, xMult: 1 },
+        { chipsDelta: 0, multDelta: 4, xMult: 1 },
+        { chipsDelta: 0, multDelta: 0, xMult: 1.5 },
+        { chipsDelta: 0, multDelta: 4, xMult: 1 },
+      ]);
+    });
+
+    it('не вызывает onJuice для пропущенных событий при вызове skip()', async () => {
+      const translator = createTranslator('ru');
+      const juiceCalls: string[] = [];
+      const onScore = vi.fn();
+
+      const events: readonly TraceEvent[] = [
+        { type: 'CARD_TRIGGER', cardId: 'c_1', retriggerIndex: 0, chipsDelta: 10 },
+        { type: 'RELIC_TRIGGER', relicUid: 'rel_1', relicId: 'j_joker', hook: 'onScoreRelic', multDelta: 4 },
+        {
+          type: 'SCORE_UPDATE',
+          chips: 20,
+          mult: 5,
+          handScore: 100,
+          totalScore: 100,
+          targetScore: 300,
+          handType: 'High Card',
+        },
+      ];
+
+      const handle = playTraceEvents(events, 1, {
+        translator,
+        onScore,
+        onJuice: (target) => juiceCalls.push(target.kind),
+      });
+
+      // После первого шага нажимаем skip(): оставшийся RELIC_TRIGGER не должен запускать juice_up
+      const countBeforeSkip = juiceCalls.length;
+      handle.skip();
+      await handle.promise;
+
+      expect(countBeforeSkip).toBeGreaterThanOrEqual(1);
+      expect(juiceCalls.length).toBe(countBeforeSkip);
+      expect(onScore).toHaveBeenCalledWith(20, 5, 100, 300, 'High Card');
+    });
+
+    it('вызывает onConsumableTrigger при CONSUMABLE_TRIGGER и не вызывает при дубликате или skip()', async () => {
+      const translator = createTranslator('ru');
+      const triggers: Array<{ consumableId: string; consumableUid?: string; targetCardIds?: readonly string[] }> = [];
+
+      const events: readonly TraceEvent[] = [
+        {
+          type: 'HAND_LEVEL_UP',
+          handType: 'Pair',
+          newLevel: 2,
+          chips: 25,
+          mult: 3,
+        },
+        {
+          type: 'CONSUMABLE_TRIGGER',
+          consumableId: 'c_mercury',
+          consumableUid: 'cons_1',
+          handType: 'Pair',
+          locKey: 'hand_level_up',
+          locParams: { hand: 'Pair', level: 2 },
+        },
+        {
+          type: 'CONSUMABLE_TRIGGER',
+          consumableId: 'c_aura',
+          consumableUid: 'cons_2',
+          targetCardIds: ['c_ace'],
+        },
+        {
+          type: 'CONSUMABLE_TRIGGER',
+          consumableId: 'c_empress',
+          consumableUid: 'cons_3',
+          targetCardIds: ['c_ace'],
+        },
+      ];
+
+      const handle = playTraceEvents(events, 2, {
+        translator,
+        onConsumableTrigger: (payload) => {
+          triggers.push(payload);
+        },
+      });
+
+      // HAND_LEVEL_UP подавляет дубль c_mercury (hand_level_up), и сразу на следующем шаге (через 340мс) срабатывает c_aura
+      expect(triggers).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(400);
+      expect(triggers).toHaveLength(1);
+      expect(triggers[0]?.consumableId).toBe('c_aura');
+      expect(triggers[0]?.targetCardIds).toEqual(['c_ace']);
+
+      // Оставшийся c_empress после skip() не вызывается
+      handle.skip();
+      await handle.promise;
+      expect(triggers).toHaveLength(1);
+    });
+  });

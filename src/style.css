@@ -1,5 +1,23 @@
+/* Локальный пиксельный шрифт Pixellari (кириллица + латиница, без внешних CDN) */
+@font-face {
+  font-family: 'Pixellari';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('./assets/fonts/pixellari-cyrillic.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Pixellari';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('./assets/fonts/pixellari-cyrillic.woff2') format('woff2');
+}
+
 :root {
   color-scheme: dark;
+  --font-ui: 'Pixellari', 'Segoe UI', system-ui, sans-serif;
   --bg-outer: #0d1d1b;
   --bg-felt: #142823;
   --bg-felt-deep: #0c1816;
@@ -10,12 +28,25 @@
   --accent-gold: #f5b942;
   --accent-red: #e84a5f;
   --accent-blue: #3a86ff;
+  --anim-speed: 1;
+  --trace-step-duration: calc(640ms / var(--anim-speed, 1));
+  --trace-popup-duration: max(350ms, calc(760ms / var(--anim-speed, 1)));
+  --trace-highlight-transition: clamp(120ms, calc(200ms / var(--anim-speed, 1)), 360ms);
 }
 
 *,
 *::before,
 *::after {
   box-sizing: border-box;
+  font-family: var(--font-ui);
+}
+
+button,
+input,
+select,
+textarea,
+dialog {
+  font-family: var(--font-ui);
 }
 
 html,
@@ -30,7 +61,8 @@ body {
   user-select: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-ui);
+  font-synthesis: none;
   color: var(--text-main);
   /* Базовый цветной фон на случай задержки первого кадра canvas */
   background: radial-gradient(circle at 50% 25%, #193832 0%, var(--bg-outer) 78%);
@@ -83,6 +115,18 @@ body {
   overflow: hidden;
 }
 
+/* В Главном меню сцена раскрывается на весь вьюпорт поверх живого Canvas-фона */
+.stage-portrait.stage-portrait--menu {
+  width: 100%;
+  height: 100dvh;
+  max-width: none;
+  aspect-ratio: auto;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .stage-screen-host {
   position: relative;
   flex: 1 1 auto;
@@ -118,7 +162,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.35);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.48);
   pointer-events: none;
-  animation: trace-popup-rise 0.85s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: trace-popup-rise var(--trace-popup-duration, 760ms) cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .trace-popup--chips {
@@ -183,6 +227,10 @@ body {
 .hand-card-slot[data-highlighted='true'],
 .play-zone__card.is-highlighted {
   z-index: 6;
+  transition:
+    transform var(--trace-highlight-transition, 200ms) ease,
+    opacity var(--trace-highlight-transition, 200ms) ease,
+    filter var(--trace-highlight-transition, 200ms) ease;
 }
 
 @media (max-width: 540px) {
@@ -190,5 +238,123 @@ body {
     border: none;
     border-radius: 0;
     box-shadow: none;
+  }
+}
+
+/* Широкая 2-колоночная ПК-сцена: активное поле занимает весь доступный вьюпорт (1.6.2.1 ЯИ) */
+@media (min-width: 960px) and (orientation: landscape) {
+  .stage-portrait {
+    width: 100%;
+    height: 100dvh;
+    max-width: none;
+    aspect-ratio: auto;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+  }
+}
+
+/* Пиксельная чёткость для растровых и пиксельных спрайтов будущего Эпика 5 */
+.pixel-art,
+.card-frame img,
+.card-frame canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* Оверлей CRT-эффекта старого телевизора поверх сцены (без перехвата кликов и тапов) */
+.crt-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.crt-overlay::before,
+.crt-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+[data-crt='off'] .crt-overlay {
+  display: none;
+}
+
+/* Режим «Лёгкий»: деликатные сканлайны и мягкая виньетка без утомления глаз */
+[data-crt='light'] .crt-overlay {
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.015) 0px,
+      rgba(255, 255, 255, 0.015) 1px,
+      rgba(0, 0, 0, 0.09) 1px,
+      rgba(0, 0, 0, 0.09) 3px
+    ),
+    radial-gradient(ellipse at center, transparent 62%, rgba(2, 10, 8, 0.26) 100%);
+}
+
+[data-crt='light'] .crt-overlay::before {
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(255, 90, 90, 0.018) 0px,
+    rgba(90, 255, 130, 0.018) 1px,
+    rgba(90, 160, 255, 0.018) 2px,
+    transparent 3px
+  );
+  opacity: 0.45;
+}
+
+/* Режим «Оригинал»: выраженная ретро-сетка, сканлайны, глубокая виньетка и лёгкий скан-луч */
+[data-crt='original'] .crt-overlay {
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.025) 0px,
+      rgba(255, 255, 255, 0.025) 1px,
+      rgba(0, 0, 0, 0.22) 1px,
+      rgba(0, 0, 0, 0.22) 3px
+    ),
+    radial-gradient(ellipse at center, transparent 52%, rgba(1, 6, 5, 0.5) 100%);
+  box-shadow: inset 0 0 46px rgba(0, 0, 0, 0.52);
+}
+
+[data-crt='original'] .crt-overlay::before {
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(255, 70, 70, 0.05) 0px,
+    rgba(70, 255, 120, 0.05) 1px,
+    rgba(70, 150, 255, 0.05) 2px,
+    transparent 3px
+  );
+  opacity: 0.65;
+}
+
+[data-crt='original'] .crt-overlay::after {
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(190, 255, 225, 0.035) 50%,
+    transparent 100%
+  );
+  background-size: 100% 180px;
+  animation: crt-scanline-drift 9s linear infinite;
+}
+
+@keyframes crt-scanline-drift {
+  0% {
+    transform: translateY(-25%);
+  }
+  100% {
+    transform: translateY(25%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crt-overlay::after {
+    animation: none;
   }
 }

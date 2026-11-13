@@ -696,6 +696,10 @@ export function rerollShopState(
 
   current = {
     ...current,
+    stats: {
+      ...current.stats,
+      rerollsCount: current.stats.rerollsCount + 1,
+    },
     shop: {
       ...state.shop,
       offers: shelfResult.offers,

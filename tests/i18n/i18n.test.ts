@@ -25,6 +25,10 @@ import {
   createTranslator,
   formatMessage,
   getCatalogTexts,
+  getDictionary,
+  isDevOriginalTermsEnabled,
+  readStoredDevOriginalTermsFlag,
+  setDevOriginalTermsEnabled,
   syncDocumentLanguage,
 } from '../../src/i18n';
 
@@ -77,6 +81,10 @@ const FORBIDDEN_EN_PATTERNS: readonly RegExp[] = [
   /\bgambl(?:e|ing)\b/i,
   /\bjackpots?\b/i,
   /\broulette\b/i,
+  /\bjimbo\b/i,
+  /\bante\b/i,
+  /\bbalatro\b/i,
+  /\bvouchers?\b/i,
 ];
 
 const FORBIDDEN_RU_PATTERNS: readonly RegExp[] = [
@@ -95,10 +103,18 @@ const FORBIDDEN_RU_PATTERNS: readonly RegExp[] = [
   /(?<![а-яё])джокер/iu,
   /(?<![а-яё])рулетк/iu,
   /(?<![а-яё])азарт/iu,
+  /(?<![а-яё])джимбо/iu,
+  /(?<![а-яё])анте(?![а-яё])/iu,
+  /(?<![а-яё])балатро/iu,
+  /(?<![а-яё])ваучер/iu,
 ];
 
 describe('Локализация Balite (i18n)', () => {
-  afterEach(() => {
+  afterEach(async () => {
+    await setDevOriginalTermsEnabled(false, false);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.clear();
+    }
     vi.unstubAllGlobals();
     if (typeof document !== 'undefined' && document.documentElement) {
       document.documentElement.lang = 'ru';
@@ -182,13 +198,20 @@ describe('Локализация Balite (i18n)', () => {
       expect(/[а-яё]/i.test(text), `Кириллица в EN-ключе ${key}: "${text}"`).toBe(false);
     }
 
-    // В RU-словаре латиница за пределами {placeholder} допустима лишь в бренде, скорости и 'English'/'X'
+    // В RU-словаре латиница за пределами {placeholder} допустима лишь в бренде, скорости, рангах B/A/S/SS+ и 'English'
     const ruLeaves = collectLeafStrings(RU_DICTIONARY);
     for (const [key, text] of ruLeaves) {
       if (
         key === 'ui.app.title' ||
+        key === 'ui.hud.endlessRank' ||
         key === 'ui.settings.langEn' ||
+        key === 'ui.settings.crtMode' ||
+        key === 'ui.credits.fontLine' ||
         key === 'celestials.c_planet_x.name' ||
+        key === 'rarities.1' ||
+        key === 'rarities.2' ||
+        key === 'rarities.3' ||
+        key === 'ui.settings.speed05x' ||
         key === 'ui.settings.speed1x' ||
         key === 'ui.settings.speed2x' ||
         key === 'ui.settings.speed4x'
@@ -205,7 +228,10 @@ describe('Локализация Balite (i18n)', () => {
     // В RU-настройках название английского языка — English (требование 8.2.3)
     expect(RU_DICTIONARY.ui.settings.langEn).toBe('English');
     expect(RU_DICTIONARY.ui.settings.langRu).toBe('Русский');
+    expect(RU_DICTIONARY.ui.settings.crtMode).toBe('CRT-эффект');
     expect(EN_DICTIONARY.ui.settings.langEn).toBe('English');
+    expect(RU_DICTIONARY.ui.settings.speed05x).toBe('0.5x');
+    expect(EN_DICTIONARY.ui.settings.speed05x).toBe('0.5x');
   });
 
   it('покрывает 100% всех идентификаторов движка в getCatalogTexts(lang) без сырых плейсхолдеров', () => {
@@ -322,31 +348,31 @@ describe('Локализация Balite (i18n)', () => {
   it('сохраняет точные канонические названия Balite из GDD в русской локали', () => {
     const ruCatalog = getCatalogTexts('ru');
 
-    expect(ruCatalog.relics.j_joker.name).toBe('Путевой камень');
-    expect(ruCatalog.relics.j_vampire.name).toBe('Поглотитель чар');
-    expect(ruCatalog.relics.j_gluttenous_joker.name).toBe('Четырёхлистник');
-    expect(ruCatalog.relics.j_blueprint.name).toBe('Чертёж Мастера');
-    expect(ruCatalog.relics.j_brainstorm.name).toBe('Искра Озарения');
-    expect(ruCatalog.relics.j_vagabond.name).toBe('Аскет');
+    expect(ruCatalog.relics.j_joker.name).toBe('Базовый удар');
+    expect(ruCatalog.relics.j_vampire.name).toBe('Вытягивание чар');
+    expect(ruCatalog.relics.j_gluttenous_joker.name).toBe('Лесной оберег');
+    expect(ruCatalog.relics.j_blueprint.name).toBe('Копирование техники');
+    expect(ruCatalog.relics.j_brainstorm.name).toBe('Перенимание опыта');
+    expect(ruCatalog.relics.j_vagabond.name).toBe('Странник без гроша');
 
     expect(ruCatalog.hands['Flush Five'].name).toBe('Мастная пятёрка');
     expect(ruCatalog.hands['High Card'].name).toBe('Старшая карта');
 
-    expect(ruCatalog.scrolls.c_heirophant.name).toBe('Свиток Рун');
-    expect(ruCatalog.scrolls.c_hanged_man.name).toBe('Свиток Очищения');
-    expect(ruCatalog.scrolls.c_devil.name).toBe('Свиток Мидаса');
+    expect(ruCatalog.scrolls.c_heirophant.name).toBe('Свиток Закалки');
+    expect(ruCatalog.scrolls.c_hanged_man.name).toBe('Свиток Переплавки');
+    expect(ruCatalog.scrolls.c_devil.name).toBe('Свиток Позолоты');
 
-    expect(ruCatalog.runes.c_black_hole.name).toBe('Звёздный провал');
-    expect(ruCatalog.bosses.bl_final_vessel.name).toBe('Фиолетовый Монолит');
-    expect(ruCatalog.bosses.bl_final_bell.name).toBe('Лазурный Звон');
-    expect(ruCatalog.blinds.small.name).toBe('Малый Страж');
-    expect(ruCatalog.blinds.big.name).toBe('Старший Страж');
+    expect(ruCatalog.runes.c_black_hole.name).toBe('Пандора: Дар Древних');
+    expect(ruCatalog.bosses.bl_final_vessel.name).toBe('Аметистовый дракон');
+    expect(ruCatalog.bosses.bl_final_bell.name).toBe('Лазурная гарпия');
+    expect(ruCatalog.blinds.small.name).toBe('Гоблин-налетчик');
+    expect(ruCatalog.blinds.big.name).toBe('Орк-берсерк');
     expect(ruCatalog.decks.b_red.name).toBe('Алая колода');
   });
 
   it('корректно подставляет параметры в formatMessage и шаблоны Реликвий', () => {
-    expect(formatMessage('ru', 'ui.hud.stageWithMax', { ante: 3, maxAnte: 8 })).toBe('Этап 3/8');
-    expect(formatMessage('en', 'ui.hud.stageWithMax', { ante: 3, maxAnte: 8 })).toBe('Stage 3/8');
+    expect(formatMessage('ru', 'ui.hud.stageWithMax', { ante: 3, maxAnte: 8 })).toBe('Ранг гильдии 3/8');
+    expect(formatMessage('en', 'ui.hud.stageWithMax', { ante: 3, maxAnte: 8 })).toBe('Guild Tier 3/8');
 
     // Подстановка нуля не должна восприниматься как отсутствующий параметр
     expect(formatMessage('ru', 'relics.j_mystic_summit.description', { mult: 15, discards: 0 })).toContain(
@@ -356,7 +382,7 @@ describe('Локализация Balite (i18n)', () => {
       '+15 Mult when 0 discards remain',
     );
 
-    // Проверка накопительного счётчика Реликвии
+    // Проверка накопительного счётчика Навыка
     expect(
       formatMessage('ru', 'relics.j_runner.description', { chipsStep: 15, chips: 45 }),
     ).toContain('+45');
@@ -366,12 +392,12 @@ describe('Локализация Balite (i18n)', () => {
 
     // Поддержка ключей TraceEvent (с префиксом trace. и без него)
     expect(formatMessage('ru', 'trace.boss_hook_discard', { count: 2 })).toBe(
-      'Страж сбросил 2 карты',
+      'Монстр сбросил 2 карты',
     );
-    expect(formatMessage('en', 'boss_hook_discard', { count: 2 })).toBe('Boss discarded 2 cards');
+    expect(formatMessage('en', 'boss_hook_discard', { count: 2 })).toBe('Monster discarded 2 cards');
 
     // Недостающий параметр сохраняется в виде шаблона, неизвестный ключ возвращается как есть
-    expect(formatMessage('en', 'ui.hud.stage', {})).toBe('Stage {ante}');
+    expect(formatMessage('en', 'ui.hud.stage', {})).toBe('Guild Tier {ante}');
     expect(formatMessage('ru', 'trace.custom.unknown')).toBe('trace.custom.unknown');
   });
 
@@ -387,28 +413,28 @@ describe('Локализация Balite (i18n)', () => {
 
     // Слияние параметров по умолчанию с живым значением chips
     const runner = enT.getRelicText('j_runner', { chips: 60 });
-    expect(runner.name).toBe('Wayfarer Boots');
+    expect(runner.name).toBe('Adventurer Dash');
     expect(runner.description).toContain('+15 Power');
     expect(runner.description).toContain('+60');
 
-    // Расходники (Сфера, Свиток, Руна), Грамоты, Знаки, Боссы, Колоды и Расклады
-    expect(ruT.getConsumableText('c_mercury').name).toBe('Меркурий');
-    expect(enT.getConsumableText('c_devil').name).toBe('Scroll of Midas');
+    // Расходники (Том комбинаций, Свиток Кузницы, Карта Пандоры), Привилегии, Талоны, Боссы, Колоды и Комбинации
+    expect(ruT.getConsumableText('c_mercury').name).toBe('Том парного боя');
+    expect(enT.getConsumableText('c_devil').name).toBe('Scroll of Gilding');
     expect(ruT.getConsumableText('c_black_hole', { levels: 2 }).description).toContain('+2');
-    expect(enT.getCharterText('v_observatory').name).toBe('Observatory');
-    expect(ruT.getCharterText('v_observatory').name).toBe('Обсерватория');
+    expect(enT.getCharterText('v_observatory').name).toBe('Library Pass');
+    expect(ruT.getCharterText('v_observatory').name).toBe('Библиотечная карта');
     expect(ruT.getTagText('tag_investment').description).toContain('+25 з.');
-    expect(enT.getBossText('bl_final_vessel').name).toBe('Violet Monolith');
+    expect(enT.getBossText('bl_final_vessel').name).toBe('Amethyst Dragon');
     expect(ruT.getDeckText('b_yellow').description).toContain('+10 з.');
     expect(enT.getHandText('Flush').name).toBe('Flush');
     expect(ruT.getPackSubtitle(2, 5)).toBe('Выберите 2 из 5');
     expect(enT.getPackSubtitle(1, 3)).toBe('Choose 1 of 3');
 
-    // Обычный Страж vs Босс Этапа
-    expect(ruT.getBlindText('small').name).toBe('Малый Страж');
-    expect(ruT.getBlindText('boss', 'bl_wall').name).toBe('Великая Стена');
-    expect(enT.getPackTitle('buffoon', 'normal')).toBe('Relic Pack');
-    expect(ruT.getPackTitle('buffoon', 'normal')).toBe('Обычный набор Реликвий');
+    // Обычный заказ vs Босс-монстр
+    expect(ruT.getBlindText('small').name).toBe('Гоблин-налетчик');
+    expect(ruT.getBlindText('boss', 'bl_wall').name).toBe('Каменный титан');
+    expect(enT.getPackTitle('buffoon', 'normal')).toBe('Skill Chest');
+    expect(ruT.getPackTitle('buffoon', 'normal')).toBe('Обычный сундук Навыков');
     expect(enT.getRankLabel(14)).toBe('Ace');
     expect(ruT.getRankLabel(14, true)).toBe('Т');
     expect(enT.getSuitLabel('spades')).toBe('Spades');
@@ -426,5 +452,66 @@ describe('Локализация Balite (i18n)', () => {
     // В среде без document функция не падает
     vi.stubGlobal('document', undefined);
     expect(() => syncDocumentLanguage('ru')).not.toThrow();
+  });
+
+  it('подключает и отключает DEV-словарь Balatro без мутации базовых словарей', async () => {
+    expect(isDevOriginalTermsEnabled()).toBe(false);
+    expect(readStoredDevOriginalTermsFlag()).toBe(false);
+    expect(createTranslator('ru').getRelicText('j_joker').name).toBe('Базовый удар');
+
+    const activated = await setDevOriginalTermsEnabled(true, true);
+    expect(activated).toBe(true);
+    expect(isDevOriginalTermsEnabled()).toBe(true);
+    expect(readStoredDevOriginalTermsFlag()).toBe(true);
+
+    const ruDev = createTranslator('ru');
+    const enDev = createTranslator('en');
+    expect(ruDev.getRelicText('j_joker').name).toBe('Джокер');
+    expect(enDev.getRelicText('j_joker').name).toBe('Joker');
+    expect(ruDev.t('ui.hud.powerShort')).toBe('Фиш.');
+    expect(enDev.t('ui.hud.powerShort')).toBe('Chips');
+    expect(ruDev.getHandText('Flush').name).toBe('Флеш');
+    expect(getDictionary('ru').ui.hud.stage).toBe('Анте {ante}');
+    expect(getCatalogTexts('en').blinds.small.name).toBe('Small Blind');
+    expect(formatMessage('ru', 'ui.hud.stageWithMax', { ante: 2, maxAnte: 8 })).toContain('Анте');
+
+    // Исходные prod-словари при этом остаются нетронутыми
+    expect(RU_DICTIONARY.relics.j_joker.name).toBe('Базовый удар');
+    expect(EN_DICTIONARY.relics.j_joker.name).toBe('Basic Strike');
+
+    await setDevOriginalTermsEnabled(false, true);
+    expect(isDevOriginalTermsEnabled()).toBe(false);
+    expect(readStoredDevOriginalTermsFlag()).toBe(false);
+    expect(createTranslator('ru').getRelicText('j_joker').name).toBe('Базовый удар');
+  });
+
+  it('содержит локализацию выбора Стража и подробного окна Колоды на RU и EN', () => {
+    const ruT = createTranslator('ru');
+    const enT = createTranslator('en');
+
+    expect(ruT.t('ui.blindSelect.chooseNextPrompt')).toBe('Выберите заказ на доске гильдии');
+    expect(ruT.t('ui.blindSelect.minScore')).toBe('Минимум очков');
+    expect(ruT.t('ui.blindSelect.orSeparator')).toBe('ИЛИ');
+    expect(ruT.t('ui.blindSelect.skipButton')).toBe('Пропустить заказ');
+    expect(ruT.t('ui.blindSelect.advanceStageTitle')).toBe('Повышение ранга');
+
+    expect(enT.t('ui.blindSelect.chooseNextPrompt')).toBe('Choose a quest on the guild board');
+    expect(enT.t('ui.blindSelect.minScore')).toBe('Score at least');
+    expect(enT.t('ui.blindSelect.orSeparator')).toBe('OR');
+    expect(enT.t('ui.blindSelect.skipButton')).toBe('Skip Quest');
+    expect(enT.t('ui.blindSelect.advanceStageTitle')).toBe('Rank Promotion');
+
+    expect(ruT.t('ui.deckModal.remainingTab')).toBe('Оставшаяся колода');
+    expect(ruT.t('ui.deckModal.fullTab')).toBe('Полная колода');
+    expect(ruT.t('ui.deckModal.baseCardsTitle')).toBe('Базовые карты');
+    expect(ruT.t('ui.deckModal.backButton')).toBe('Назад');
+
+    expect(enT.t('ui.deckModal.remainingTab')).toBe('Remaining');
+    expect(enT.t('ui.deckModal.fullTab')).toBe('Full Deck');
+    expect(enT.t('ui.deckModal.baseCardsTitle')).toBe('Base Cards');
+    expect(enT.t('ui.deckModal.backButton')).toBe('Back');
+
+    expect(ruT.t('ui.credits.fontLine')).toContain('Pixellari');
+    expect(enT.t('ui.credits.fontLine')).toContain('Pixellari');
   });
 });

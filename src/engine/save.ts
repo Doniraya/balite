@@ -19,6 +19,7 @@ import {
   SEALS,
   SUITS,
   TAG_IDS,
+  type ActiveRunTracker,
   type AnimationSpeed,
   type BlindKind,
   type BlindSlotState,
@@ -35,6 +36,7 @@ import {
   type ConsumableId,
   type ConsumableInstance,
   type ConsumableKind,
+  type CrtMode,
   type DeckId,
   type Edition,
   type EngineLang,
@@ -71,6 +73,21 @@ import {
  * Текущая версия схемы сериализации сохранений Balite.
  */
 export const SAVE_SCHEMA_VERSION = 1;
+
+/**
+ * Текущая версия схемы пользовательских настроек (v2 — скорость по умолчанию 1x).
+ */
+export const SETTINGS_SCHEMA_VERSION = 2;
+
+/**
+ * Скорость анимаций по умолчанию.
+ */
+export const DEFAULT_ANIMATION_SPEED: AnimationSpeed = 1;
+
+/**
+ * Режим CRT-эффекта по умолчанию (лёгкий комфортный режим).
+ */
+export const DEFAULT_CRT_MODE: CrtMode = 'light';
 
 const CARD_FLAG_DEBUFFED = 1 << 0;
 const CARD_FLAG_PLAYED_THIS_ANTE = 1 << 1;
@@ -132,6 +149,7 @@ export interface CreateInitialMetaSaveOptions {
   readonly lang?: EngineLang;
   readonly animationSpeed?: AnimationSpeed;
   readonly soundEnabled?: boolean;
+  readonly crtMode?: CrtMode;
   readonly musicVolume?: number;
   readonly sfxVolume?: number;
   readonly revision?: number;
@@ -185,14 +203,41 @@ function mergeUniqueIds<T extends string>(primary: readonly T[], secondary: read
   return result;
 }
 
-function sanitizeSettings(raw: unknown): GameSettings {
+function isValidAnimationSpeed(value: unknown): value is AnimationSpeed {
+  return value === 0.5 || value === 1 || value === 2 || value === 4;
+}
+
+function isValidCrtMode(value: unknown): value is CrtMode {
+  return value === 'off' || value === 'light' || value === 'original';
+}
+
+function sanitizeSettings(
+  raw: unknown,
+  options: { readonly preserveLegacyDoubleSpeed?: boolean } = {},
+): GameSettings {
   const rec = isRecord(raw) ? raw : {};
-  const animationSpeed: AnimationSpeed =
-    rec.animationSpeed === 1 || rec.animationSpeed === 2 || rec.animationSpeed === 4
-      ? rec.animationSpeed
-      : 2;
+  const rawSettingsVersion =
+    typeof rec.settingsVersion === 'number' &&
+    Number.isFinite(rec.settingsVersion) &&
+    rec.settingsVersion >= 1
+      ? Math.floor(rec.settingsVersion)
+      : 1;
+  const isLegacySettings =
+    !options.preserveLegacyDoubleSpeed && rawSettingsVersion < SETTINGS_SCHEMA_VERSION;
+
+  // При миграции старых сохранений v1 дефолтная скорость 2x переводится на 1x,
+  // а явный выбор игрока (0.5x / 1x / 4x) и новые сохранения (v2+) сохраняются.
+  let animationSpeed: AnimationSpeed = DEFAULT_ANIMATION_SPEED;
+  if (isValidAnimationSpeed(rec.animationSpeed)) {
+    animationSpeed =
+      isLegacySettings && rec.animationSpeed === 2
+        ? DEFAULT_ANIMATION_SPEED
+        : rec.animationSpeed;
+  }
+
   const lang: EngineLang = rec.lang === 'en' ? 'en' : 'ru';
   const soundEnabled = typeof rec.soundEnabled === 'boolean' ? rec.soundEnabled : true;
+  const crtMode: CrtMode = isValidCrtMode(rec.crtMode) ? rec.crtMode : DEFAULT_CRT_MODE;
 
   const musicVolume =
     typeof rec.musicVolume === 'number' && Number.isFinite(rec.musicVolume)
@@ -207,39 +252,335 @@ function sanitizeSettings(raw: unknown): GameSettings {
     animationSpeed,
     lang,
     soundEnabled,
+    crtMode,
     ...(musicVolume !== undefined ? { musicVolume } : {}),
     ...(sfxVolume !== undefined ? { sfxVolume } : {}),
+    settingsVersion: SETTINGS_SCHEMA_VERSION,
   };
+}
+
+function sanitizeHandPlayCounts(raw: unknown): Partial<Record<HandType, number>> {
+  if (!isRecord(raw)) return {};
+  const counts: Partial<Record<HandType, number>> = {};
+  for (const handType of HAND_TYPES) {
+    const val = raw[handType];
+    if (typeof val === 'number' && Number.isFinite(val) && val >= 1) {
+      counts[handType] = Math.floor(val);
+    }
+  }
+  return counts;
+}
+
+function mergeHandPlayCounts(
+  primary: Readonly<Partial<Record<HandType, number>>>,
+  secondary: Readonly<Partial<Record<HandType, number>>>,
+): Partial<Record<HandType, number>> {
+  const merged: Partial<Record<HandType, number>> = {};
+  for (const handType of HAND_TYPES) {
+    const a = sanitizeNonNegInt(primary[handType], 0);
+    const b = sanitizeNonNegInt(secondary[handType], 0);
+    const maxCount = Math.max(a, b);
+    if (maxCount > 0) {
+      merged[handType] = maxCount;
+    }
+  }
+  return merged;
 }
 
 function sanitizeMetaStats(raw: unknown): MetaStats {
   const rec = isRecord(raw) ? raw : {};
+  const currentWinStreak = sanitizeNonNegInt(rec.currentWinStreak, 0);
+  const bestWinStreak = Math.max(sanitizeNonNegInt(rec.bestWinStreak, 0), currentWinStreak);
+
   return {
     runsStarted: sanitizeNonNegInt(rec.runsStarted, 0),
     runsWon: sanitizeNonNegInt(rec.runsWon, 0),
     highestAnte: sanitizeNonNegInt(rec.highestAnte, 0),
+    highestRound: sanitizeNonNegInt(rec.highestRound, 0),
     bestHandScore:
       typeof rec.bestHandScore === 'number' &&
       Number.isFinite(rec.bestHandScore) &&
       rec.bestHandScore >= 0
         ? rec.bestHandScore
         : 0,
+    maxDollars: sanitizeNonNegInt(rec.maxDollars, 0),
+    bestWinStreak,
+    currentWinStreak,
     totalHandsPlayed: sanitizeNonNegInt(rec.totalHandsPlayed, 0),
+    handPlayCounts: sanitizeHandPlayCounts(rec.handPlayCounts),
+  };
+}
+
+/**
+ * Флаги дискретных событий для обновления накопительной статистики игрока.
+ */
+export interface UpdateMetaStatsFlags {
+  readonly runStarted?: boolean;
+  readonly handPlayed?: boolean;
+  readonly playedHandType?: HandType | null;
+  readonly runWon?: boolean;
+  readonly runLost?: boolean;
+}
+
+/**
+ * Обновляет накопительную мета-статистику игрока по состоянию забега и флагам события.
+ */
+export function updateMetaStatsFromRunState(
+  prevStats: MetaStats,
+  state: RunState,
+  flags: UpdateMetaStatsFlags = {},
+): MetaStats {
+  const base = sanitizeMetaStats(prevStats);
+  const nextCounts = { ...base.handPlayCounts };
+
+  const handType =
+    flags.playedHandType !== undefined
+      ? flags.playedHandType
+      : flags.handPlayed
+        ? state.lastPlayedHandType
+        : null;
+  if (handType && HAND_TYPE_SET.has(handType)) {
+    nextCounts[handType] = (nextCounts[handType] ?? 0) + 1;
+  }
+
+  let currentWinStreak = base.currentWinStreak;
+  if (flags.runWon) {
+    currentWinStreak += 1;
+  } else if (flags.runLost && !state.endlessMode) {
+    // Проигрыш в бесконечном режиме после победы на 8-м Этапе не прерывает серию побед
+    currentWinStreak = 0;
+  }
+  const bestWinStreak = Math.max(base.bestWinStreak, currentWinStreak);
+
+  const runBestHandScore =
+    typeof state.stats.bestHandScore === 'number' &&
+    Number.isFinite(state.stats.bestHandScore) &&
+    state.stats.bestHandScore >= 0
+      ? state.stats.bestHandScore
+      : 0;
+
+  return {
+    runsStarted: base.runsStarted + (flags.runStarted ? 1 : 0),
+    runsWon: base.runsWon + (flags.runWon ? 1 : 0),
+    highestAnte: Math.max(base.highestAnte, sanitizeNonNegInt(state.ante, 0)),
+    highestRound: Math.max(base.highestRound, sanitizeNonNegInt(state.round, 0)),
+    bestHandScore: Math.max(base.bestHandScore, runBestHandScore),
+    maxDollars: Math.max(base.maxDollars, sanitizeNonNegInt(state.dollars, 0)),
+    bestWinStreak,
+    currentWinStreak,
+    totalHandsPlayed: base.totalHandsPlayed + (flags.handPlayed ? 1 : 0),
+    handPlayCounts: nextCounts,
+  };
+}
+
+function pickMostFrequentHand(
+  readCount: (handType: HandType) => number,
+): { readonly handType: HandType; readonly count: number } | null {
+  let bestHand: HandType | null = null;
+  let bestCount = 0;
+
+  for (const handType of HAND_TYPES) {
+    const rawCount = readCount(handType);
+    const count =
+      typeof rawCount === 'number' && Number.isFinite(rawCount) && rawCount > 0
+        ? Math.floor(rawCount)
+        : 0;
+    if (count > bestCount) {
+      bestCount = count;
+      bestHand = handType;
+    }
+  }
+
+  return bestHand !== null ? { handType: bestHand, count: bestCount } : null;
+}
+
+/**
+ * Возвращает наиболее часто сыгранный расклад из накопительной статистики (или null, если рук ещё не было).
+ */
+export function getMostPlayedHand(
+  stats: MetaStats,
+): { readonly handType: HandType; readonly count: number } | null {
+  return pickMostFrequentHand((handType) => stats.handPlayCounts?.[handType] ?? 0);
+}
+
+/**
+ * Возвращает наиболее часто сыгранный расклад в текущем забеге (или null, если рук ещё не было).
+ */
+export function getMostPlayedHandInRun(
+  state: RunState,
+): { readonly handType: HandType; readonly count: number } | null {
+  return pickMostFrequentHand((handType) => state.handLevels[handType]?.playedCount ?? 0);
+}
+
+/**
+ * Подсчитывает общее количество открытых записей коллекции в мета-прогрессе.
+ */
+export function countMetaDiscoveries(
+  meta: Pick<
+    MetaSave,
+    'discoveredRelics' | 'discoveredConsumables' | 'discoveredCharters' | 'discoveredBosses'
+  >,
+): number {
+  return (
+    meta.discoveredRelics.length +
+    meta.discoveredConsumables.length +
+    meta.discoveredCharters.length +
+    meta.discoveredBosses.length
+  );
+}
+
+/**
+ * Создаёт снимок базовых рекордов игрока на момент старта нового забега.
+ */
+export function createActiveRunTracker(meta: MetaSave): ActiveRunTracker {
+  return {
+    baselineBestHandScore:
+      typeof meta.stats.bestHandScore === 'number' &&
+      Number.isFinite(meta.stats.bestHandScore) &&
+      meta.stats.bestHandScore >= 0
+        ? meta.stats.bestHandScore
+        : 0,
+    baselineHighestAnte: sanitizeNonNegInt(meta.stats.highestAnte, 0),
+    baselineHighestRound: sanitizeNonNegInt(meta.stats.highestRound, 0),
+    newDiscoveries: 0,
+  };
+}
+
+/**
+ * Обновляет счётчик новых открытий и базовые пороги рекордов при сохранении хода/события.
+ */
+export function advanceActiveRunTracker(
+  prevMeta: MetaSave,
+  nextMeta: MetaSave,
+  runStarted = false,
+): ActiveRunTracker {
+  const discoveryDelta = Math.max(0, countMetaDiscoveries(nextMeta) - countMetaDiscoveries(prevMeta));
+  if (runStarted) {
+    const baseTracker = createActiveRunTracker(prevMeta);
+    return {
+      ...baseTracker,
+      newDiscoveries: discoveryDelta,
+    };
+  }
+
+  const baseTracker = prevMeta.activeRunTracker ?? createActiveRunTracker(prevMeta);
+  return {
+    ...baseTracker,
+    newDiscoveries: baseTracker.newDiscoveries + discoveryDelta,
+  };
+}
+
+/**
+ * Сводка итогов завершённого забега для экрана окончания партии.
+ */
+export interface RunEndSummary {
+  readonly outcome: 'victory' | 'game_over';
+  readonly seed: string;
+  readonly ante: number;
+  readonly round: number;
+  readonly bestHandScore: number;
+  readonly bestHandType: HandType | null;
+  readonly mostPlayedHand: { readonly handType: HandType; readonly count: number } | null;
+  readonly cardsPlayed: number;
+  readonly cardsDiscarded: number;
+  readonly cardsPurchased: number;
+  readonly rerollsCount: number;
+  readonly newDiscoveries: number;
+  readonly defeatedBy: {
+    readonly kind: BlindKind;
+    readonly bossId: BossId | null;
+  };
+  readonly records: {
+    readonly bestHandScore: boolean;
+    readonly highestAnte: boolean;
+    readonly highestRound: boolean;
+  };
+}
+
+/**
+ * Формирует сводную статистику экрана окончания забега с флагами новых рекордов.
+ */
+export function getRunEndSummary(
+  state: RunState,
+  meta?: MetaSave,
+  baseline?: Partial<ActiveRunTracker>,
+): RunEndSummary {
+  const tracker = baseline ?? meta?.activeRunTracker;
+  const activeSlot = state.anteBlinds[state.currentBlindIndex] ?? state.anteBlinds[0];
+
+  const baselineBestHandScore =
+    tracker && typeof tracker.baselineBestHandScore === 'number' && Number.isFinite(tracker.baselineBestHandScore)
+      ? Math.max(0, tracker.baselineBestHandScore)
+      : null;
+  const baselineHighestAnte =
+    tracker && typeof tracker.baselineHighestAnte === 'number' && Number.isFinite(tracker.baselineHighestAnte)
+      ? Math.max(0, Math.floor(tracker.baselineHighestAnte))
+      : null;
+  const baselineHighestRound =
+    tracker && typeof tracker.baselineHighestRound === 'number' && Number.isFinite(tracker.baselineHighestRound)
+      ? Math.max(0, Math.floor(tracker.baselineHighestRound))
+      : null;
+
+  return {
+    outcome: state.phase === 'victory' ? 'victory' : 'game_over',
+    seed: state.seed,
+    ante: state.ante,
+    round: state.round,
+    bestHandScore: state.stats.bestHandScore,
+    bestHandType: state.stats.bestHandType,
+    mostPlayedHand: getMostPlayedHandInRun(state),
+    cardsPlayed: state.stats.cardsPlayed,
+    cardsDiscarded: state.stats.cardsDiscarded,
+    cardsPurchased: state.stats.cardsPurchased,
+    rerollsCount: state.stats.rerollsCount,
+    newDiscoveries: sanitizeNonNegInt(tracker?.newDiscoveries, 0),
+    defeatedBy: {
+      kind: activeSlot.kind,
+      bossId: activeSlot.bossId,
+    },
+    records: {
+      bestHandScore:
+        baselineBestHandScore !== null &&
+        state.stats.bestHandScore > 0 &&
+        state.stats.bestHandScore > baselineBestHandScore,
+      highestAnte: baselineHighestAnte !== null && state.ante > baselineHighestAnte,
+      highestRound: baselineHighestRound !== null && state.round > baselineHighestRound,
+    },
+  };
+}
+
+function sanitizeActiveRunTracker(raw: unknown): ActiveRunTracker | undefined {
+  if (!isRecord(raw)) return undefined;
+  const baselineBestHandScore =
+    typeof raw.baselineBestHandScore === 'number' &&
+    Number.isFinite(raw.baselineBestHandScore) &&
+    raw.baselineBestHandScore >= 0
+      ? raw.baselineBestHandScore
+      : 0;
+  return {
+    baselineBestHandScore,
+    baselineHighestAnte: sanitizeNonNegInt(raw.baselineHighestAnte, 0),
+    baselineHighestRound: sanitizeNonNegInt(raw.baselineHighestRound, 0),
+    newDiscoveries: sanitizeNonNegInt(raw.newDiscoveries, 0),
   };
 }
 
 function cloneMetaSave(meta: MetaSave): MetaSave {
+  const activeRunTracker = meta.activeRunTracker
+    ? sanitizeActiveRunTracker(meta.activeRunTracker)
+    : undefined;
   return {
     version: meta.version,
     revision: meta.revision,
     updatedAt: meta.updatedAt,
-    settings: sanitizeSettings(meta.settings),
+    settings: sanitizeSettings(meta.settings, { preserveLegacyDoubleSpeed: true }),
     unlockedDecks: [...meta.unlockedDecks],
     discoveredRelics: [...meta.discoveredRelics],
     discoveredConsumables: [...meta.discoveredConsumables],
     discoveredCharters: [...meta.discoveredCharters],
     discoveredBosses: [...meta.discoveredBosses],
-    stats: { ...meta.stats },
+    stats: sanitizeMetaStats(meta.stats),
+    ...(activeRunTracker !== undefined ? { activeRunTracker } : {}),
   };
 }
 
@@ -354,6 +695,7 @@ function cloneRunSnapshot(snapshot: RunSnapshot): RunSnapshot {
     compactDeck: snapshot.compactDeck.map((tuple) => [...tuple] as CompactCardTuple),
     drawPileIds: [...snapshot.drawPileIds],
     handIds: [...snapshot.handIds],
+    handSortMode: snapshot.handSortMode === 'suit' ? 'suit' : 'rank',
     discardPileIds: [...snapshot.discardPileIds],
     relics: snapshot.relics.map(cloneRelic),
     consumables: snapshot.consumables.map(cloneConsumable),
@@ -384,13 +726,18 @@ export function createInitialMetaSave(
     version: SAVE_SCHEMA_VERSION,
     revision: safeRevision,
     updatedAt: safeNow,
-    settings: sanitizeSettings({
-      lang: options.lang,
-      animationSpeed: options.animationSpeed,
-      soundEnabled: options.soundEnabled,
-      musicVolume: options.musicVolume,
-      sfxVolume: options.sfxVolume,
-    }),
+    settings: sanitizeSettings(
+      {
+        lang: options.lang,
+        animationSpeed: options.animationSpeed,
+        soundEnabled: options.soundEnabled,
+        crtMode: options.crtMode,
+        musicVolume: options.musicVolume,
+        sfxVolume: options.sfxVolume,
+        settingsVersion: SETTINGS_SCHEMA_VERSION,
+      },
+      { preserveLegacyDoubleSpeed: true },
+    ),
     unlockedDecks,
     discoveredRelics: [],
     discoveredConsumables: [],
@@ -400,8 +747,13 @@ export function createInitialMetaSave(
       runsStarted: 0,
       runsWon: 0,
       highestAnte: 0,
+      highestRound: 0,
       bestHandScore: 0,
+      maxDollars: 0,
+      bestWinStreak: 0,
+      currentWinStreak: 0,
       totalHandsPlayed: 0,
+      handPlayCounts: {},
     },
   };
 }
@@ -552,6 +904,7 @@ export function serializeRunStateToSnapshot(
     compactDeck: state.deck.map(encodeCompactCard),
     drawPileIds: [...state.drawPileIds],
     handIds: [...state.handIds],
+    handSortMode: state.handSortMode === 'suit' ? 'suit' : 'rank',
     discardPileIds: [...state.discardPileIds],
     relics: state.relics.map(cloneRelic),
     consumables: state.consumables.map(cloneConsumable),
@@ -588,6 +941,22 @@ export function restoreRunStateFromSnapshot(snapshot: RunSnapshot): RunState {
     };
   }
 
+  const anteBlinds: [BlindSlotState, BlindSlotState, BlindSlotState] = [
+    { ...snapshot.anteBlinds[0] },
+    { ...snapshot.anteBlinds[1] },
+    { ...snapshot.anteBlinds[2] },
+  ];
+  // Миграция сохранений: в фазе выбора Стража текущий узел не может оставаться upcoming
+  if (
+    snapshot.phase === 'blind_select' &&
+    anteBlinds[snapshot.currentBlindIndex].status === 'upcoming'
+  ) {
+    anteBlinds[snapshot.currentBlindIndex] = {
+      ...anteBlinds[snapshot.currentBlindIndex],
+      status: 'current',
+    };
+  }
+
   return {
     version: snapshot.version,
     seed: snapshot.seed,
@@ -598,11 +967,7 @@ export function restoreRunStateFromSnapshot(snapshot: RunSnapshot): RunState {
     ante: snapshot.ante,
     round: snapshot.round,
     currentBlindIndex: snapshot.currentBlindIndex,
-    anteBlinds: [
-      { ...snapshot.anteBlinds[0] },
-      { ...snapshot.anteBlinds[1] },
-      { ...snapshot.anteBlinds[2] },
-    ],
+    anteBlinds,
     bossUseCounts: { ...snapshot.bossUseCounts },
     bossRerollsThisAnte: snapshot.bossRerollsThisAnte,
     activeBossDisabled: snapshot.activeBossDisabled,
@@ -629,6 +994,7 @@ export function restoreRunStateFromSnapshot(snapshot: RunSnapshot): RunState {
     deck: snapshot.compactDeck.map(decodeCompactCard),
     drawPileIds: [...snapshot.drawPileIds],
     handIds: [...snapshot.handIds],
+    handSortMode: snapshot.handSortMode === 'suit' ? 'suit' : 'rank',
     discardPileIds: [...snapshot.discardPileIds],
     relics: snapshot.relics.map(cloneRelic),
     consumables: snapshot.consumables.map(cloneConsumable),
@@ -752,6 +1118,11 @@ function sanitizeMetaSave(
     : [];
   const discoveredConsumables = mergeUniqueIds(rawDiscoveredConsumables, []);
 
+  const activeRunTracker =
+    'activeRunTracker' in raw && raw.activeRunTracker !== undefined
+      ? sanitizeActiveRunTracker(raw.activeRunTracker)
+      : undefined;
+
   return {
     version: SAVE_SCHEMA_VERSION,
     revision: sanitizeNonNegInt(raw.revision, fallbackRevision),
@@ -763,6 +1134,7 @@ function sanitizeMetaSave(
     discoveredCharters: sanitizeIdList(raw.discoveredCharters, CHARTER_SET),
     discoveredBosses: sanitizeIdList(raw.discoveredBosses, BOSS_SET),
     stats: sanitizeMetaStats(raw.stats),
+    ...(activeRunTracker !== undefined ? { activeRunTracker } : {}),
   };
 }
 
@@ -1201,22 +1573,60 @@ function sanitizeCashout(raw: unknown): CashoutBreakdown | null | undefined {
 
 function sanitizeRunStats(raw: unknown): RunStats | null {
   if (!isRecord(raw)) return null;
-  const fields = [
+  const requiredFields = [
     'bestHandScore',
     'handsPlayed',
     'discardsUsed',
     'cardsDestroyed',
     'dollarsSpent',
   ] as const;
-  for (const field of fields) {
+  for (const field of requiredFields) {
     if (typeof raw[field] !== 'number' || !Number.isFinite(raw[field]) || raw[field] < 0) {
       return null;
     }
   }
+
+  let bestHandType: HandType | null = null;
+  if ('bestHandType' in raw && raw.bestHandType !== undefined && raw.bestHandType !== null) {
+    if (typeof raw.bestHandType !== 'string' || !HAND_TYPE_SET.has(raw.bestHandType as HandType)) {
+      return null;
+    }
+    bestHandType = raw.bestHandType as HandType;
+  }
+
+  const readOptionalCounter = (field: 'cardsPlayed' | 'cardsDiscarded' | 'cardsPurchased' | 'rerollsCount'): number | null => {
+    if (!(field in raw) || raw[field] === undefined) {
+      return 0;
+    }
+    const val = raw[field];
+    if (typeof val !== 'number' || !Number.isFinite(val) || val < 0) {
+      return null;
+    }
+    return Math.floor(val);
+  };
+
+  const cardsPlayed = readOptionalCounter('cardsPlayed');
+  const cardsDiscarded = readOptionalCounter('cardsDiscarded');
+  const cardsPurchased = readOptionalCounter('cardsPurchased');
+  const rerollsCount = readOptionalCounter('rerollsCount');
+  if (
+    cardsPlayed === null ||
+    cardsDiscarded === null ||
+    cardsPurchased === null ||
+    rerollsCount === null
+  ) {
+    return null;
+  }
+
   return {
     bestHandScore: raw.bestHandScore as number,
+    bestHandType,
     handsPlayed: Math.floor(raw.handsPlayed as number),
+    cardsPlayed,
     discardsUsed: Math.floor(raw.discardsUsed as number),
+    cardsDiscarded,
+    cardsPurchased,
+    rerollsCount,
     cardsDestroyed: Math.floor(raw.cardsDestroyed as number),
     dollarsSpent: raw.dollarsSpent as number,
   };
@@ -1398,6 +1808,7 @@ function sanitizeRunSnapshot(
     compactDeck,
     drawPileIds,
     handIds,
+    handSortMode: raw.handSortMode === 'suit' ? 'suit' : 'rank',
     discardPileIds,
     relics,
     consumables,
@@ -1536,6 +1947,10 @@ function mergeMetaSaves(
   const finalRevision = revision ?? base.revision;
   const finalUpdatedAt = updatedAt ?? base.updatedAt;
 
+  const activeRunTracker = base.activeRunTracker
+    ? sanitizeActiveRunTracker(base.activeRunTracker)
+    : undefined;
+
   return {
     version: SAVE_SCHEMA_VERSION,
     revision: finalRevision,
@@ -1550,9 +1965,20 @@ function mergeMetaSaves(
       runsStarted: Math.max(base.stats.runsStarted, other.stats.runsStarted),
       runsWon: Math.max(base.stats.runsWon, other.stats.runsWon),
       highestAnte: Math.max(base.stats.highestAnte, other.stats.highestAnte),
+      highestRound: Math.max(base.stats.highestRound, other.stats.highestRound),
       bestHandScore: Math.max(base.stats.bestHandScore, other.stats.bestHandScore),
+      maxDollars: Math.max(base.stats.maxDollars, other.stats.maxDollars),
+      bestWinStreak: Math.max(
+        base.stats.bestWinStreak,
+        other.stats.bestWinStreak,
+        base.stats.currentWinStreak,
+        other.stats.currentWinStreak,
+      ),
+      currentWinStreak: base.stats.currentWinStreak,
       totalHandsPlayed: Math.max(base.stats.totalHandsPlayed, other.stats.totalHandsPlayed),
+      handPlayCounts: mergeHandPlayCounts(base.stats.handPlayCounts, other.stats.handPlayCounts),
     },
+    ...(activeRunTracker !== undefined ? { activeRunTracker } : {}),
   };
 }
 

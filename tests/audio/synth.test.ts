@@ -453,9 +453,15 @@ describe('createBaliteAudio (процедурный Web Audio синтезато
     };
 
     expectSoundProduced('playButton', () => audio.playButton());
+    expectSoundProduced('playCardHover', () => audio.playCardHover());
     expectSoundProduced('playCardSelect', () => audio.playCardSelect());
     expectSoundProduced('playCardDeselect', () => audio.playCardDeselect());
     expectSoundProduced('playCardDeal', () => audio.playCardDeal());
+    expectSoundProduced('playBoosterOpen', () => audio.playBoosterOpen());
+    expectSoundProduced('playConsumable(celestial)', () => audio.playConsumable('celestial'));
+    expectSoundProduced('playConsumable(scroll)', () => audio.playConsumable('scroll'));
+    expectSoundProduced('playConsumable(rune)', () => audio.playConsumable('rune'));
+    expectSoundProduced('playFlameThreshold', () => audio.playFlameThreshold());
     expectSoundProduced('playShatter', () => audio.playShatter());
     expectSoundProduced('playDebuff', () => audio.playDebuff());
     expectSoundProduced('playBuy', () => audio.playBuy());
@@ -547,6 +553,14 @@ describe('createBaliteAudio (процедурный Web Audio синтезато
     const freqHigh = ctx.oscillators[idxHigh]!.frequency.value;
 
     expect(freqHigh).toBeGreaterThan(freqLow);
+
+    // CONSUMABLE_TRIGGER (успешный) должен вызывать звук расходника через playConsumable
+    const beforeCons = ctx.oscillators.length;
+    audio.playForTraceEvent(
+      { type: 'CONSUMABLE_TRIGGER', consumableId: 'c_fool', locKey: 'consumable_created' },
+      0,
+    );
+    expect(ctx.oscillators.length).toBeGreaterThan(beforeCons);
 
     audio.dispose();
   });

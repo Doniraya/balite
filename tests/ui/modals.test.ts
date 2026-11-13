@@ -5,6 +5,7 @@ import {
   RELIC_IDS,
   RUNE_IDS,
   SCROLL_IDS,
+  createInitialMetaSave,
   createInitialRunState,
   createPlayingCard,
   type BossId,
@@ -12,6 +13,7 @@ import {
   type ConsumableId,
   type ConsumableInstance,
   type GameSettings,
+  type MetaSave,
   type PackOffer,
   type PlayingCard,
   type RelicId,
@@ -32,6 +34,7 @@ import {
   renderSettingsModal,
   type SettingsModalOptions,
 } from '../../src/ui/modals';
+import { getTooltipData } from '../../src/ui/tooltip';
 
 /**
  * Запрещённые слова и корни для рейтинга 6+/12+ (без казино/покера/оккультизма).
@@ -656,11 +659,11 @@ describe('Модальные окна (src/ui/modals.ts)', () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
-  it('renderDeckModal отображает все стопки компактными картами и подсчитывает масти без Каменных карт', () => {
+  it('renderDeckModal отображает вкладки Оставшаяся/Полная колода, левую сводку и 4 ряда мастей от Туза к 2 с тултипами', () => {
     const ru = createTranslator('ru');
     const baseState = createTestState();
 
-    // Превращаем одну бубновую карту в Каменную, чтобы проверить исключение Каменных из сводки мастей
+    // Превращаем одну карту в Каменную, чтобы проверить исключение Каменных из сводки мастей и рангов
     const firstCard = baseState.deck[0]!;
     const secondCard = baseState.deck[1]!;
     const thirdCard = baseState.deck[2]!;
@@ -686,42 +689,62 @@ describe('Модальные окна (src/ui/modals.ts)', () => {
     const modal = renderDeckModal(state, ru, onClose);
     assertCleanLocalizedElement(modal);
 
-    // Колода добора отсортирована по убыванию ранга, не раскрывая порядок перемешивания
-    const drawFrames = Array.from(
-      modal.querySelectorAll<HTMLElement>('[data-pile="draw-pile"] .card-frame'),
+    // По умолчанию открыта вкладка «Оставшаяся колода»
+    const remainingTab = modal.querySelector<HTMLButtonElement>('[data-deck-tab="remaining"]');
+    const fullTab = modal.querySelector<HTMLButtonElement>('[data-deck-tab="full"]');
+    expect(remainingTab?.getAttribute('aria-pressed')).toBe('true');
+    expect(fullTab?.getAttribute('aria-pressed')).toBe('false');
+    expect(modal.querySelectorAll('.card-frame')).toHaveLength(unsortedDrawIds.length);
+
+    // Карточка стартовой колоды слева
+    expect(modal.querySelector('.deck-info-card')?.textContent).toContain(
+      ru.getDeckText(state.deckId).name,
     );
+
+    // Переключаемся на вкладку «Полная колода»
+    fullTab?.click();
+    expect(fullTab?.getAttribute('aria-pressed')).toBe('true');
+    expect(remainingTab?.getAttribute('aria-pressed')).toBe('false');
+
+    // В полной колоде (52 карты, из них 1 Каменная) 4 ряда мастей содержат 51 обычную карту, а каменная идёт отдельно
+    const suitRows = Array.from(modal.querySelectorAll<HTMLElement>('[data-suit-row]'));
+    expect(suitRows.map((row) => row.dataset.suitRow)).toEqual([
+      'spades',
+      'hearts',
+      'clubs',
+      'diamonds',
+    ]);
+
     const rankById = new Map(modifiedDeck.map((c) => [c.id, c.rank]));
-    const renderedDrawRanks = drawFrames.map((el) => rankById.get(el.dataset.cardId ?? '') ?? 0);
-    for (let i = 1; i < renderedDrawRanks.length; i += 1) {
-      expect(renderedDrawRanks[i - 1]!).toBeGreaterThanOrEqual(renderedDrawRanks[i]!);
+    for (const row of suitRows) {
+      const rowFrames = Array.from(row.querySelectorAll<HTMLElement>('.card-frame'));
+      const ranks = rowFrames.map((el) => rankById.get(el.dataset.cardId ?? '') ?? 0);
+      for (let i = 1; i < ranks.length; i += 1) {
+        expect(ranks[i - 1]!).toBeGreaterThanOrEqual(ranks[i]!);
+      }
     }
 
-    expect(modal.textContent).toContain(
-      ru.t('ui.deckModal.totalCards', { count: modifiedDeck.length }),
-    );
-    expect(modal.textContent).toContain(ru.t('ui.deckModal.inHand', { count: 2 }));
-    expect(modal.textContent).toContain(
-      ru.t('ui.deckModal.drawPile', { count: state.drawPileIds.length }),
-    );
-    expect(modal.textContent).toContain(ru.t('ui.deckModal.discardPile', { count: 1 }));
-
-    // Все отображаемые карты — компактные и неинтерактивные
-    const frames = modal.querySelectorAll<HTMLElement>('.card-frame');
-    expect(frames).toHaveLength(
-      state.handIds.length + state.drawPileIds.length + state.discardPileIds.length,
-    );
-    for (const frame of Array.from(frames)) {
-      expect(frame.classList.contains('is-compact')).toBe(true);
-      expect(frame.classList.contains('is-interactive')).toBe(false);
-    }
-
-    // Проверка сводки по мастям: Каменная карта не считается в свою исходную масть
+    // Проверка сводки по мастям и рангам (Каменная карта не считается в свою исходную масть)
     const stoneSuitEl = modal.querySelector<HTMLElement>(
       `[data-suit-summary="${firstCard.suit}"]`,
     );
     expect(stoneSuitEl?.dataset.count).toBe('12');
+    expect(modal.querySelectorAll('[data-rank-summary]')).toHaveLength(13);
+    expect(modal.querySelector('[data-base-category="aces"]')?.textContent).toContain('4');
+    expect(modal.querySelector('[data-base-category="faces"]')?.textContent).toContain('12');
 
-    modal.querySelector<HTMLButtonElement>('[data-action="close"]')?.click();
+    // Ховер-тултип привязан к каждой мини-карте
+    const sampleFrame = modal.querySelector<HTMLElement>('[data-suit-row] .card-frame');
+    expect(sampleFrame).not.toBeNull();
+    expect(getTooltipData(sampleFrame!)?.title.length).toBeGreaterThan(0);
+    for (const frame of Array.from(modal.querySelectorAll<HTMLElement>('.card-frame'))) {
+      expect(frame.classList.contains('is-compact')).toBe(true);
+      expect(frame.classList.contains('is-interactive')).toBe(false);
+    }
+
+    const closeBtn = modal.querySelector<HTMLButtonElement>('[data-action="close"]');
+    expect(closeBtn?.textContent).toBe(ru.t('ui.deckModal.backButton'));
+    closeBtn?.click();
     modal.click();
     expect(onClose).toHaveBeenCalledTimes(2);
   });
@@ -734,6 +757,7 @@ describe('Модальные окна (src/ui/modals.ts)', () => {
       soundEnabled: true,
       musicVolume: 0.4,
       sfxVolume: 0.8,
+      crtMode: 'light',
     };
     const onChangeSettings = vi.fn();
     const onClose = vi.fn();
@@ -749,12 +773,23 @@ describe('Модальные окна (src/ui/modals.ts)', () => {
       onDebugAction,
     };
 
-    const modalNoDebug = renderSettingsModal(baseOptions);
+    const modalNoDebug = renderSettingsModal({
+      ...baseOptions,
+      initialTab: 'settings',
+    });
     assertCleanLocalizedElement(modalNoDebug);
     expect(modalNoDebug.querySelector('[data-debug-panel]')).toBeNull();
     expect(modalNoDebug.querySelector('[data-debug-action]')).toBeNull();
 
-    // Скорость 4x
+    // 4 опции скорости: 0.5x, 1x, 2x, 4x
+    const speedButtons = Array.from(modalNoDebug.querySelectorAll<HTMLButtonElement>('[data-speed]'));
+    expect(speedButtons.map((btn) => btn.dataset.speed)).toEqual(['0.5', '1', '2', '4']);
+    expect(speedButtons.map((btn) => btn.textContent?.trim())).toEqual(['0.5x', '1x', '2x', '4x']);
+
+    // Скорость 0.5x и 4x
+    modalNoDebug.querySelector<HTMLButtonElement>('[data-speed="0.5"]')?.click();
+    expect(onChangeSettings).toHaveBeenLastCalledWith({ animationSpeed: 0.5 });
+
     modalNoDebug.querySelector<HTMLButtonElement>('[data-speed="4"]')?.click();
     expect(onChangeSettings).toHaveBeenLastCalledWith({ animationSpeed: 4 });
 
@@ -781,14 +816,31 @@ describe('Модальные окна (src/ui/modals.ts)', () => {
     modalNoDebug.querySelector<HTMLButtonElement>('[data-lang="en"]')?.click();
     expect(onChangeSettings).toHaveBeenLastCalledWith({ lang: 'en' });
 
-    // Закрытие по кнопке и фону
-    modalNoDebug.querySelector<HTMLButtonElement>('[data-action="close"]')?.click();
+    // Переключение режима CRT-эффекта: Выкл / Лёгкий / Оригинал
+    const crtButtons = Array.from(
+      modalNoDebug.querySelectorAll<HTMLButtonElement>('[data-crt-mode]'),
+    );
+    expect(crtButtons.map((btn) => btn.dataset.crtMode)).toEqual(['off', 'light', 'original']);
+    expect(
+      modalNoDebug
+        .querySelector<HTMLButtonElement>('[data-crt-mode="light"]')
+        ?.getAttribute('aria-pressed'),
+    ).toBe('true');
+
+    modalNoDebug.querySelector<HTMLButtonElement>('[data-crt-mode="original"]')?.click();
+    expect(onChangeSettings).toHaveBeenLastCalledWith({ crtMode: 'original' });
+
+    modalNoDebug.querySelector<HTMLButtonElement>('[data-crt-mode="off"]')?.click();
+    expect(onChangeSettings).toHaveBeenLastCalledWith({ crtMode: 'off' });
+
+    // Закрытие по фону (и возврат в хаб по кнопке Назад)
     modalNoDebug.click();
-    expect(onClose).toHaveBeenCalledTimes(2);
+    expect(onClose).toHaveBeenCalledTimes(1);
 
     // Режим отладки (?debug)
     const modalDebug = renderSettingsModal({
       ...baseOptions,
+      initialTab: 'settings',
       isDebug: true,
       platformId: 'yandex',
     });
@@ -814,5 +866,190 @@ describe('Модальные окна (src/ui/modals.ts)', () => {
       expect(button.type).toBe('button');
       expect(button.classList.contains('modal-btn')).toBe(true);
     }
+  });
+
+  it('renderSettingsModal открывает хаб Параметры с переходами в Настройки, Статистику, Титры и В главное меню', () => {
+    const ru = createTranslator('ru');
+    const baseMeta = createInitialMetaSave(1000, { lang: 'ru', animationSpeed: 1 });
+    const meta = {
+      ...baseMeta,
+      discoveredRelics: ['j_joker', 'j_banner'],
+      discoveredConsumables: ['c_mercury'],
+      stats: {
+        ...baseMeta.stats,
+        runsStarted: 7,
+        runsWon: 3,
+        highestAnte: 6,
+        bestHandScore: 14500,
+        totalHandsPlayed: 42,
+        highestRound: 17,
+        maxDollars: 84,
+        bestWinStreak: 2,
+        currentWinStreak: 1,
+        handPlayCounts: {
+          Pair: 18,
+          Flush: 9,
+        },
+      },
+    } as unknown as MetaSave;
+
+    const onClose = vi.fn();
+    const onReturnToMainMenu = vi.fn();
+    const onTabChange = vi.fn();
+
+    // Вне активного забега кнопка «В главное меню» скрыта
+    const hubFromMenu = renderSettingsModal({
+      settings: meta.settings,
+      meta,
+      version: '0.1.0',
+      translator: ru,
+      canReturnToMainMenu: false,
+      onChangeSettings: vi.fn(),
+      onClose,
+      onReturnToMainMenu,
+      onTabChange,
+    });
+    assertCleanLocalizedElement(hubFromMenu);
+    expect(hubFromMenu.querySelector('[data-hub-action="settings"]')).not.toBeNull();
+    expect(hubFromMenu.querySelector('[data-hub-action="stats"]')).not.toBeNull();
+    expect(hubFromMenu.querySelector('[data-hub-action="credits"]')).not.toBeNull();
+    expect(hubFromMenu.querySelector('[data-hub-action="main-menu"]')).toBeNull();
+
+    // Вкладка «Статистика» отображает все показатели из MetaSave
+    hubFromMenu.querySelector<HTMLButtonElement>('[data-hub-action="stats"]')?.click();
+    expect(onTabChange).toHaveBeenLastCalledWith('stats');
+    assertCleanLocalizedElement(hubFromMenu);
+    const statsPanel = hubFromMenu.querySelector<HTMLElement>('[data-stats-panel]');
+    expect(statsPanel).not.toBeNull();
+    expect(statsPanel?.textContent).toContain('14500');
+    expect(statsPanel?.textContent).toContain('17');
+    expect(statsPanel?.textContent).toContain('6');
+    expect(statsPanel?.textContent).toContain('84');
+    expect(statsPanel?.textContent).toContain('2 (1)');
+    expect(statsPanel?.textContent).toContain('7 / 3');
+    expect(statsPanel?.textContent).toContain(`${ru.getHandText('Pair').name} (18)`);
+    expect(statsPanel?.textContent).toMatch(/% \(\d+\/\d+\)/);
+
+    // Назад из Статистики возвращает в хаб
+    hubFromMenu.querySelector<HTMLButtonElement>('[data-action="hub-back"]')?.click();
+    expect(onTabChange).toHaveBeenLastCalledWith('hub');
+    expect(hubFromMenu.querySelector('[data-hub-action="stats"]')).not.toBeNull();
+
+    // Вкладка «Титры» содержит версию и не содержит кликабельных ссылок
+    hubFromMenu.querySelector<HTMLButtonElement>('[data-hub-action="credits"]')?.click();
+    expect(onTabChange).toHaveBeenLastCalledWith('credits');
+    assertCleanLocalizedElement(hubFromMenu);
+    const creditsPanel = hubFromMenu.querySelector<HTMLElement>('[data-credits-panel]');
+    expect(creditsPanel).not.toBeNull();
+    expect(creditsPanel?.textContent).toContain('0.1.0');
+    expect(creditsPanel?.querySelectorAll('a').length).toBe(0);
+    expect(creditsPanel?.innerHTML).not.toMatch(/https?:/i);
+
+    // Назад из Титров -> хаб, затем Назад/Закрыть в хабе -> onClose
+    hubFromMenu.querySelector<HTMLButtonElement>('[data-action="hub-back"]')?.click();
+    hubFromMenu.querySelector<HTMLButtonElement>('[data-action="close"]')?.click();
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    // Из активного забега кнопка «В главное меню» отображается и вызывает onReturnToMainMenu
+    const hubFromRun = renderSettingsModal({
+      settings: meta.settings,
+      meta,
+      translator: ru,
+      canReturnToMainMenu: true,
+      onChangeSettings: vi.fn(),
+      onClose,
+      onReturnToMainMenu,
+    });
+    const toMenuBtn = hubFromRun.querySelector<HTMLButtonElement>('[data-hub-action="main-menu"]');
+    expect(toMenuBtn).not.toBeNull();
+    toMenuBtn?.click();
+    expect(onReturnToMainMenu).toHaveBeenCalledTimes(1);
+
+    // Пустая статистика показывает «Нет (0)» для самой частой руки
+    const emptyMeta = createInitialMetaSave(1000, { lang: 'ru' });
+    const emptyStatsModal = renderSettingsModal({
+      settings: emptyMeta.settings,
+      meta: emptyMeta,
+      initialTab: 'stats',
+      translator: ru,
+      onChangeSettings: vi.fn(),
+      onClose,
+    });
+    expect(emptyStatsModal.querySelector('[data-stats-panel]')?.textContent).toContain('Нет (0)');
+  });
+
+  it('показывает тумблер DEV-словаря строго при isDebug=true и передаёт переключение в колбэк', () => {
+    const ru = createTranslator('ru');
+    const meta = createInitialMetaSave(1000, { lang: 'ru' });
+    const onToggleDevOriginalTerms = vi.fn();
+
+    const normalModal = renderSettingsModal({
+      settings: meta.settings,
+      meta,
+      initialTab: 'settings',
+      isDebug: false,
+      devOriginalTermsEnabled: false,
+      onToggleDevOriginalTerms,
+      translator: ru,
+      onChangeSettings: vi.fn(),
+      onClose: vi.fn(),
+    });
+    expect(normalModal.querySelector('[data-dev-terms]')).toBeNull();
+
+    const debugModal = renderSettingsModal({
+      settings: meta.settings,
+      meta,
+      initialTab: 'settings',
+      isDebug: true,
+      devOriginalTermsEnabled: false,
+      onToggleDevOriginalTerms,
+      translator: ru,
+      onChangeSettings: vi.fn(),
+      onClose: vi.fn(),
+    });
+
+    const offBtn = debugModal.querySelector<HTMLButtonElement>('[data-dev-terms="off"]');
+    const onBtn = debugModal.querySelector<HTMLButtonElement>('[data-dev-terms="on"]');
+    expect(offBtn?.getAttribute('aria-pressed')).toBe('true');
+    expect(onBtn?.getAttribute('aria-pressed')).toBe('false');
+
+    onBtn?.click();
+    expect(onToggleDevOriginalTerms).toHaveBeenCalledWith(true);
+
+    offBtn?.click();
+    expect(onToggleDevOriginalTerms).toHaveBeenCalledWith(false);
+  });
+
+  it('показывает кнопку открытия Админ-панели в Настройках только при isDebug=true', () => {
+    const ru = createTranslator('ru');
+    const meta = createInitialMetaSave(1000, { lang: 'ru' });
+    const onOpenDebugPanel = vi.fn();
+
+    const normalModal = renderSettingsModal({
+      settings: meta.settings,
+      meta,
+      initialTab: 'settings',
+      isDebug: false,
+      onOpenDebugPanel,
+      translator: ru,
+      onChangeSettings: vi.fn(),
+      onClose: vi.fn(),
+    });
+    expect(normalModal.querySelector('[data-debug-open-panel]')).toBeNull();
+
+    const debugModal = renderSettingsModal({
+      settings: meta.settings,
+      meta,
+      initialTab: 'settings',
+      isDebug: true,
+      onOpenDebugPanel,
+      translator: ru,
+      onChangeSettings: vi.fn(),
+      onClose: vi.fn(),
+    });
+    const openBtn = debugModal.querySelector<HTMLButtonElement>('[data-debug-open-panel]');
+    expect(openBtn).not.toBeNull();
+    openBtn?.click();
+    expect(onOpenDebugPanel).toHaveBeenCalledTimes(1);
   });
 });

@@ -141,10 +141,19 @@ export interface UiDictionary {
     readonly subtitle: string;
     readonly portraitHint: string;
   };
+  readonly mainMenu: {
+    readonly play: string;
+    readonly options: string;
+    readonly collection: string;
+    readonly comingSoon: string;
+    readonly version: string;
+  };
   readonly hud: {
     readonly stage: string;
     readonly stageWithMax: string;
     readonly endlessStage: string;
+    readonly rankWithMax: string;
+    readonly endlessRank: string;
     readonly round: string;
     readonly score: string;
     readonly target: string;
@@ -168,6 +177,9 @@ export interface UiDictionary {
     readonly debuffedBadge: string;
     readonly royalFlush: string;
     readonly previewHint: string;
+    readonly shopBannerTitle: string;
+    readonly shopBannerSubtitle: string;
+    readonly blindSelectBadge: string;
   };
   readonly actions: {
     readonly playHand: string;
@@ -204,6 +216,9 @@ export interface UiDictionary {
     readonly continueEndless: string;
     readonly playAgain: string;
     readonly toDeckSelect: string;
+    readonly copy: string;
+    readonly copied: string;
+    readonly mainMenu: string;
   };
   readonly selection: {
     readonly upToCards: string;
@@ -221,15 +236,22 @@ export interface UiDictionary {
   };
   readonly blindSelect: {
     readonly title: string;
+    readonly rankTitle: string;
+    readonly chooseNextPrompt: string;
     readonly current: string;
     readonly defeated: string;
     readonly skipped: string;
     readonly upcoming: string;
+    readonly minScore: string;
     readonly reward: string;
     readonly target: string;
+    readonly orSeparator: string;
+    readonly skipButton: string;
     readonly skipWithTag: string;
     readonly showdownBadge: string;
     readonly cannotSkipBoss: string;
+    readonly advanceStageTitle: string;
+    readonly advanceStageDesc: string;
   };
   readonly cashout: {
     readonly title: string;
@@ -258,7 +280,13 @@ export interface UiDictionary {
   };
   readonly settings: {
     readonly title: string;
+    readonly hubTitle: string;
+    readonly hubSettings: string;
+    readonly hubStats: string;
+    readonly hubCredits: string;
+    readonly hubMainMenu: string;
     readonly animationSpeed: string;
+    readonly speed05x: string;
     readonly speed1x: string;
     readonly speed2x: string;
     readonly speed4x: string;
@@ -270,6 +298,31 @@ export interface UiDictionary {
     readonly language: string;
     readonly langRu: string;
     readonly langEn: string;
+    readonly crtMode: string;
+    readonly crtOff: string;
+    readonly crtLight: string;
+    readonly crtOriginal: string;
+  };
+  readonly stats: {
+    readonly title: string;
+    readonly bestHand: string;
+    readonly highestRound: string;
+    readonly highestStage: string;
+    readonly mostPlayedHand: string;
+    readonly noneHand: string;
+    readonly maxGold: string;
+    readonly bestWinStreak: string;
+    readonly runsStartedWon: string;
+    readonly discoveryProgress: string;
+  };
+  readonly credits: {
+    readonly title: string;
+    readonly version: string;
+    readonly settingLine: string;
+    readonly engineLine: string;
+    readonly audioLine: string;
+    readonly fontLine: string;
+    readonly complianceLine: string;
   };
   readonly handReference: {
     readonly title: string;
@@ -280,6 +333,17 @@ export interface UiDictionary {
   };
   readonly deckModal: {
     readonly title: string;
+    readonly remainingTab: string;
+    readonly fullTab: string;
+    readonly baseCardsTitle: string;
+    readonly aces: string;
+    readonly faces: string;
+    readonly numbers: string;
+    readonly rankAce: string;
+    readonly rankKing: string;
+    readonly rankQueen: string;
+    readonly rankJack: string;
+    readonly backButton: string;
     readonly drawPile: string;
     readonly discardPile: string;
     readonly inHand: string;
@@ -298,6 +362,21 @@ export interface UiDictionary {
     readonly finalStage: string;
     readonly finalRound: string;
     readonly runSeed: string;
+    readonly mostPlayedHand: string;
+    readonly cardsPlayed: string;
+    readonly cardsDiscarded: string;
+    readonly cardsPurchased: string;
+    readonly rerollsCount: string;
+    readonly newDiscoveries: string;
+    readonly defeatedBy: string;
+    readonly clearedGuardian: string;
+    readonly newRecordBadge: string;
+    readonly none: string;
+  };
+  readonly tooltip: {
+    readonly hiddenTitle: string;
+    readonly hiddenSubtitle: string;
+    readonly hiddenDescription: string;
   };
 }
 

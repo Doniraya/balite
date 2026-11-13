@@ -80,8 +80,13 @@ function createShopTestState(overrides: Partial<RunState> = {}): RunState {
     nextCardUid: 100,
     stats: {
       bestHandScore: 0,
+      bestHandType: null,
       handsPlayed: 0,
+      cardsPlayed: 0,
       discardsUsed: 0,
+      cardsDiscarded: 0,
+      cardsPurchased: 0,
+      rerollsCount: 0,
       cardsDestroyed: 0,
       dollarsSpent: 0,
     },

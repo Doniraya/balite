@@ -596,6 +596,7 @@ export function evaluatePlay(
       stats: {
         ...work.run.stats,
         handsPlayed: work.run.stats.handsPlayed + 1,
+        cardsPlayed: work.run.stats.cardsPlayed + playedCardIds.length,
       },
     };
     work.events.push({
@@ -1059,6 +1060,8 @@ export function evaluatePlay(
   const survivingPlayedIds = playedCardIds.filter((id) => !shatteredIds.has(id));
   const handScore = Math.floor(chips * mult);
   const totalScore = work.run.score + handScore;
+  const isNewBestHand =
+    handScore > work.run.stats.bestHandScore || work.run.stats.bestHandType === null;
 
   work.run = {
     ...work.run,
@@ -1071,7 +1074,9 @@ export function evaluatePlay(
     stats: {
       ...work.run.stats,
       handsPlayed: work.run.stats.handsPlayed + 1,
+      cardsPlayed: work.run.stats.cardsPlayed + playedCardIds.length,
       bestHandScore: Math.max(work.run.stats.bestHandScore, handScore),
+      bestHandType: isNewBestHand ? topHand : work.run.stats.bestHandType,
       cardsDestroyed: work.run.stats.cardsDestroyed + shatteredIds.size,
     },
   };

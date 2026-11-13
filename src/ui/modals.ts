@@ -1,27 +1,62 @@
 import './modals.css';
 import {
+  BOSS_IDS,
+  CELESTIAL_IDS,
+  CHARTER_IDS,
+  DECK_IDS,
+  DECK_VIEW_SUIT_ORDER,
   HAND_TYPES,
-  SUITS,
-  sortCardsByRank,
+  RELIC_IDS,
+  RUNE_IDS,
+  SCROLL_IDS,
+  buildDeckViewModel,
+  getMostPlayedHand,
   type AnimationSpeed,
+  type CrtMode,
+  type DeckViewMode,
   type GameSettings,
+  type MetaSave,
+  type MetaStats,
   type PlayingCard,
+  type Rank,
   type RunState,
   type Suit,
 } from '../engine';
-import type { I18nLang, Translator } from '../i18n';
+import {
+  getGuildRank,
+  isDevOriginalTermsEnabled,
+  type I18nLang,
+  type Translator,
+} from '../i18n';
 import { renderPlayingCardFrame } from './cardFrame';
+import { APP_VERSION } from './mainMenu';
+import { buildPlayingCardTooltip } from './screens';
+import { setTooltipData } from './tooltip';
 
 /**
- * Параметры отрисовки модального окна настроек игры.
+ * Активный экран внутри модального хаба «Параметры».
+ */
+export type SettingsModalTab = 'hub' | 'settings' | 'stats' | 'credits';
+
+/**
+ * Параметры отрисовки модального хаба «Параметры» и вложенных вкладок.
  */
 export interface SettingsModalOptions {
   readonly settings: GameSettings;
   readonly translator: Translator;
+  readonly meta?: MetaSave;
+  readonly version?: string;
+  readonly initialTab?: SettingsModalTab;
+  readonly canReturnToMainMenu?: boolean;
   readonly platformId?: string;
   readonly isDebug?: boolean;
+  readonly devOriginalTermsEnabled?: boolean;
+  readonly onToggleDevOriginalTerms?: (enabled: boolean) => void;
   readonly onChangeSettings: (patch: Partial<GameSettings>) => void;
   readonly onClose: () => void;
+  readonly onReturnToMainMenu?: () => void;
+  readonly onTabChange?: (tab: SettingsModalTab) => void;
+  readonly onOpenDebugPanel?: () => void;
   readonly onDebugAction?: (
     action: 'interstitial' | 'rewarded' | 'flush' | 'resetRun',
   ) => Promise<string>;
@@ -32,11 +67,28 @@ export interface SettingsModalOptions {
  */
 const SPEED_OPTIONS: ReadonlyArray<{
   readonly value: AnimationSpeed;
-  readonly key: 'ui.settings.speed1x' | 'ui.settings.speed2x' | 'ui.settings.speed4x';
+  readonly key:
+    | 'ui.settings.speed05x'
+    | 'ui.settings.speed1x'
+    | 'ui.settings.speed2x'
+    | 'ui.settings.speed4x';
 }> = [
+  { value: 0.5, key: 'ui.settings.speed05x' },
   { value: 1, key: 'ui.settings.speed1x' },
   { value: 2, key: 'ui.settings.speed2x' },
   { value: 4, key: 'ui.settings.speed4x' },
+];
+
+/**
+ * Допустимые режимы ЭЛТ-оверлея для сегментированного переключателя.
+ */
+const CRT_MODE_OPTIONS: ReadonlyArray<{
+  readonly value: CrtMode;
+  readonly key: 'ui.settings.crtOff' | 'ui.settings.crtLight' | 'ui.settings.crtOriginal';
+}> = [
+  { value: 'off', key: 'ui.settings.crtOff' },
+  { value: 'light', key: 'ui.settings.crtLight' },
+  { value: 'original', key: 'ui.settings.crtOriginal' },
 ];
 
 /**
@@ -212,140 +264,330 @@ export function renderHandReferenceModal(
 }
 
 /**
- * Разрешает массив идентификаторов карт в объекты PlayingCard согласно карте поиска колоды.
+ * Возвращает SVG-иконку масти для сводки колоды (не зависит от символов юникода в шрифте).
  */
-function resolvePileCards(
-  ids: readonly string[],
-  cardById: ReadonlyMap<string, PlayingCard>,
-): PlayingCard[] {
-  const result: PlayingCard[] = [];
-  for (const id of ids) {
-    const card = cardById.get(id);
-    if (card) {
-      result.push(card);
-    }
-  }
-  return result;
-}
+function createSuitSvgIcon(suit: Suit): SVGSVGElement {
+  const svgNs = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNs, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '18');
+  svg.setAttribute('height', '18');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.classList.add('deck-suit-svg', `deck-suit-svg--${suit}`);
 
-/**
- * Создаёт секцию стопки колоды с заголовком и сеткой компактных неинтерактивных карт.
- */
-function createDeckPileSection(
-  pileKey: string,
-  title: string,
-  cards: readonly PlayingCard[],
-  translator: Translator,
-): HTMLDivElement {
-  const section = document.createElement('div');
-  section.className = 'deck-pile-section';
-  section.dataset.pile = pileKey;
-
-  const heading = document.createElement('h3');
-  heading.className = 'deck-pile-title';
-  heading.textContent = title;
-  section.appendChild(heading);
-
-  const grid = document.createElement('div');
-  grid.className = 'deck-pile-grid';
-  for (const card of cards) {
-    grid.appendChild(
-      renderPlayingCardFrame({
-        card,
-        translator,
-        compact: true,
-        interactive: false,
-        faceDown: false,
-      }),
+  const path = document.createElementNS(svgNs, 'path');
+  path.setAttribute('fill', 'currentColor');
+  if (suit === 'spades') {
+    path.setAttribute(
+      'd',
+      'M12 2C9 6 4 9.5 4 14a4.5 4.5 0 0 0 7 3.7L10 21h4l-1-3.3A4.5 4.5 0 0 0 20 14c0-4.5-5-8-8-12Z',
     );
+  } else if (suit === 'hearts') {
+    path.setAttribute(
+      'd',
+      'M12 21s-7.5-4.7-9-9.5C1.8 7.6 4.7 4 8.2 4c2 0 3.3 1.1 3.8 2.2C12.5 5.1 13.8 4 15.8 4 19.3 4 22.2 7.6 21 11.5 19.5 16.3 12 21 12 21Z',
+    );
+  } else if (suit === 'clubs') {
+    path.setAttribute(
+      'd',
+      'M12 3a4 4 0 0 0-3.2 6.4A4.2 4.2 0 0 0 4 13.5 4 4 0 0 0 11 16l-1 5h4l-1-5a4 4 0 0 0 7-2.5 4.2 4.2 0 0 0-4.8-4.1A4 4 0 0 0 12 3Z',
+    );
+  } else {
+    path.setAttribute('d', 'M12 2L20 12L12 22L4 12Z');
   }
-  section.appendChild(grid);
-
-  return section;
+  svg.appendChild(path);
+  return svg;
 }
 
 /**
- * Подсчитывает количество карт каждой масти в полной колоде (исключая Каменные карты).
+ * Преобразует ранг карты в короткую локализованную метку для вертикальной шкалы Т..2 / A..2.
  */
-function countSuitsInDeck(deck: readonly PlayingCard[]): Record<Suit, number> {
-  const counts: Record<Suit, number> = {
-    spades: 0,
-    hearts: 0,
-    clubs: 0,
-    diamonds: 0,
-  };
-  for (const card of deck) {
-    if (card.enhancement === 'stone') {
-      continue;
-    }
-    counts[card.suit] += 1;
+function formatDeckRankLabel(rank: Rank, translator: Translator): string {
+  switch (rank) {
+    case 14:
+      return translator.t('ui.deckModal.rankAce');
+    case 13:
+      return translator.t('ui.deckModal.rankKing');
+    case 12:
+      return translator.t('ui.deckModal.rankQueen');
+    case 11:
+      return translator.t('ui.deckModal.rankJack');
+    default:
+      return String(rank);
   }
-  return counts;
 }
 
 /**
- * Отрисовывает модальное окно состава колоды со сводкой по мастям и карточками стопок.
+ * Отрисовывает подробное модальное окно состава колоды с вкладками Оставшаяся/Полная,
+ * левой сводкой базовых карт и рангов и 4 веерными рядами мастей с ховер-тултипами.
  */
 export function renderDeckModal(
   state: RunState,
   translator: Translator,
   onClose: () => void,
 ): HTMLElement {
-  const { backdrop, body } = createModalShell(
+  const { backdrop, sheet, body, footer } = createModalShell(
     translator.t('ui.deckModal.title'),
     translator.t('ui.deckModal.totalCards', { count: state.deck.length }),
     translator,
     onClose,
     'deck',
   );
+  sheet.classList.add('modal-sheet--deck');
 
-  // Сводка по мастям над стопками (Каменные карты не имеют масти и пропускаются)
-  const suitCounts = countSuitsInDeck(state.deck);
-  const summary = document.createElement('div');
-  summary.className = 'deck-suit-summary';
-  for (const suit of SUITS) {
-    const suitInfo = translator.catalog.suits[suit];
-    const chip = document.createElement('div');
-    chip.className = `deck-suit-chip deck-suit-chip--${suit}`;
-    chip.dataset.suitSummary = suit;
-    chip.dataset.count = String(suitCounts[suit]);
-    chip.setAttribute('aria-label', `${suitInfo.name}: ${suitCounts[suit]}`);
-    chip.textContent = `${suitInfo.symbol} ${suitCounts[suit]}`;
-    summary.appendChild(chip);
+  // Заменяем текст кнопки закрытия на «Назад» и стилизуем широкую оранжевую кнопку
+  const closeBtn = footer.querySelector<HTMLButtonElement>('[data-action="close"]');
+  if (closeBtn) {
+    closeBtn.textContent = translator.t('ui.deckModal.backButton');
+    closeBtn.classList.add('modal-btn--deck-back');
   }
-  body.appendChild(summary);
 
-  const cardById = new Map<string, PlayingCard>(state.deck.map((card) => [card.id, card]));
-  const inHandCards = resolvePileCards(state.handIds, cardById);
-  // Колоду добора и сброс сортируем по рангу, чтобы не раскрывать скрытый порядок перемешивания
-  const drawPileCards = sortCardsByRank(resolvePileCards(state.drawPileIds, cardById));
-  const discardPileCards = sortCardsByRank(resolvePileCards(state.discardPileIds, cardById));
+  let activeMode: DeckViewMode = 'remaining';
 
-  body.appendChild(
-    createDeckPileSection(
-      'in-hand',
-      translator.t('ui.deckModal.inHand', { count: inHandCards.length }),
-      inHandCards,
-      translator,
-    ),
-  );
-  body.appendChild(
-    createDeckPileSection(
-      'draw-pile',
-      translator.t('ui.deckModal.drawPile', { count: drawPileCards.length }),
-      drawPileCards,
-      translator,
-    ),
-  );
-  body.appendChild(
-    createDeckPileSection(
-      'discard-pile',
-      translator.t('ui.deckModal.discardPile', { count: discardPileCards.length }),
-      discardPileCards,
-      translator,
-    ),
-  );
+  // Вкладки переключения между оставшейся стопкой добора и полной колодой
+  const tabsWrap = document.createElement('div');
+  tabsWrap.className = 'deck-tabs';
 
+  const remainingTab = document.createElement('button');
+  remainingTab.type = 'button';
+  remainingTab.className = 'modal-btn deck-tab-btn';
+  remainingTab.dataset.deckTab = 'remaining';
+  remainingTab.textContent = translator.t('ui.deckModal.remainingTab');
+
+  const fullTab = document.createElement('button');
+  fullTab.type = 'button';
+  fullTab.className = 'modal-btn deck-tab-btn';
+  fullTab.dataset.deckTab = 'full';
+  fullTab.textContent = translator.t('ui.deckModal.fullTab');
+
+  tabsWrap.append(remainingTab, fullTab);
+  body.appendChild(tabsWrap);
+
+  const contentHost = document.createElement('div');
+  contentHost.className = 'deck-modal-content';
+  body.appendChild(contentHost);
+
+  const renderModeContent = (): void => {
+    remainingTab.setAttribute('aria-pressed', activeMode === 'remaining' ? 'true' : 'false');
+    remainingTab.classList.toggle('is-active', activeMode === 'remaining');
+    fullTab.setAttribute('aria-pressed', activeMode === 'full' ? 'true' : 'false');
+    fullTab.classList.toggle('is-active', activeMode === 'full');
+
+    const model = buildDeckViewModel(state, activeMode);
+    contentHost.replaceChildren();
+
+    const layout = document.createElement('div');
+    layout.className = 'deck-modal-layout';
+
+    // Левая панель: текущая стартовая колода, «Базовые карты» и вертикальный столбец рангов Т..2
+    const sidebar = document.createElement('div');
+    sidebar.className = 'deck-modal-sidebar';
+
+    const leftSummaryCol = document.createElement('div');
+    leftSummaryCol.className = 'deck-sidebar-main';
+
+    const deckInfo = document.createElement('div');
+    deckInfo.className = 'deck-info-card';
+    const deckText = translator.getDeckText(model.deckId);
+    const deckNameEl = document.createElement('div');
+    deckNameEl.className = 'deck-info-card__name';
+    deckNameEl.textContent = deckText.name;
+    const deckDescEl = document.createElement('div');
+    deckDescEl.className = 'deck-info-card__desc';
+    deckDescEl.textContent = deckText.description;
+    deckInfo.append(deckNameEl, deckDescEl);
+    leftSummaryCol.appendChild(deckInfo);
+
+    const baseCardBox = document.createElement('div');
+    baseCardBox.className = 'deck-base-cards';
+
+    const baseTitle = document.createElement('h3');
+    baseTitle.className = 'deck-base-cards__title';
+    baseTitle.textContent = translator.t('ui.deckModal.baseCardsTitle');
+    baseCardBox.appendChild(baseTitle);
+
+    const categoriesRow = document.createElement('div');
+    categoriesRow.className = 'deck-categories-grid';
+    const categories: ReadonlyArray<{
+      readonly key: 'aces' | 'faces' | 'numbers';
+      readonly badge: string;
+      readonly label: string;
+      readonly count: number;
+    }> = [
+      {
+        key: 'aces',
+        badge: translator.t('ui.deckModal.rankAce'),
+        label: translator.t('ui.deckModal.aces'),
+        count: model.summary.aces,
+      },
+      {
+        key: 'faces',
+        badge: `${translator.t('ui.deckModal.rankKing')}`,
+        label: translator.t('ui.deckModal.faces'),
+        count: model.summary.faces,
+      },
+      {
+        key: 'numbers',
+        badge: '#',
+        label: translator.t('ui.deckModal.numbers'),
+        count: model.summary.numbers,
+      },
+    ];
+    for (const cat of categories) {
+      const cell = document.createElement('div');
+      cell.className = 'deck-category-cell';
+      cell.dataset.baseCategory = cat.key;
+      cell.title = cat.label;
+
+      const icon = document.createElement('span');
+      icon.className = `deck-category-cell__badge deck-category-cell__badge--${cat.key}`;
+      icon.textContent = cat.badge;
+
+      const val = document.createElement('span');
+      val.className = 'deck-category-cell__count';
+      val.textContent = String(cat.count);
+
+      cell.append(icon, val);
+      categoriesRow.appendChild(cell);
+    }
+    baseCardBox.appendChild(categoriesRow);
+
+    const suitsGrid = document.createElement('div');
+    suitsGrid.className = 'deck-suit-summary';
+    for (const suit of DECK_VIEW_SUIT_ORDER) {
+      const suitInfo = translator.catalog.suits[suit];
+      const count = model.summary.suits[suit];
+      const chip = document.createElement('div');
+      chip.className = `deck-suit-chip deck-suit-chip--${suit}`;
+      chip.dataset.suitSummary = suit;
+      chip.dataset.count = String(count);
+      chip.setAttribute('aria-label', `${suitInfo.name}: ${count}`);
+
+      const countSpan = document.createElement('span');
+      countSpan.className = 'deck-suit-chip__count';
+      countSpan.textContent = String(count);
+
+      chip.append(createSuitSvgIcon(suit), countSpan);
+      suitsGrid.appendChild(chip);
+    }
+    baseCardBox.appendChild(suitsGrid);
+
+    if (model.summary.stoneCount > 0) {
+      const stoneBadge = document.createElement('div');
+      stoneBadge.className = 'deck-stone-summary';
+      stoneBadge.textContent = `${translator.catalog.enhancements.stone.name}: ${model.summary.stoneCount}`;
+      baseCardBox.appendChild(stoneBadge);
+    }
+
+    leftSummaryCol.appendChild(baseCardBox);
+
+    // Вертикальная колонка счётчиков рангов от Туза до Двойки
+    const ranksCol = document.createElement('div');
+    ranksCol.className = 'deck-ranks-col';
+    for (const item of model.summary.rankCounts) {
+      const row = document.createElement('div');
+      row.className = `deck-rank-row ${item.count === 0 ? 'is-zero' : ''}`.trim();
+      row.dataset.rankSummary = String(item.rank);
+
+      const rankBadge = document.createElement('span');
+      rankBadge.className = 'deck-rank-row__badge';
+      rankBadge.textContent = formatDeckRankLabel(item.rank, translator);
+
+      const rankCount = document.createElement('span');
+      rankCount.className = 'deck-rank-row__count';
+      rankCount.textContent = String(item.count);
+
+      row.append(rankBadge, rankCount);
+      ranksCol.appendChild(row);
+    }
+
+    sidebar.append(leftSummaryCol, ranksCol);
+
+    // Правая панель: 4 ряда мини-карт по мастям веером с ховер-тултипом на каждой карте
+    const rowsPanel = document.createElement('div');
+    rowsPanel.className = 'deck-modal-rows';
+
+    for (const suitRow of model.suitRows) {
+      const rowEl = document.createElement('div');
+      rowEl.className = `deck-suit-row deck-suit-row--${suitRow.suit}`;
+      rowEl.dataset.suitRow = suitRow.suit;
+
+      const fanEl = document.createElement('div');
+      fanEl.className = 'deck-fan-row';
+      const extraOverlap =
+        suitRow.cards.length > 13 ? Math.min(14, (suitRow.cards.length - 13) * 2) : 0;
+      fanEl.style.setProperty('--deck-fan-extra', `${extraOverlap}px`);
+
+      for (const entry of suitRow.cards) {
+        // В окне состава колоды отображаем лицо карты, но в детерминированном порядке по масти/рангу
+        const visibleCard: PlayingCard =
+          entry.card.facing === 'back' ? { ...entry.card, facing: 'front' } : entry.card;
+        const frame = renderPlayingCardFrame({
+          card: visibleCard,
+          translator,
+          compact: true,
+          interactive: false,
+          faceDown: false,
+        });
+        frame.dataset.inDraw = entry.inDrawPile ? 'true' : 'false';
+        if (activeMode === 'full' && !entry.inDrawPile) {
+          frame.classList.add('is-out-of-draw');
+        }
+        setTooltipData(frame, buildPlayingCardTooltip(visibleCard, translator));
+        fanEl.appendChild(frame);
+      }
+
+      rowEl.appendChild(fanEl);
+      rowsPanel.appendChild(rowEl);
+    }
+
+    if (model.stoneCards.length > 0) {
+      const stoneRowEl = document.createElement('div');
+      stoneRowEl.className = 'deck-stone-row';
+      const stoneLabel = document.createElement('span');
+      stoneLabel.className = 'deck-stone-row__label';
+      stoneLabel.textContent = translator.catalog.enhancements.stone.name;
+      const stoneFan = document.createElement('div');
+      stoneFan.className = 'deck-fan-row';
+      for (const entry of model.stoneCards) {
+        const visibleCard: PlayingCard =
+          entry.card.facing === 'back' ? { ...entry.card, facing: 'front' } : entry.card;
+        const frame = renderPlayingCardFrame({
+          card: visibleCard,
+          translator,
+          compact: true,
+          interactive: false,
+          faceDown: false,
+        });
+        frame.dataset.inDraw = entry.inDrawPile ? 'true' : 'false';
+        if (activeMode === 'full' && !entry.inDrawPile) {
+          frame.classList.add('is-out-of-draw');
+        }
+        setTooltipData(frame, buildPlayingCardTooltip(visibleCard, translator));
+        stoneFan.appendChild(frame);
+      }
+      stoneRowEl.append(stoneLabel, stoneFan);
+      rowsPanel.appendChild(stoneRowEl);
+    }
+
+    layout.append(sidebar, rowsPanel);
+    contentHost.appendChild(layout);
+  };
+
+  remainingTab.addEventListener('click', () => {
+    if (activeMode !== 'remaining') {
+      activeMode = 'remaining';
+      renderModeContent();
+    }
+  });
+  fullTab.addEventListener('click', () => {
+    if (activeMode !== 'full') {
+      activeMode = 'full';
+      renderModeContent();
+    }
+  });
+
+  renderModeContent();
   return backdrop;
 }
 
@@ -522,19 +764,177 @@ function createDebugSection(
 }
 
 /**
- * Отрисовывает модальное окно настроек игры (скорость, звук, громкость, язык и опционально отладка).
+ * Вычисляет безопасные значения статистики и процент открытий из MetaSave.
  */
-export function renderSettingsModal(options: SettingsModalOptions): HTMLElement {
-  const { settings, translator, onChangeSettings, onClose } = options;
-  const { backdrop, body } = createModalShell(
-    translator.t('ui.settings.title'),
-    null,
-    translator,
-    onClose,
-    'settings',
-  );
+function computeMetaStatsSummary(meta: MetaSave | undefined): MetaStats & {
+  readonly discoveredCount: number;
+  readonly totalDiscoverable: number;
+  readonly discoveryPercent: number;
+} {
+  const rawStats = (meta?.stats ?? {}) as Partial<MetaStats>;
 
-  // Скорость анимаций 1x / 2x / 4x
+  const totalDiscoverable =
+    DECK_IDS.length +
+    RELIC_IDS.length +
+    CELESTIAL_IDS.length +
+    SCROLL_IDS.length +
+    RUNE_IDS.length +
+    CHARTER_IDS.length +
+    BOSS_IDS.length;
+
+  const discoveredCount = meta
+    ? new Set(meta.unlockedDecks).size +
+      new Set(meta.discoveredRelics).size +
+      new Set(meta.discoveredConsumables).size +
+      new Set(meta.discoveredCharters).size +
+      new Set(meta.discoveredBosses).size
+    : 0;
+
+  const discoveryPercent =
+    totalDiscoverable > 0
+      ? Math.min(100, Math.round((discoveredCount / totalDiscoverable) * 100))
+      : 0;
+
+  return {
+    runsStarted: rawStats.runsStarted ?? 0,
+    runsWon: rawStats.runsWon ?? 0,
+    highestAnte: rawStats.highestAnte ?? 0,
+    bestHandScore: rawStats.bestHandScore ?? 0,
+    totalHandsPlayed: rawStats.totalHandsPlayed ?? 0,
+    highestRound: rawStats.highestRound ?? 0,
+    maxDollars: rawStats.maxDollars ?? 0,
+    bestWinStreak: rawStats.bestWinStreak ?? 0,
+    currentWinStreak: rawStats.currentWinStreak ?? 0,
+    handPlayCounts: rawStats.handPlayCounts ?? {},
+    discoveredCount,
+    totalDiscoverable,
+    discoveryPercent,
+  };
+}
+
+/**
+ * Создаёт кнопку действия модального хаба «Параметры».
+ */
+function createHubButton(
+  label: string,
+  action: string,
+  className: string,
+  onClick: () => void,
+): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = `modal-btn ${className}`.trim();
+  btn.dataset.hubAction = action;
+  btn.textContent = label;
+  btn.addEventListener('click', onClick);
+  return btn;
+}
+
+/**
+ * Заполняет содержимое вкладки «Статистика» из мета-сохранения.
+ */
+function renderStatsTabBody(body: HTMLElement, meta: MetaSave | undefined, translator: Translator): void {
+  const summary = computeMetaStatsSummary(meta);
+  const topHand = getMostPlayedHand(summary);
+  const mostPlayedText = topHand
+    ? `${translator.getHandText(topHand.handType).name} (${topHand.count})`
+    : translator.t('ui.stats.noneHand', { count: 0 });
+
+  const grid = document.createElement('div');
+  grid.className = 'stats-grid';
+  grid.dataset.statsPanel = 'true';
+
+  const entries: ReadonlyArray<{ readonly label: string; readonly value: string }> = [
+    { label: translator.t('ui.stats.bestHand'), value: String(summary.bestHandScore) },
+    { label: translator.t('ui.stats.highestRound'), value: String(summary.highestRound) },
+    {
+      label: translator.t('ui.stats.highestStage'),
+      value:
+        isDevOriginalTermsEnabled() || summary.highestAnte <= 0
+          ? String(summary.highestAnte)
+          : `${getGuildRank(summary.highestAnte)} (${summary.highestAnte})`,
+    },
+    { label: translator.t('ui.stats.mostPlayedHand'), value: mostPlayedText },
+    {
+      label: translator.t('ui.stats.maxGold'),
+      value: translator.t('ui.hud.goldAmount', { dollars: summary.maxDollars }),
+    },
+    {
+      label: translator.t('ui.stats.bestWinStreak'),
+      value: `${summary.bestWinStreak} (${summary.currentWinStreak})`,
+    },
+    {
+      label: translator.t('ui.stats.runsStartedWon'),
+      value: `${summary.runsStarted} / ${summary.runsWon}`,
+    },
+    {
+      label: translator.t('ui.stats.discoveryProgress'),
+      value: `${summary.discoveryPercent}% (${summary.discoveredCount}/${summary.totalDiscoverable})`,
+    },
+  ];
+
+  for (const entry of entries) {
+    const row = document.createElement('div');
+    row.className = 'stats-row';
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'stats-row__label';
+    labelEl.textContent = entry.label;
+
+    const valueEl = document.createElement('span');
+    valueEl.className = 'stats-row__value';
+    valueEl.textContent = entry.value;
+
+    row.append(labelEl, valueEl);
+    grid.append(row);
+  }
+
+  body.append(grid);
+}
+
+/**
+ * Заполняет содержимое текстового окна «Титры и об игре» без внешних ссылок.
+ */
+function renderCreditsTabBody(
+  body: HTMLElement,
+  version: string,
+  translator: Translator,
+): void {
+  const card = document.createElement('div');
+  card.className = 'credits-card';
+  card.dataset.creditsPanel = 'true';
+
+  const heading = document.createElement('h3');
+  heading.className = 'credits-card__title';
+  heading.textContent = translator.t('ui.app.title');
+
+  const lines = [
+    translator.t('ui.credits.version', { version }),
+    translator.t('ui.credits.settingLine'),
+    translator.t('ui.credits.engineLine'),
+    translator.t('ui.credits.audioLine'),
+    translator.t('ui.credits.fontLine'),
+    translator.t('ui.credits.complianceLine'),
+  ];
+
+  card.append(heading);
+  for (const line of lines) {
+    const p = document.createElement('p');
+    p.className = 'credits-card__line';
+    p.textContent = line;
+    card.append(p);
+  }
+
+  body.append(card);
+}
+
+/**
+ * Заполняет содержимое вкладки «Настройки» (скорость, звук, громкость, язык и отладка).
+ */
+function renderSettingsControlsBody(body: HTMLElement, options: SettingsModalOptions): void {
+  const { settings, translator, onChangeSettings } = options;
+
+  // Скорость анимаций 0.5x / 1x / 2x / 4x
   body.appendChild(
     createSegmentedSettingGroup<AnimationSpeed>({
       label: translator.t('ui.settings.animationSpeed'),
@@ -580,6 +980,20 @@ export function renderSettingsModal(options: SettingsModalOptions): HTMLElement 
     }),
   );
 
+  // Переключение режима CRT-эффекта: Выкл / Лёгкий / Оригинал
+  body.appendChild(
+    createSegmentedSettingGroup<CrtMode>({
+      label: translator.t('ui.settings.crtMode'),
+      items: CRT_MODE_OPTIONS.map((option) => ({
+        value: option.value,
+        text: translator.t(option.key),
+        dataAttr: 'data-crt-mode',
+      })),
+      currentValue: settings.crtMode,
+      onSelect: (crtMode) => onChangeSettings({ crtMode }),
+    }),
+  );
+
   // Переключение языка ru / en
   body.appendChild(
     createSegmentedSettingGroup<I18nLang>({
@@ -593,10 +1007,146 @@ export function renderSettingsModal(options: SettingsModalOptions): HTMLElement 
     }),
   );
 
-  // Отладочные инструменты доступны строго по флагу ?debug
+  // Отладочные инструменты и DEV-переключатель словаря доступны строго по флагу ?debug
   if (options.isDebug === true) {
+    if (import.meta.env.DEV && options.onToggleDevOriginalTerms) {
+      const devTermsLabel =
+        translator.lang === 'ru'
+          ? 'Оригинальные термины (DEV)'
+          : 'Original Terms (DEV)';
+      body.appendChild(
+        createSegmentedSettingGroup<'off' | 'on'>({
+          label: devTermsLabel,
+          items: [
+            { value: 'off', text: translator.t('ui.settings.soundOff'), dataAttr: 'data-dev-terms' },
+            { value: 'on', text: translator.t('ui.settings.soundOn'), dataAttr: 'data-dev-terms' },
+          ],
+          currentValue: options.devOriginalTermsEnabled ? 'on' : 'off',
+          onSelect: (val) => options.onToggleDevOriginalTerms?.(val === 'on'),
+        }),
+      );
+    }
+    if (options.onOpenDebugPanel) {
+      const openPanelBtn = createHubButton(
+        translator.lang === 'ru' ? 'Админ-панель (F9)' : 'Admin Panel (F9)',
+        'open-debug-panel',
+        'modal-btn--primary',
+        options.onOpenDebugPanel,
+      );
+      openPanelBtn.dataset.debugOpenPanel = 'true';
+      body.appendChild(openPanelBtn);
+    }
     body.appendChild(createDebugSection(options.platformId, options.onDebugAction));
   }
+}
 
+/**
+ * Отрисовывает модальный хаб «Параметры» с вкладками «Настройки», «Статистика», «Титры» и возвратом в Главное меню.
+ */
+export function renderSettingsModal(options: SettingsModalOptions): HTMLElement {
+  const { translator, onClose, onReturnToMainMenu, onTabChange } = options;
+  const version = options.version ?? APP_VERSION;
+  let currentTab: SettingsModalTab = options.initialTab ?? 'hub';
+
+  const { backdrop, sheet, body, footer } = createModalShell(
+    translator.t('ui.settings.hubTitle'),
+    null,
+    translator,
+    onClose,
+    'settings',
+  );
+  sheet.classList.add('settings-hub-sheet');
+
+  const titleEl = sheet.querySelector<HTMLElement>('.modal-title');
+
+  const switchTab = (nextTab: SettingsModalTab): void => {
+    currentTab = nextTab;
+    onTabChange?.(nextTab);
+    renderActiveTab();
+  };
+
+  const renderActiveTab = (): void => {
+    body.replaceChildren();
+    footer.replaceChildren();
+    sheet.classList.toggle('settings-hub-sheet--wide', currentTab === 'stats');
+
+    if (currentTab === 'hub') {
+      if (titleEl) {
+        titleEl.textContent = translator.t('ui.settings.hubTitle');
+      }
+
+      const menu = document.createElement('div');
+      menu.className = 'settings-hub-menu';
+      menu.append(
+        createHubButton(
+          translator.t('ui.settings.hubSettings'),
+          'settings',
+          'modal-btn--hub modal-btn--full',
+          () => switchTab('settings'),
+        ),
+        createHubButton(
+          translator.t('ui.settings.hubStats'),
+          'stats',
+          'modal-btn--hub modal-btn--full',
+          () => switchTab('stats'),
+        ),
+        createHubButton(
+          translator.t('ui.settings.hubCredits'),
+          'credits',
+          'modal-btn--hub modal-btn--full',
+          () => switchTab('credits'),
+        ),
+      );
+
+      if (options.canReturnToMainMenu && onReturnToMainMenu) {
+        menu.append(
+          createHubButton(
+            translator.t('ui.settings.hubMainMenu'),
+            'main-menu',
+            'modal-btn--primary modal-btn--full',
+            onReturnToMainMenu,
+          ),
+        );
+      }
+
+      body.append(menu);
+
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'modal-btn modal-btn--gold modal-btn--full';
+      closeBtn.dataset.action = 'close';
+      closeBtn.textContent = translator.t('ui.actions.back');
+      closeBtn.addEventListener('click', onClose);
+      footer.append(closeBtn);
+      return;
+    }
+
+    if (currentTab === 'settings') {
+      if (titleEl) {
+        titleEl.textContent = translator.t('ui.settings.hubSettings');
+      }
+      renderSettingsControlsBody(body, options);
+    } else if (currentTab === 'stats') {
+      if (titleEl) {
+        titleEl.textContent = translator.t('ui.stats.title');
+      }
+      renderStatsTabBody(body, options.meta, translator);
+    } else {
+      if (titleEl) {
+        titleEl.textContent = translator.t('ui.credits.title');
+      }
+      renderCreditsTabBody(body, version, translator);
+    }
+
+    const backBtn = document.createElement('button');
+    backBtn.type = 'button';
+    backBtn.className = 'modal-btn modal-btn--gold modal-btn--full';
+    backBtn.dataset.action = 'hub-back';
+    backBtn.textContent = translator.t('ui.actions.back');
+    backBtn.addEventListener('click', () => switchTab('hub'));
+    footer.append(backBtn);
+  };
+
+  renderActiveTab();
   return backdrop;
 }

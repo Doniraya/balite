@@ -4,25 +4,35 @@ import {
   DECK_IDS,
   canUseConsumable,
   evaluatePokerHand,
+  getRelicDefinition,
+  getRunEndSummary,
 } from '../engine';
 import type {
+  BlindKind,
   BossId,
   CharterId,
   ConsumableId,
+  ConsumableInstance,
   DeckId,
+  Edition,
   GameCommand,
   HandType,
+  MetaSave,
   PackOffer,
   PlayingCard,
+  RelicInstance,
   RunState,
   ShopOffer,
+  TagId,
 } from '../engine/types';
-import type { Translator } from '../i18n';
+import { getGuildRank, isDevOriginalTermsEnabled, type Translator } from '../i18n';
 import {
   attachCardTilt,
   renderEntityCardFrame,
   renderPlayingCardFrame,
 } from './cardFrame';
+import { getRelicLocParams } from './inspector';
+import { setTooltipData, type TooltipBadge, type TooltipData } from './tooltip';
 
 /**
  * Максимальный базовый Этап до входа в бесконечный режим.
@@ -54,6 +64,7 @@ const CLICK_SUPPRESS_MS = 50;
  */
 export interface ScreenViewModel {
   state: RunState;
+  meta?: MetaSave;
   translator: Translator;
   selectedCardIds: readonly string[];
   playedCardIds: readonly string[];
@@ -74,6 +85,7 @@ export interface ScreenViewModel {
     tone: 'info' | 'boss' | 'win' | 'lose';
   } | null;
   isAnimating: boolean;
+  isDebug?: boolean;
   unlockedDecks: readonly DeckId[];
   selectedDeckId: DeckId;
   seedInput: string;
@@ -110,8 +122,26 @@ export interface ScreenActionHandlers {
   onOpenHandReference: () => void;
   onOpenDeckModal: () => void;
   onOpenSettings: () => void;
+  onOpenDebugPanel?: () => void;
   onSkipAnimation: () => void;
   onReturnToDeckSelect: () => void;
+  onBackToMainMenu?: () => void;
+}
+
+/**
+ * Ссылки на строки и итоговую кнопку экрана выплаты кэшаута для таймлайна накрутки.
+ */
+export interface CashoutScreenRefs {
+  readonly key: string;
+  readonly containerEl: HTMLElement;
+  readonly claimBtnEl: HTMLButtonElement;
+  readonly totalReward: number;
+  readonly rows: ReadonlyArray<{
+    readonly rowElement: HTMLElement;
+    readonly valueElement: HTMLElement;
+    readonly amount: number;
+    readonly isTotal?: boolean;
+  }>;
 }
 
 /**
@@ -126,6 +156,14 @@ export interface ScreenRefs {
   popupLayerEl: HTMLElement;
   bannerEl: HTMLElement;
   arenaEl: HTMLElement;
+  formulaEl: HTMLElement;
+  chipsPillEl: HTMLElement;
+  multPillEl: HTMLElement;
+  previewChips: number;
+  previewMult: number;
+  previewScore: number;
+  previewTargetScore: number;
+  cashout?: CashoutScreenRefs;
 }
 
 /**
@@ -225,6 +263,222 @@ function getEffectiveMaxConsumables(state: RunState): number {
 }
 
 /**
+ * Возвращает краткую символьную метку медальона Стража.
+ */
+function getBlindEmblemLabel(kind: BlindKind): string {
+  if (kind === 'small') return 'I';
+  if (kind === 'big') return 'II';
+  return '★';
+}
+
+/**
+ * Добавляет бейдж Издания (Фольга, Голография, Призма, Теневой) в список бейджей тултипа.
+ */
+function appendEditionBadge(
+  badges: TooltipBadge[],
+  edition: Edition,
+  translator: Translator,
+): void {
+  if (edition === 'base') return;
+  const tone =
+    edition === 'negative' ? 'purple' : edition === 'polychrome' ? 'gold' : 'blue';
+  badges.push({
+    label: translator.catalog.editions[edition].name,
+    tone,
+    kind: 'edition',
+  });
+}
+
+/**
+ * Формирует данные ховер-тултипа для игральной карты с жёсткой защитой при facing === 'back'.
+ */
+export function buildPlayingCardTooltip(
+  card: PlayingCard,
+  translator: Translator,
+  price?: string,
+): TooltipData {
+  // Инвариант #1: для перевёрнутых карт ранг, масть и модификаторы строго скрываются
+  if (card.facing === 'back') {
+    return {
+      title: '',
+      kind: 'hidden',
+      facing: 'back',
+      hidden: true,
+      hiddenTitle: translator.t('ui.tooltip.hiddenTitle'),
+      hiddenDescription: translator.t('ui.tooltip.hiddenDescription'),
+    };
+  }
+
+  const rankText = translator.getRankLabel(card.rank, false);
+  const suitInfo = translator.catalog.suits[card.suit];
+  const badges: TooltipBadge[] = [];
+  const descParts: string[] = [];
+
+  if (card.enhancement !== 'none') {
+    const enhText = translator.catalog.enhancements[card.enhancement];
+    badges.push({ label: enhText.name, tone: 'emerald', kind: 'enhancement' });
+    descParts.push(enhText.description);
+  }
+  if (card.edition !== 'base') {
+    appendEditionBadge(badges, card.edition, translator);
+    descParts.push(translator.catalog.editions[card.edition].description);
+  }
+  if (card.seal !== 'none') {
+    const sealText = translator.catalog.seals[card.seal];
+    badges.push({ label: sealText.name, tone: 'gold', kind: 'seal' });
+    descParts.push(sealText.description);
+  }
+  if (card.debuffed) {
+    badges.push({
+      label: translator.t('ui.hud.debuffedBadge'),
+      tone: 'danger',
+      kind: 'status',
+    });
+  }
+
+  const baseChips = card.rank === 14 ? 11 : Math.min(10, card.rank);
+  const totalBonus = card.bonusChips + card.permaBonus;
+  const subtitle =
+    totalBonus > 0
+      ? `+${baseChips} (+${totalBonus}) ${translator.t('ui.hud.powerShort')}`
+      : `+${baseChips} ${translator.t('ui.hud.powerShort')}`;
+
+  return {
+    title: `${rankText} (${suitInfo.symbol} ${suitInfo.name})`,
+    subtitle,
+    price,
+    description: descParts.join(' • ') || undefined,
+    badges,
+    kind: 'playing',
+    facing: 'front',
+  };
+}
+
+/**
+ * Формирует данные ховер-тултипа для Реликвии с текущими параметрами подстановки.
+ */
+function buildRelicTooltip(
+  relic: RelicInstance,
+  state: RunState,
+  translator: Translator,
+  price?: string,
+): TooltipData {
+  const def = getRelicDefinition(relic.id);
+  const relicText = translator.getRelicText(relic.id, getRelicLocParams(relic, state));
+  const badges: TooltipBadge[] = [];
+  appendEditionBadge(badges, relic.edition, translator);
+  if (relic.debuffed) {
+    badges.push({
+      label: translator.t('ui.hud.debuffedBadge'),
+      tone: 'danger',
+      kind: 'status',
+    });
+  }
+  return {
+    title: relicText.name,
+    rarity: translator.t(`rarities.${def.rarity}`),
+    price,
+    description: relicText.description,
+    badges,
+    kind: 'relic',
+  };
+}
+
+/**
+ * Формирует данные ховер-тултипа для Расходника.
+ */
+function buildConsumableTooltip(
+  consumable: ConsumableInstance,
+  translator: Translator,
+  price?: string,
+): TooltipData {
+  const consText = translator.getConsumableText(consumable.id);
+  const badges: TooltipBadge[] = [];
+  appendEditionBadge(badges, consumable.edition, translator);
+  return {
+    title: consText.name,
+    subtitle: translator.catalog.consumableKinds[consumable.kind],
+    price,
+    description: consText.description,
+    badges,
+    kind: 'consumable',
+  };
+}
+
+/**
+ * Формирует данные ховер-тултипа для Грамоты Этапа.
+ */
+function buildCharterTooltip(
+  charterId: CharterId,
+  translator: Translator,
+  price?: string,
+): TooltipData {
+  const text = translator.getCharterText(charterId);
+  return {
+    title: text.name,
+    subtitle: translator.t('ui.shop.charterTitle'),
+    price,
+    description: text.description,
+    kind: 'charter',
+  };
+}
+
+/**
+ * Формирует данные ховер-тултипа для бустер-набора.
+ */
+function buildPackTooltip(pack: PackOffer, translator: Translator, price?: string): TooltipData {
+  return {
+    title: translator.getPackTitle(pack.type, pack.size),
+    subtitle: translator.getPackSubtitle(pack.chooseCount, pack.totalCards),
+    price,
+    description: translator.catalog.packTypes[pack.type].description,
+    kind: 'pack',
+  };
+}
+
+/**
+ * Формирует данные ховер-тултипа для Стража или Босса.
+ */
+function buildBlindTooltip(
+  kind: BlindKind,
+  bossId: BossId | null,
+  targetScore: number,
+  reward: number,
+  disabled: boolean,
+  translator: Translator,
+): TooltipData {
+  const blindText = translator.getBlindText(kind, bossId);
+  const badges: TooltipBadge[] = [];
+  if (disabled) {
+    badges.push({
+      label: translator.t('ui.hud.abilityDisabled'),
+      tone: 'emerald',
+      kind: 'status',
+    });
+  }
+  return {
+    title: blindText.name,
+    subtitle: `${translator.t('ui.blindSelect.target', { score: targetScore })} • ${translator.t('ui.blindSelect.reward', { dollars: reward })}`,
+    description: blindText.description,
+    badges,
+    kind: kind === 'boss' ? 'boss' : 'blind',
+  };
+}
+
+/**
+ * Формирует данные ховер-тултипа для Знака пропуска.
+ */
+function buildTagTooltip(tagId: TagId, translator: Translator): TooltipData {
+  const tagText = translator.getTagText(tagId);
+  return {
+    title: tagText.name,
+    subtitle: translator.t('ui.hud.activeTags'),
+    description: tagText.description,
+    kind: 'tag',
+  };
+}
+
+/**
  * Возвращает активные флаги реликвий-модификаторов покерных комбинаций.
  */
 function getHandEvalOptions(state: RunState): { fourFingers: boolean; shortcut: boolean } {
@@ -309,7 +563,7 @@ function computeLiveCalculator(
   }
 
   return {
-    handName: translator.t('ui.hud.previewHint'),
+    handName: state.phase === 'playing' ? translator.t('ui.hud.previewHint') : '',
     levelLabel: '',
     chips: 0,
     mult: 0,
@@ -552,6 +806,13 @@ function renderHudBelt(
   scoreEl: HTMLElement;
   dollarsEl: HTMLElement;
   handTypeEl: HTMLElement;
+  formulaEl: HTMLElement;
+  chipsPillEl: HTMLElement;
+  multPillEl: HTMLElement;
+  previewChips: number;
+  previewMult: number;
+  previewScore: number;
+  previewTargetScore: number;
 } {
   const { vm, handlers, cardById } = ctx;
   const { state, translator } = vm;
@@ -568,12 +829,28 @@ function renderHudBelt(
       createEl('h1', 'hud-title-bar__name', translator.t('ui.app.title')),
       createEl('p', 'hud-title-bar__sub', translator.t('ui.app.subtitle')),
     );
+    const titleActions = createEl('div', 'hud-title-bar__actions');
+    if (handlers.onBackToMainMenu) {
+      const backBtn = createButton(
+        translator.t('ui.actions.back'),
+        'ui-btn--compact',
+        handlers.onBackToMainMenu,
+      );
+      backBtn.dataset.action = 'back-to-menu';
+      titleActions.append(backBtn);
+    }
     const settingsBtn = createButton(
       translator.t('ui.actions.settings'),
       'ui-btn--compact',
       handlers.onOpenSettings,
     );
-    titleBar.append(brand, settingsBtn);
+    titleActions.append(settingsBtn);
+    if (vm.isDebug === true && handlers.onOpenDebugPanel) {
+      const devBtn = createButton('DEV', 'ui-btn--compact hud-dev-btn', handlers.onOpenDebugPanel);
+      devBtn.dataset.action = 'open-debug';
+      titleActions.append(devBtn);
+    }
+    titleBar.append(brand, titleActions);
 
     // Скрытые дежурные узлы для соблюдения контракта ScreenRefs на стартовом экране
     const standby = createEl('div', 'hud-refs-standby');
@@ -587,27 +864,59 @@ function renderHudBelt(
       translator.t('ui.hud.goldAmount', { dollars: displayedDollars }),
     );
     const handTypeEl = createEl('span', undefined, calc.handName);
-    standby.append(chipsEl, multEl, scoreEl, dollarsEl, handTypeEl);
+    const formulaEl = createEl('div');
+    const chipsPillEl = createEl('div');
+    const multPillEl = createEl('div');
+    formulaEl.append(chipsPillEl, multPillEl);
+    standby.append(chipsEl, multEl, scoreEl, dollarsEl, handTypeEl, formulaEl);
 
     beltEl.append(titleBar, standby);
-    return { beltEl, chipsEl, multEl, scoreEl, dollarsEl, handTypeEl };
+    return {
+      beltEl,
+      chipsEl,
+      multEl,
+      scoreEl,
+      dollarsEl,
+      handTypeEl,
+      formulaEl,
+      chipsPillEl,
+      multPillEl,
+      previewChips: 0,
+      previewMult: 0,
+      previewScore: 0,
+      previewTargetScore: 0,
+    };
   }
 
   const grid = createEl('div', 'hud-grid');
 
-  // Левая колонка: Этап/Раунд и кнопка Стража/Босса
+  // Левая колонка: Ранг приключенца (или Анте в DEV) / Бой и карточка заказа
   const guardianCol = createEl('div', 'hud-guardian-col');
   const stageRow = createEl('div', 'hud-stage-row');
-  const stageText = state.endlessMode
-    ? translator.t('ui.hud.endlessStage', { ante: state.ante })
-    : translator.t('ui.hud.stageWithMax', {
-        ante: state.ante,
-        maxAnte: MAX_STANDARD_ANTE,
-      });
+  const useOriginalAnte = isDevOriginalTermsEnabled();
+  const stageText = useOriginalAnte
+    ? state.endlessMode
+      ? translator.t('ui.hud.endlessStage', { ante: state.ante })
+      : translator.t('ui.hud.stageWithMax', {
+          ante: state.ante,
+          maxAnte: MAX_STANDARD_ANTE,
+        })
+    : state.endlessMode
+      ? translator.t('ui.hud.endlessRank', { ante: state.ante })
+      : translator.t('ui.hud.rankWithMax', {
+          rank: getGuildRank(state.ante),
+          ante: state.ante,
+          maxAnte: MAX_STANDARD_ANTE,
+        });
   stageRow.append(
     createEl('span', 'hud-stage-label', stageText),
     createEl('span', 'hud-round-pill', translator.t('ui.hud.round', { round: state.round })),
   );
+  if (vm.isDebug === true && handlers.onOpenDebugPanel) {
+    const devBtn = createButton('DEV', 'ui-btn--compact hud-dev-btn', handlers.onOpenDebugPanel);
+    devBtn.dataset.action = 'open-debug';
+    stageRow.append(devBtn);
+  }
 
   const activeSlot = state.anteBlinds[state.currentBlindIndex] ?? state.anteBlinds[0];
   const bossSlot = state.anteBlinds[2];
@@ -629,8 +938,17 @@ function renderHudBelt(
       ),
     );
   }
-  bossBtn.append(
+  const bossHeader = createEl('div', 'hud-boss-btn__header');
+  bossHeader.append(
+    createEl(
+      'span',
+      `hud-boss-btn__emblem blind-card__emblem--${activeSlot.kind}`,
+      getBlindEmblemLabel(activeSlot.kind),
+    ),
     createEl('span', 'hud-boss-btn__title', blindText.name),
+  );
+  bossBtn.append(
+    bossHeader,
     createEl('span', 'hud-boss-btn__desc', blindText.description),
   );
   if (isBossActive && state.activeBossDisabled) {
@@ -638,8 +956,33 @@ function renderHudBelt(
       createEl('span', 'hud-boss-btn__badge', translator.t('ui.hud.abilityDisabled')),
     );
   }
+  setTooltipData(
+    bossBtn,
+    buildBlindTooltip(
+      activeSlot.kind,
+      activeSlot.bossId,
+      activeSlot.targetScore,
+      activeSlot.reward,
+      isBossActive && state.activeBossDisabled,
+      translator,
+    ),
+  );
 
-  guardianCol.append(stageRow, bossBtn);
+  // Заголовок-призыв выбора Стража для левой панели HUD в ПК-версии (phase === 'blind_select')
+  const choosePrompt = createEl(
+    'div',
+    'hud-choose-prompt',
+    translator.t('ui.blindSelect.chooseNextPrompt'),
+  );
+
+  // Вывеска МАГАЗИН для левой панели HUD в широком ПК-режиме (phase === 'shop')
+  const shopSign = createEl('div', 'hud-shop-sign');
+  shopSign.append(
+    createEl('span', 'hud-shop-sign__title', translator.t('ui.hud.shopBannerTitle')),
+    createEl('span', 'hud-shop-sign__sub', translator.t('ui.hud.shopBannerSubtitle')),
+  );
+
+  guardianCol.append(stageRow, choosePrompt, bossBtn, shopSign);
 
   // Центральная колонка: Очки / Цель и живой калькулятор расклада
   const calcCol = createEl('div', 'hud-calc-col');
@@ -702,7 +1045,7 @@ function renderHudBelt(
     createEl('span', 'hud-stat__value', String(state.discardsLeft)),
   );
 
-  const goldStat = createEl('div', 'hud-stat');
+  const goldStat = createEl('div', 'hud-stat hud-stat--gold');
   const dollarsEl = createEl(
     'span',
     'hud-stat__value hud-stat__value--gold',
@@ -734,7 +1077,21 @@ function renderHudBelt(
   grid.append(guardianCol, calcCol, metaCol);
   beltEl.append(grid);
 
-  return { beltEl, chipsEl, multEl, scoreEl, dollarsEl, handTypeEl };
+  return {
+    beltEl,
+    chipsEl,
+    multEl,
+    scoreEl,
+    dollarsEl,
+    handTypeEl,
+    formulaEl: formula,
+    chipsPillEl: chipsPill,
+    multPillEl: multPill,
+    previewChips: calc.chips,
+    previewMult: calc.mult,
+    previewScore: calc.totalScore,
+    previewTargetScore: calc.targetScore,
+  };
 }
 
 /**
@@ -782,6 +1139,7 @@ function renderInventoryBelt(ctx: RenderContext): HTMLElement {
     slot.setAttribute('role', 'button');
     slot.tabIndex = 0;
     slot.dataset.relicUid = relic.uid;
+    slot.dataset.zone = 'relic';
     slot.dataset.index = String(index);
     if (isHighlighted) {
       slot.dataset.highlighted = 'true';
@@ -797,6 +1155,7 @@ function renderInventoryBelt(ctx: RenderContext): HTMLElement {
       triggering: isHighlighted,
     });
     slot.append(frame);
+    setTooltipData(slot, buildRelicTooltip(relic, state, translator));
     cleanups.push(attachCardTilt(frame));
 
     attachSlotGestures({
@@ -853,6 +1212,7 @@ function renderInventoryBelt(ctx: RenderContext): HTMLElement {
     slot.setAttribute('role', 'button');
     slot.tabIndex = 0;
     slot.dataset.consumableUid = consumable.uid;
+    slot.dataset.zone = 'consumable';
     slot.dataset.index = String(index);
 
     // Передаём interactive: false, чтобы не вкладывать кнопку внутрь слота с role="button"
@@ -865,6 +1225,7 @@ function renderInventoryBelt(ctx: RenderContext): HTMLElement {
       selected: isTargeting,
     });
     slot.append(frame);
+    setTooltipData(slot, buildConsumableTooltip(consumable, translator));
     cleanups.push(attachCardTilt(frame));
 
     attachSlotGestures({
@@ -913,7 +1274,7 @@ function renderInventoryBelt(ctx: RenderContext): HTMLElement {
       const tagText = translator.getTagText(tagId);
       const badge = createEl('span', 'tag-badge', tagText.name);
       badge.dataset.tagId = tagId;
-      badge.title = tagText.description;
+      setTooltipData(badge, buildTagTooltip(tagId, translator));
       tagsStrip.append(badge);
     });
     beltEl.append(tagsStrip);
@@ -1013,10 +1374,11 @@ function renderBlindSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void 
   const { vm, handlers } = ctx;
   const { state, translator } = vm;
 
+  const boardTitle = isDevOriginalTermsEnabled()
+    ? translator.t('ui.blindSelect.title', { ante: state.ante })
+    : translator.t('ui.blindSelect.rankTitle', { rank: getGuildRank(state.ante) });
   const header = createEl('div', 'arena-header');
-  header.append(
-    createEl('h2', 'arena-title', translator.t('ui.blindSelect.title', { ante: state.ante })),
-  );
+  header.append(createEl('h2', 'arena-title', boardTitle));
 
   // Кнопка смены Босса доступна при наличии грамоты Указа смены врага (v_directors_cut)
   const bossSlot = state.anteBlinds[2];
@@ -1034,24 +1396,73 @@ function renderBlindSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void 
 
   const grid = createEl('div', 'blinds-grid');
   for (const slot of state.anteBlinds) {
-    const card = createEl('div', `blind-card blind-card--${slot.status}`);
+    const card = createEl('div', `blind-card blind-card--${slot.status} blind-card--${slot.kind}`);
     card.dataset.blindKind = slot.kind;
 
     const blindText = translator.getBlindText(slot.kind, slot.bossId);
     const statusText = translator.t(`ui.blindSelect.${slot.status}`);
+    const isCurrent = slot.status === 'current';
 
-    const infoBlock = createEl('div', 'blind-card__meta');
-    infoBlock.append(
-      createEl('span', 'blind-card__status', statusText),
-      createEl('strong', 'blind-card__title', blindText.name),
-      createEl('span', undefined, translator.t('ui.blindSelect.target', { score: slot.targetScore })),
-      createEl('span', undefined, translator.t('ui.blindSelect.reward', { dollars: slot.reward })),
+    // Верхняя полоса карточки: кнопка «Сразиться» у текущего Стража или статус-пилюля
+    const topBar = createEl('div', 'blind-card__top');
+    if (isCurrent) {
+      topBar.append(
+        createButton(
+          translator.t('ui.actions.battle'),
+          'ui-btn--accent blind-card__battle-btn',
+          () => handlers.onCommand({ type: 'SELECT_BLIND' }),
+        ),
+      );
+    } else {
+      topBar.append(createEl('div', 'blind-card__status-pill', statusText));
+    }
+
+    // Пилюля названия Стража
+    const namePill = createEl('div', 'blind-card__name-pill', blindText.name);
+
+    // Крупный круглый жетон-эмблема по центру
+    const tokenWrap = createEl('div', 'blind-card__token');
+    const emblem = createEl(
+      'span',
+      `blind-card__emblem blind-card__emblem--${slot.kind}`,
+      getBlindEmblemLabel(slot.kind),
     );
+    tokenWrap.append(emblem);
+    const blindTooltip = buildBlindTooltip(
+      slot.kind,
+      slot.bossId,
+      slot.targetScore,
+      slot.reward,
+      false,
+      translator,
+    );
+    setTooltipData(namePill, blindTooltip);
+    setTooltipData(tokenWrap, blindTooltip);
+
+    // Блок минимальных очков и награды
+    const targetBox = createEl('div', 'blind-card__target-box');
+    const targetRow = createEl('div', 'blind-card__target-value-row');
+    targetRow.append(
+      createEl('span', 'blind-card__score-gem', '◆'),
+      createEl('strong', 'blind-card__target-number', String(slot.targetScore)),
+    );
+    targetBox.append(
+      createEl('span', 'blind-card__target-caption', translator.t('ui.blindSelect.minScore')),
+      targetRow,
+      createEl(
+        'span',
+        'blind-card__reward',
+        translator.t('ui.blindSelect.reward', { dollars: slot.reward }),
+      ),
+    );
+
+    const bodyBlock = createEl('div', 'blind-card__body');
+    bodyBlock.append(namePill, tokenWrap);
 
     if (slot.kind === 'boss' && slot.bossId !== null) {
       const bossId = slot.bossId;
       if (BOSS_DEFINITIONS[bossId].showdown) {
-        infoBlock.append(
+        bodyBlock.append(
           createEl('span', 'blind-card__badge', translator.t('ui.blindSelect.showdownBadge')),
         );
       }
@@ -1060,35 +1471,64 @@ function renderBlindSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void 
       inspectBossBtn.dataset.bossId = bossId;
       inspectBossBtn.textContent = blindText.description;
       inspectBossBtn.addEventListener('click', () => handlers.onInspectBoss(bossId, false));
-      infoBlock.append(inspectBossBtn);
+      setTooltipData(inspectBossBtn, blindTooltip);
+      bodyBlock.append(inspectBossBtn);
     }
 
-    const actions = createEl('div', 'blind-card__actions');
-    if (slot.status === 'current') {
-      actions.append(
-        createButton(
-          translator.t('ui.actions.battle'),
-          'ui-btn--primary',
-          () => handlers.onCommand({ type: 'SELECT_BLIND' }),
+    bodyBlock.append(targetBox);
+
+    // Нижняя секция: у Малого/Старшего — разделитель ИЛИ + Знак + Пропустить; у Босса — повышение Этапа
+    const footer = createEl('div', 'blind-card__footer');
+    if (slot.kind !== 'boss' && slot.skipTagId !== null) {
+      const tagId = slot.skipTagId;
+      const tagTooltip = buildTagTooltip(tagId, translator);
+      const tagText = translator.getTagText(tagId);
+
+      footer.append(createEl('div', 'blind-card__or', translator.t('ui.blindSelect.orSeparator')));
+
+      const skipRow = createEl('div', 'blind-card__skip-row');
+      const tagIcon = createEl('div', 'blind-card__tag-icon');
+      tagIcon.dataset.tagId = tagId;
+      tagIcon.setAttribute('aria-label', tagText.name);
+      tagIcon.append(createEl('span', 'blind-card__tag-glyph', '✦'));
+      setTooltipData(tagIcon, tagTooltip);
+
+      const skipBtn = createButton(
+        translator.t('ui.blindSelect.skipButton'),
+        'ui-btn--danger ui-btn--compact blind-card__skip-btn',
+        () => handlers.onCommand({ type: 'SKIP_BLIND' }),
+        !isCurrent,
+      );
+      skipBtn.dataset.action = 'skip-blind';
+      setTooltipData(skipBtn, tagTooltip);
+
+      skipRow.append(tagIcon, skipBtn);
+      footer.append(skipRow);
+    } else if (slot.kind === 'boss') {
+      const stageAdvance = createEl('div', 'blind-card__stage-advance');
+      stageAdvance.append(
+        createEl(
+          'strong',
+          'blind-card__stage-advance-title',
+          translator.t('ui.blindSelect.advanceStageTitle'),
+        ),
+        createEl(
+          'span',
+          'blind-card__stage-advance-desc',
+          translator.t('ui.blindSelect.advanceStageDesc'),
         ),
       );
-      if (slot.kind !== 'boss' && slot.skipTagId !== null) {
-        const tagName = translator.getTagText(slot.skipTagId).name;
-        actions.append(
-          createButton(
-            translator.t('ui.blindSelect.skipWithTag', { tag: tagName }),
-            'ui-btn--compact',
-            () => handlers.onCommand({ type: 'SKIP_BLIND' }),
-          ),
-        );
-      } else if (slot.kind === 'boss') {
-        actions.append(
-          createEl('span', 'blind-card__badge', translator.t('ui.blindSelect.cannotSkipBoss')),
-        );
-      }
+      footer.append(
+        stageAdvance,
+        createEl(
+          'span',
+          'blind-card__badge blind-card__boss-badge',
+          translator.t('ui.blindSelect.cannotSkipBoss'),
+        ),
+      );
     }
 
-    card.append(infoBlock, actions);
+    card.append(topBar, bodyBlock, footer);
     grid.append(card);
   }
 
@@ -1131,6 +1571,10 @@ function renderPlayingArena(ctx: RenderContext, arenaEl: HTMLElement): void {
       interactive: false,
     });
     slot.append(frame);
+    if (card.facing === 'back') {
+      slot.dataset.tooltipFacing = 'back';
+    }
+    setTooltipData(slot, buildPlayingCardTooltip(card, vm.translator));
     cleanups.push(attachCardTilt(frame));
 
     if (!vm.isAnimating) {
@@ -1154,7 +1598,10 @@ function renderPlayingArena(ctx: RenderContext, arenaEl: HTMLElement): void {
 /**
  * Отрисовывает экран детализации награды за победу над Стражем (фаза `cashout`).
  */
-function renderCashoutArena(ctx: RenderContext, arenaEl: HTMLElement): void {
+function renderCashoutArena(
+  ctx: RenderContext,
+  arenaEl: HTMLElement,
+): CashoutScreenRefs | undefined {
   const { vm, handlers } = ctx;
   const { state, translator } = vm;
   const cashout = state.cashout;
@@ -1163,7 +1610,7 @@ function renderCashoutArena(ctx: RenderContext, arenaEl: HTMLElement): void {
   header.append(createEl('h2', 'arena-title', translator.t('ui.cashout.title')));
   arenaEl.append(header);
 
-  if (!cashout) return;
+  if (!cashout) return undefined;
 
   const rows: ReadonlyArray<{ label: string; amount: number; total?: boolean }> = [
     { label: translator.t('ui.cashout.guardianReward'), amount: cashout.blindReward },
@@ -1178,16 +1625,31 @@ function renderCashoutArena(ctx: RenderContext, arenaEl: HTMLElement): void {
   ];
 
   const list = createEl('div', 'cashout-list');
+  const rowRefs: Array<{
+    readonly rowElement: HTMLElement;
+    readonly valueElement: HTMLElement;
+    readonly amount: number;
+    readonly isTotal?: boolean;
+  }> = [];
+
   for (const row of rows) {
     const rowEl = createEl(
       'div',
       `cashout-row ${row.total ? 'cashout-row--total' : row.amount === 0 ? 'cashout-row--zero' : ''}`.trim(),
     );
-    rowEl.append(
-      createEl('span', undefined, row.label),
-      createEl('strong', undefined, translator.t('ui.hud.goldAmount', { dollars: row.amount })),
+    const amountEl = createEl(
+      'strong',
+      undefined,
+      translator.t('ui.hud.goldAmount', { dollars: row.amount }),
     );
+    rowEl.append(createEl('span', undefined, row.label), amountEl);
     list.append(rowEl);
+    rowRefs.push({
+      rowElement: rowEl,
+      valueElement: amountEl,
+      amount: row.amount,
+      isTotal: row.total,
+    });
   }
 
   const claimBtn = createButton(
@@ -1196,6 +1658,25 @@ function renderCashoutArena(ctx: RenderContext, arenaEl: HTMLElement): void {
     () => handlers.onCommand({ type: 'CLAIM_CASHOUT' }),
   );
   arenaEl.append(list, claimBtn);
+
+  const key = [
+    state.ante,
+    state.currentBlindIndex,
+    cashout.blindReward,
+    cashout.unusedHandsBonus,
+    cashout.interestBonus,
+    cashout.relicBonus,
+    cashout.tagBonus,
+    cashout.totalReward,
+  ].join(':');
+
+  return {
+    key,
+    containerEl: list,
+    claimBtnEl: claimBtn,
+    totalReward: cashout.totalReward,
+    rows: rowRefs,
+  };
 }
 
 /**
@@ -1219,24 +1700,24 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
   header.append(createEl('h2', 'arena-title', translator.t('ui.shop.title')));
 
   const headerActions = createEl('div', 'shop-header-actions');
+  headerActions.append(
+    createButton(
+      translator.t('ui.actions.nextRound'),
+      'ui-btn--primary ui-btn--compact shop-next-btn',
+      () => handlers.onCommand({ type: 'NEXT_ROUND' }),
+    ),
+  );
   if (shop) {
     const rerollCost = shop.tempRerollCost ?? shop.rerollCost;
     headerActions.append(
       createButton(
         translator.t('ui.actions.rerollShop', { dollars: rerollCost }),
-        'ui-btn--compact',
+        'ui-btn--compact shop-reroll-btn',
         () => handlers.onCommand({ type: 'REROLL_SHOP' }),
         state.dollars < rerollCost,
       ),
     );
   }
-  headerActions.append(
-    createButton(
-      translator.t('ui.actions.nextRound'),
-      'ui-btn--primary ui-btn--compact',
-      () => handlers.onCommand({ type: 'NEXT_ROUND' }),
-    ),
-  );
   header.append(headerActions);
   arenaEl.append(header);
 
@@ -1245,7 +1726,7 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
   const sections = createEl('div', 'shop-sections');
 
   // Полка товаров
-  const shelfRow = createEl('div', 'shop-row');
+  const shelfRow = createEl('div', 'shop-row shop-row--offers');
   shelfRow.append(createEl('span', 'shop-row__title', translator.t('ui.shop.shelfTitle')));
   const shelfItems = createEl('div', 'shop-items shop-offers-grid');
 
@@ -1265,6 +1746,8 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
 
     // Не передаём price/free и interactive: кнопка-обёртка уже кликабельна и выводит цену снизу
     let frame: HTMLElement;
+    let tooltip: TooltipData;
+    const priceLabel = formatShopPrice(offer.cost, translator);
     if (offer.kind === 'relic') {
       frame = renderEntityCardFrame({
         kind: 'relic',
@@ -1274,6 +1757,7 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
         interactive: false,
         disabled: !affordable,
       });
+      tooltip = buildRelicTooltip(offer.relic, state, translator, priceLabel);
     } else if (offer.kind === 'consumable') {
       frame = renderEntityCardFrame({
         kind: 'consumable',
@@ -1283,6 +1767,7 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
         interactive: false,
         disabled: !affordable,
       });
+      tooltip = buildConsumableTooltip(offer.consumable, translator, priceLabel);
     } else {
       frame = renderPlayingCardFrame({
         card: offer.card,
@@ -1291,14 +1776,16 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
         interactive: false,
         disabled: !affordable,
       });
+      tooltip = buildPlayingCardTooltip(offer.card, translator, priceLabel);
     }
+    setTooltipData(slotBtn, tooltip);
     cleanups.push(attachCardTilt(frame));
     slotBtn.append(
       frame,
       createEl(
         'span',
         'shop-slot-btn__price',
-        formatShopPrice(offer.cost, translator),
+        priceLabel,
       ),
     );
     if (!affordable) {
@@ -1330,13 +1817,15 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
       interactive: false,
       disabled: !affordable,
     });
+    const charterPriceLabel = formatShopPrice(voucher.cost, translator);
     cleanups.push(attachCardTilt(frame));
+    setTooltipData(voucherBtn, buildCharterTooltip(voucher.charterId, translator, charterPriceLabel));
     voucherBtn.append(
       frame,
       createEl(
         'span',
         'shop-slot-btn__price',
-        formatShopPrice(voucher.cost, translator),
+        charterPriceLabel,
       ),
     );
     voucherBtn.addEventListener('click', () =>
@@ -1374,13 +1863,15 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
       interactive: false,
       disabled: !affordable,
     });
+    const packPriceLabel = formatShopPrice(pack.cost, translator);
     cleanups.push(attachCardTilt(frame));
+    setTooltipData(packBtn, buildPackTooltip(pack, translator, packPriceLabel));
     packBtn.append(
       frame,
       createEl(
         'span',
         'shop-slot-btn__price',
-        formatShopPrice(pack.cost, translator),
+        packPriceLabel,
       ),
     );
     packBtn.addEventListener('click', () => handlers.onInspectPack(pack));
@@ -1435,6 +1926,8 @@ function renderBoosterArena(ctx: RenderContext, arenaEl: HTMLElement): void {
     let pickTargetIds: readonly string[] | undefined;
     let blockReason = '';
 
+    let tooltip: TooltipData;
+
     if (choice.kind === 'relic') {
       frame = renderEntityCardFrame({
         kind: 'relic',
@@ -1445,6 +1938,7 @@ function renderBoosterArena(ctx: RenderContext, arenaEl: HTMLElement): void {
         disabled: choice.picked,
       });
       nameText = translator.getRelicText(choice.relic.id).name;
+      tooltip = buildRelicTooltip(choice.relic, state, translator);
       const hasSlot = choice.relic.edition === 'negative' || state.relics.length < maxRelics;
       if (!hasSlot) {
         canPick = false;
@@ -1460,6 +1954,7 @@ function renderBoosterArena(ctx: RenderContext, arenaEl: HTMLElement): void {
         disabled: choice.picked,
       });
       nameText = translator.getConsumableText(choice.consumable.id).name;
+      tooltip = buildConsumableTooltip(choice.consumable, translator);
       if (!canUseConsumable(state, choice.consumable, vm.selectedCardIds)) {
         canPick = false;
       } else if (vm.selectedCardIds.length > 0) {
@@ -1473,9 +1968,16 @@ function renderBoosterArena(ctx: RenderContext, arenaEl: HTMLElement): void {
         interactive: false,
         disabled: choice.picked,
       });
-      nameText = frame.getAttribute('aria-label') ?? '';
+      nameText = choice.card.facing === 'back'
+        ? translator.t('ui.tooltip.hiddenTitle')
+        : frame.getAttribute('aria-label') ?? '';
+      tooltip = buildPlayingCardTooltip(choice.card, translator);
+      if (choice.card.facing === 'back') {
+        slot.dataset.tooltipFacing = 'back';
+      }
     }
 
+    setTooltipData(slot, tooltip);
     cleanups.push(attachCardTilt(frame));
     const pickBtn = createButton(
       blockReason || translator.t('ui.actions.pickItem'),
@@ -1517,14 +2019,16 @@ function renderRunEndArena(
   arenaEl: HTMLElement,
   isVictory: boolean,
 ): void {
-  const { vm, handlers } = ctx;
-  const { state, translator } = vm;
+  const { vm, handlers, cleanups } = ctx;
+  const { state, translator, meta } = vm;
+  const summary = getRunEndSummary(state, meta);
 
   const card = createEl(
     'div',
     `run-end-card ${isVictory ? 'run-end-card--victory' : 'run-end-card--defeat'}`,
   );
-  card.append(
+  const cardHeader = createEl('div', 'run-end-card__header');
+  cardHeader.append(
     createEl(
       'h2',
       'arena-title',
@@ -1536,27 +2040,133 @@ function renderRunEndArena(
       translator.t(isVictory ? 'ui.runEnd.victorySubtitle' : 'ui.runEnd.defeatSubtitle'),
     ),
   );
+  card.append(cardHeader);
 
-  const statRows: ReadonlyArray<readonly [string, string]> = [
-    [translator.t('ui.runEnd.bestHandScore'), String(state.stats.bestHandScore)],
-    [translator.t('ui.runEnd.handsPlayed'), String(state.stats.handsPlayed)],
-    [translator.t('ui.runEnd.discardsUsed'), String(state.stats.discardsUsed)],
-    [translator.t('ui.runEnd.cardsDestroyed'), String(state.stats.cardsDestroyed)],
-    [
-      translator.t('ui.runEnd.dollarsSpent'),
-      translator.t('ui.hud.goldAmount', { dollars: state.stats.dollarsSpent }),
-    ],
-    [translator.t('ui.runEnd.finalStage'), String(state.ante)],
-    [translator.t('ui.runEnd.finalRound'), String(state.round)],
-    [translator.t('ui.runEnd.runSeed'), state.seed],
+  const bestHandLabel = summary.bestHandType
+    ? `${summary.bestHandScore} (${translator.getHandText(summary.bestHandType).name})`
+    : String(summary.bestHandScore);
+  const mostPlayedLabel = summary.mostPlayedHand
+    ? `${translator.getHandText(summary.mostPlayedHand.handType).name} (${summary.mostPlayedHand.count})`
+    : translator.t('ui.runEnd.none', { count: 0 });
+
+  const statRows: ReadonlyArray<{
+    readonly label: string;
+    readonly value: string;
+    readonly isRecord?: boolean;
+  }> = [
+    {
+      label: translator.t('ui.runEnd.bestHandScore'),
+      value: bestHandLabel,
+      isRecord: summary.records.bestHandScore,
+    },
+    {
+      label: translator.t('ui.runEnd.mostPlayedHand'),
+      value: mostPlayedLabel,
+    },
+    {
+      label: translator.t('ui.runEnd.cardsPlayed'),
+      value: String(summary.cardsPlayed),
+    },
+    {
+      label: translator.t('ui.runEnd.cardsDiscarded'),
+      value: String(summary.cardsDiscarded),
+    },
+    {
+      label: translator.t('ui.runEnd.cardsPurchased'),
+      value: String(summary.cardsPurchased),
+    },
+    {
+      label: translator.t('ui.runEnd.rerollsCount'),
+      value: String(summary.rerollsCount),
+    },
+    {
+      label: translator.t('ui.runEnd.newDiscoveries'),
+      value: String(summary.newDiscoveries),
+    },
+    {
+      label: translator.t('ui.runEnd.finalStage'),
+      value: isDevOriginalTermsEnabled()
+        ? String(summary.ante)
+        : `${getGuildRank(summary.ante)} (${summary.ante}/${MAX_STANDARD_ANTE})`,
+      isRecord: summary.records.highestAnte,
+    },
+    {
+      label: translator.t('ui.runEnd.finalRound'),
+      value: String(summary.round),
+      isRecord: summary.records.highestRound,
+    },
   ];
 
   const statsGrid = createEl('div', 'run-end-stats');
-  for (const [label, value] of statRows) {
+  for (const item of statRows) {
     const row = createEl('div', 'run-end-stat');
-    row.append(createEl('span', undefined, label), createEl('strong', undefined, value));
+    const valueWrap = createEl('span', 'run-end-stat__value-wrap');
+    valueWrap.append(createEl('strong', undefined, item.value));
+    if (item.isRecord) {
+      valueWrap.append(
+        createEl('span', 'run-end-record-badge', translator.t('ui.runEnd.newRecordBadge')),
+      );
+    }
+    row.append(createEl('span', undefined, item.label), valueWrap);
     statsGrid.append(row);
   }
+
+  // Блок Стража (кем побеждён / кого одолел игрок) с иконкой
+  const blindText = translator.getBlindText(summary.defeatedBy.kind, summary.defeatedBy.bossId);
+  const victimBox = createEl('div', 'run-end-victim-box');
+  const victimLeft = createEl('div', 'run-end-victim-box__left');
+  victimLeft.append(
+    createEl(
+      'span',
+      'run-end-victim-box__label',
+      translator.t(isVictory ? 'ui.runEnd.clearedGuardian' : 'ui.runEnd.defeatedBy'),
+    ),
+    createEl('span', 'run-end-victim-box__name', blindText.name),
+  );
+  victimBox.append(
+    victimLeft,
+    createEl(
+      'span',
+      `blind-card__emblem blind-card__emblem--${summary.defeatedBy.kind}`,
+      getBlindEmblemLabel(summary.defeatedBy.kind),
+    ),
+  );
+
+  // Строка кода забега (Seed) с кнопкой Копия
+  const seedRow = createEl('div', 'run-end-seed-row');
+  const seedInfo = createEl('div', 'run-end-seed-row__info');
+  seedInfo.append(
+    createEl('span', undefined, translator.t('ui.runEnd.runSeed')),
+    createEl('code', 'run-end-seed-row__code', summary.seed),
+  );
+  let copyTimer: ReturnType<typeof setTimeout> | null = null;
+  const copyBtn = createButton(
+    translator.t('ui.actions.copy'),
+    'ui-btn--compact ui-btn--accent',
+    () => {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        void navigator.clipboard.writeText(summary.seed).catch(() => undefined);
+      }
+      copyBtn.textContent = translator.t('ui.actions.copied');
+      copyBtn.dataset.copied = 'true';
+      if (copyTimer !== null) {
+        clearTimeout(copyTimer);
+      }
+      copyTimer = setTimeout(() => {
+        copyTimer = null;
+        copyBtn.textContent = translator.t('ui.actions.copy');
+        delete copyBtn.dataset.copied;
+      }, 1500);
+    },
+  );
+  copyBtn.dataset.action = 'copy-seed';
+  cleanups.push(() => {
+    if (copyTimer !== null) {
+      clearTimeout(copyTimer);
+      copyTimer = null;
+    }
+  });
+  seedRow.append(seedInfo, copyBtn);
 
   const actions = createEl('div', 'run-end-actions');
   if (isVictory) {
@@ -1575,19 +2185,23 @@ function renderRunEndArena(
   } else {
     actions.append(
       createButton(
-        translator.t('ui.actions.playAgain'),
+        translator.t('ui.actions.newRun'),
         'ui-btn--primary',
         handlers.onStartRun,
       ),
+    );
+  }
+  if (handlers.onBackToMainMenu) {
+    actions.append(
       createButton(
-        translator.t('ui.actions.toDeckSelect'),
+        translator.t('ui.actions.mainMenu'),
         '',
-        handlers.onReturnToDeckSelect,
+        handlers.onBackToMainMenu,
       ),
     );
   }
 
-  card.append(statsGrid, actions);
+  card.append(statsGrid, victimBox, seedRow, actions);
   arenaEl.append(card);
 }
 
@@ -1601,6 +2215,7 @@ function renderArenaBelt(
   arenaEl: HTMLElement;
   popupLayerEl: HTMLElement;
   bannerEl: HTMLElement;
+  cashout?: CashoutScreenRefs;
 } {
   const { vm, handlers } = ctx;
   const { state, bannerMessage, isAnimating } = vm;
@@ -1615,6 +2230,8 @@ function renderArenaBelt(
     arenaEl.addEventListener('click', handlers.onSkipAnimation);
   }
 
+  let cashoutRefs: CashoutScreenRefs | undefined;
+
   switch (state.phase) {
     case 'deck_select':
       renderDeckSelectArena(ctx, arenaEl);
@@ -1626,7 +2243,7 @@ function renderArenaBelt(
       renderPlayingArena(ctx, arenaEl);
       break;
     case 'cashout':
-      renderCashoutArena(ctx, arenaEl);
+      cashoutRefs = renderCashoutArena(ctx, arenaEl);
       break;
     case 'shop':
       renderShopArena(ctx, arenaEl);
@@ -1655,7 +2272,7 @@ function renderArenaBelt(
   }
 
   beltEl.append(arenaEl, popupLayerEl, bannerEl);
-  return { beltEl, arenaEl, popupLayerEl, bannerEl };
+  return { beltEl, arenaEl, popupLayerEl, bannerEl, cashout: cashoutRefs };
 }
 
 /**
@@ -1731,6 +2348,39 @@ function isPlayHandBlocked(
 }
 
 /**
+ * Создаёт визуальную стопку карт Колоды рубашкой вверх с количеством оставшихся/всех карт.
+ */
+function createDeckStackButton(
+  state: RunState,
+  translator: Translator,
+  onOpenDeckModal: () => void,
+): HTMLButtonElement {
+  const remaining = state.drawPileIds.length;
+  const total = state.deck.length;
+  const label = translator.t('ui.actions.deckButton', { remaining, total });
+
+  const btn = createEl('button', 'ui-btn ui-btn--compact hand-actions__deck deck-stack-btn');
+  btn.type = 'button';
+  btn.dataset.deckId = state.deckId;
+  btn.dataset.deckStack = 'true';
+  btn.dataset.action = 'open-deck';
+  btn.setAttribute('aria-label', label);
+  btn.addEventListener('click', onOpenDeckModal);
+
+  const pile = createEl('span', 'deck-stack__pile');
+  pile.setAttribute('aria-hidden', 'true');
+  const layerBack = createEl('span', 'deck-stack__layer deck-stack__layer--back');
+  const layerMid = createEl('span', 'deck-stack__layer deck-stack__layer--mid');
+  const topCard = createEl('span', 'deck-stack__top');
+  topCard.append(createEl('span', 'deck-stack__rune', '◆'));
+  pile.append(layerBack, layerMid, topCard);
+
+  const count = createEl('span', 'deck-stack__count', `${remaining}/${total}`);
+  btn.append(pile, count);
+  return btn;
+}
+
+/**
  * Отрисовывает Пояс 4: веер карт руки, режим выбора целей и кнопки действий под рукой.
  */
 function renderHandBelt(ctx: RenderContext): HTMLElement {
@@ -1753,16 +2403,7 @@ function renderHandBelt(ctx: RenderContext): HTMLElement {
       state.phase === 'booster'
     ) {
       const actions = createEl('div', 'hand-actions--deck-only');
-      actions.append(
-        createButton(
-          translator.t('ui.actions.deckButton', {
-            remaining: state.drawPileIds.length,
-            total: state.deck.length,
-          }),
-          'ui-btn--compact',
-          handlers.onOpenDeckModal,
-        ),
-      );
+      actions.append(createDeckStackButton(state, translator, handlers.onOpenDeckModal));
       beltEl.append(actions);
     } else {
       beltEl.classList.add('belt--empty');
@@ -1827,6 +2468,10 @@ function renderHandBelt(ctx: RenderContext): HTMLElement {
       interactive: false,
     });
     slot.append(frame);
+    if (card.facing === 'back') {
+      slot.dataset.tooltipFacing = 'back';
+    }
+    setTooltipData(slot, buildPlayingCardTooltip(card, translator));
     cleanups.push(attachCardTilt(frame));
 
     attachSlotGestures({
@@ -1875,40 +2520,41 @@ function renderHandBelt(ctx: RenderContext): HTMLElement {
       vm.selectedCardIds.length > 5 ||
       missingForcedSelection;
 
+    // Подсвечиваем активный режим сортировки руки по состоянию забега (по умолчанию 'rank')
+    const activeSortMode = state.handSortMode ?? 'rank';
+    const sortRankBtn = createButton(
+      translator.t('ui.actions.sortByRank'),
+      `ui-btn--compact hand-actions__sort-rank ${activeSortMode === 'rank' ? 'is-active' : ''}`.trim(),
+      () => handlers.onCommand({ type: 'SORT_HAND', by: 'rank' }),
+      vm.isAnimating || handIds.length === 0,
+    );
+    sortRankBtn.setAttribute('aria-pressed', activeSortMode === 'rank' ? 'true' : 'false');
+
+    const sortSuitBtn = createButton(
+      translator.t('ui.actions.sortBySuit'),
+      `ui-btn--compact hand-actions__sort-suit ${activeSortMode === 'suit' ? 'is-active' : ''}`.trim(),
+      () => handlers.onCommand({ type: 'SORT_HAND', by: 'suit' }),
+      vm.isAnimating || handIds.length === 0,
+    );
+    sortSuitBtn.setAttribute('aria-pressed', activeSortMode === 'suit' ? 'true' : 'false');
+
     const actionsBar = createEl('div', 'hand-actions');
     actionsBar.append(
-      createButton(
-        translator.t('ui.actions.sortByRank'),
-        'ui-btn--compact',
-        () => handlers.onCommand({ type: 'SORT_HAND', by: 'rank' }),
-        vm.isAnimating || handIds.length === 0,
-      ),
-      createButton(
-        translator.t('ui.actions.sortBySuit'),
-        'ui-btn--compact',
-        () => handlers.onCommand({ type: 'SORT_HAND', by: 'suit' }),
-        vm.isAnimating || handIds.length === 0,
-      ),
+      sortRankBtn,
+      sortSuitBtn,
       createButton(
         translator.t('ui.actions.playHand'),
-        'ui-btn--primary',
+        'ui-btn--primary hand-actions__play',
         () => handlers.onCommand({ type: 'PLAY_HAND', cardIds: vm.selectedCardIds }),
         playDisabled,
       ),
       createButton(
         translator.t('ui.actions.discard'),
-        'ui-btn--danger',
+        'ui-btn--danger hand-actions__discard',
         () => handlers.onCommand({ type: 'DISCARD_CARDS', cardIds: vm.selectedCardIds }),
         discardDisabled,
       ),
-      createButton(
-        translator.t('ui.actions.deckButton', {
-          remaining: state.drawPileIds.length,
-          total: state.deck.length,
-        }),
-        'ui-btn--compact',
-        handlers.onOpenDeckModal,
-      ),
+      createDeckStackButton(state, translator, handlers.onOpenDeckModal),
     );
     beltEl.append(actionsBar);
   }
@@ -1982,5 +2628,13 @@ export function renderRunView(
     popupLayerEl: arena.popupLayerEl,
     bannerEl: arena.bannerEl,
     arenaEl: arena.arenaEl,
+    formulaEl: hud.formulaEl,
+    chipsPillEl: hud.chipsPillEl,
+    multPillEl: hud.multPillEl,
+    previewChips: hud.previewChips,
+    previewMult: hud.previewMult,
+    previewScore: hud.previewScore,
+    previewTargetScore: hud.previewTargetScore,
+    cashout: arena.cashout,
   };
 }

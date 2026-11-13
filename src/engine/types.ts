@@ -732,11 +732,19 @@ export type RunPhase =
  */
 export interface RunStats {
   readonly bestHandScore: number;
+  readonly bestHandType: HandType | null;
   readonly handsPlayed: number;
+  readonly cardsPlayed: number;
   readonly discardsUsed: number;
+  readonly cardsDiscarded: number;
+  readonly cardsPurchased: number;
+  readonly rerollsCount: number;
   readonly cardsDestroyed: number;
   readonly dollarsSpent: number;
 }
+
+/** Режим автоматической и ручной сортировки карт в руке. */
+export type HandSortMode = 'rank' | 'suit';
 
 /**
  * Полное детерминированное состояние активного забега.
@@ -778,6 +786,8 @@ export interface RunState {
   readonly deck: readonly PlayingCard[];
   readonly drawPileIds: readonly string[];
   readonly handIds: readonly string[];
+  /** Текущий активный режим сортировки карт в руке. */
+  readonly handSortMode?: HandSortMode;
   readonly discardPileIds: readonly string[];
   readonly relics: readonly RelicInstance[];
   readonly consumables: readonly ConsumableInstance[];
@@ -1001,7 +1011,12 @@ export interface DispatchResult {
 /**
  * Допустимые множители скорости анимаций очереди событий.
  */
-export type AnimationSpeed = 1 | 2 | 4;
+export type AnimationSpeed = 0.5 | 1 | 2 | 4;
+
+/**
+ * Режим ретро-CRT эффекта экрана.
+ */
+export type CrtMode = 'off' | 'light' | 'original';
 
 /**
  * Поддерживаемые языки локализации (согласованы с SupportedLang платформенного слоя без прямой зависимости).
@@ -1015,8 +1030,10 @@ export interface GameSettings {
   readonly animationSpeed: AnimationSpeed;
   readonly lang: EngineLang;
   readonly soundEnabled: boolean;
+  readonly crtMode: CrtMode;
   readonly musicVolume?: number;
   readonly sfxVolume?: number;
+  readonly settingsVersion?: number;
 }
 
 /**
@@ -1026,8 +1043,23 @@ export interface MetaStats {
   readonly runsStarted: number;
   readonly runsWon: number;
   readonly highestAnte: number;
+  readonly highestRound: number;
   readonly bestHandScore: number;
+  readonly maxDollars: number;
+  readonly bestWinStreak: number;
+  readonly currentWinStreak: number;
   readonly totalHandsPlayed: number;
+  readonly handPlayCounts: Readonly<Partial<Record<HandType, number>>>;
+}
+
+/**
+ * Снимок базовых рекордов и счётчик новых открытий на время активного забега.
+ */
+export interface ActiveRunTracker {
+  readonly baselineBestHandScore: number;
+  readonly baselineHighestAnte: number;
+  readonly baselineHighestRound: number;
+  readonly newDiscoveries: number;
 }
 
 /**
@@ -1044,6 +1076,7 @@ export interface MetaSave {
   readonly discoveredCharters: readonly CharterId[];
   readonly discoveredBosses: readonly BossId[];
   readonly stats: MetaStats;
+  readonly activeRunTracker?: ActiveRunTracker;
 }
 
 /**
@@ -1110,6 +1143,7 @@ export interface RunSnapshot {
   readonly compactDeck: readonly CompactCardTuple[];
   readonly drawPileIds: readonly string[];
   readonly handIds: readonly string[];
+  readonly handSortMode?: HandSortMode;
   readonly discardPileIds: readonly string[];
   readonly relics: readonly RelicInstance[];
   readonly consumables: readonly ConsumableInstance[];

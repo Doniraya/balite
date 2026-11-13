@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createPlayingCard } from '../../src/engine/cards';
+import { createConsumableInstance } from '../../src/engine/consumables';
 import { createRelicInstance } from '../../src/engine/relics';
 import {
   BOSS_IDS,
@@ -699,6 +700,101 @@ describe('Слоёный каркас карт CardFrame (TDD)', () => {
           ru.getBossText(bossId).name,
         );
       }
+    });
+  });
+
+  describe('Story 2.2: перелив изданий (.card-edition-*), .card-glare и защита рубашки', () => {
+    it('добавляет классы .card-edition-* и слой .card-glare для лицевых карт, но полностью скрывает их при facing === back / faceDown', () => {
+      const expectedEditionClass: Record<Exclude<Edition, 'base'>, string> = {
+        foil: 'card-edition-foil',
+        holo: 'card-edition-holographic',
+        polychrome: 'card-edition-polychrome',
+        negative: 'card-edition-negative',
+      };
+
+      for (const edition of EDITIONS) {
+        const openEl = renderPlayingCardFrame({
+          card: createPlayingCard({
+            id: `s22_open_${edition}`,
+            suit: 'hearts',
+            rank: 11,
+            edition,
+          }),
+          translator: ru,
+        });
+
+        const glare = openEl.querySelector('.card-frame__layer-fx .card-glare');
+        expect(glare, `Открытая карта (${edition}) должна иметь слой .card-glare`).not.toBeNull();
+
+        if (edition === 'base') {
+          expect(openEl.className).not.toMatch(/card-edition-/);
+          expect(openEl.querySelector('.card-frame__edition-sheen')).toBeNull();
+        } else {
+          const editionClass = expectedEditionClass[edition];
+          expect(
+            openEl.classList.contains(editionClass),
+            `Ожидался класс ${editionClass} для ${edition}`,
+          ).toBe(true);
+          expect(openEl.querySelector('.card-frame__edition-sheen')).not.toBeNull();
+        }
+
+        // Закрытая рубашкой вверх карта НИКОГДА не должна выдавать эффекты лицевого издания
+        const backEl = renderPlayingCardFrame({
+          card: createPlayingCard({
+            id: `s22_back_${edition}`,
+            suit: 'spades',
+            rank: 14,
+            edition,
+            facing: 'back',
+          }),
+          translator: ru,
+        });
+
+        expect(backEl.classList.contains('is-face-down')).toBe(true);
+        expect(backEl.dataset.edition).toBeUndefined();
+        expect(backEl.className).not.toMatch(/card-edition-/);
+        expect(backEl.querySelector('.card-frame__edition-sheen')).toBeNull();
+        expect(backEl.querySelector('.card-glare')).toBeNull();
+      }
+    });
+
+    it('добавляет .card-edition-* и .card-glare на реликвии и расходники с изданием', () => {
+      const relic = renderEntityCardFrame({
+        kind: 'relic',
+        relic: createRelicInstance('j_joker', 's22_rel_poly', 'polychrome'),
+        translator: ru,
+      });
+      expect(relic.classList.contains('card-edition-polychrome')).toBe(true);
+      expect(relic.querySelector('.card-glare')).not.toBeNull();
+
+      const consumable = renderEntityCardFrame({
+        kind: 'consumable',
+        consumable: createConsumableInstance('c_pluto', 's22_cons_neg', 'negative'),
+        translator: en,
+      });
+      expect(consumable.classList.contains('card-edition-negative')).toBe(true);
+      expect(consumable.querySelector('.card-glare')).not.toBeNull();
+    });
+
+    it('cardFrame.css поддерживает 3D-наклон, фазовое парение (--sway-r, --sway-y), блик (--glare-x, --glare-y), перелив изданий и reduced-motion', async () => {
+      const fsModule = 'node:fs';
+      const { readFileSync } = (await import(/* @vite-ignore */ fsModule)) as {
+        readFileSync: (file: string, encoding: 'utf8') => string;
+      };
+      const css = readFileSync('src/ui/cardFrame.css', 'utf8');
+
+      expect(css).toContain('--sway-r');
+      expect(css).toContain('--sway-y');
+      expect(css).toContain('--glare-x');
+      expect(css).toContain('--glare-y');
+      expect(css).toContain('.card-glare');
+      expect(css).toContain('.card-edition-foil');
+      expect(css).toContain('.card-edition-holographic');
+      expect(css).toContain('.card-edition-polychrome');
+      expect(css).toContain('.card-edition-negative');
+      expect(css).toContain('@keyframes');
+      expect(css).toContain('prefers-reduced-motion: reduce');
+      expect(css).toMatch(/\.card-frame\.is-face-down[\s\S]*display:\s*none/);
     });
   });
 });

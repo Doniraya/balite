@@ -3,6 +3,7 @@ import {
   BOSS_DEFINITIONS,
   DECK_IDS,
   createConsumableInstance,
+  createInitialMetaSave,
   createInitialRunState,
   createPlayingCard,
   createRelicInstance,
@@ -19,6 +20,7 @@ import {
   type ScreenViewModel,
   renderRunView,
 } from '../../src/ui/screens';
+import { getTooltipData } from '../../src/ui/tooltip';
 
 /**
  * Запрещённые слова для возрастного рейтинга 6+/12+ (модерация площадок).
@@ -88,6 +90,7 @@ function createMockHandlers(): ScreenActionHandlers {
     onOpenSettings: vi.fn(),
     onSkipAnimation: vi.fn(),
     onReturnToDeckSelect: vi.fn(),
+    onBackToMainMenu: vi.fn(),
   };
 }
 
@@ -250,8 +253,8 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       const handlers = createMockHandlers();
       renderRunView(root, createViewModel(state), handlers);
       const hud = root.querySelector('[data-belt="hud"]') as HTMLElement;
-      expect(hud.textContent).toContain('Этап 1/8');
-      expect(hud.textContent).toContain('Раунд 1');
+      expect(hud.textContent).toContain('Ранг F (1/8)');
+      expect(hud.textContent).toContain('Бой 1');
 
       const endlessState: RunState = {
         ...state,
@@ -260,7 +263,7 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       };
       renderRunView(root, createViewModel(endlessState), handlers);
       const hudEndless = root.querySelector('[data-belt="hud"]') as HTMLElement;
-      expect(hudEndless.textContent).toContain('Бесконечный этап 10');
+      expect(hudEndless.textContent).toContain('Ранг SS+ (10)');
     });
 
     it('вызывает onOpenHandReference, onOpenSettings и onInspectBoss по тапу в HUD', () => {
@@ -278,7 +281,7 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       renderRunView(root, createViewModel(bossState), handlers);
       const hud = root.querySelector('[data-belt="hud"]') as HTMLElement;
 
-      findButtonByText(hud, 'Расклады')?.click();
+      findButtonByText(hud, 'Комбинации')?.click();
       expect(handlers.onOpenHandReference).toHaveBeenCalledTimes(1);
 
       findButtonByText(hud, 'Настройки')?.click();
@@ -537,6 +540,9 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       findButtonByText(arena, 'Продолжить')?.click();
       expect(handlers.onResumeSavedRun).toHaveBeenCalledTimes(1);
 
+      root.querySelector<HTMLButtonElement>('[data-action="back-to-menu"]')?.click();
+      expect(handlers.onBackToMainMenu).toHaveBeenCalledTimes(1);
+
       // Если сохранения нет — кнопка Продолжить не показывается
       renderRunView(root, createViewModel(state, { hasSavedRun: false }), handlers);
       expect(findButtonByText(root, 'Продолжить')).toBeNull();
@@ -555,17 +561,40 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       const handlers = createMockHandlers();
 
       renderRunView(root, createViewModel(withCharter), handlers);
+      const hud = root.querySelector('[data-belt="hud"]') as HTMLElement;
       const arena = root.querySelector('[data-belt="arena"]') as HTMLElement;
+      const hand = root.querySelector('[data-belt="hand"]') as HTMLElement;
 
+      expect(hud.querySelector('.hud-choose-prompt')?.textContent).toContain(
+        'Выберите заказ на доске гильдии',
+      );
       expect(arena.querySelector('[data-blind-kind="small"]')).not.toBeNull();
       expect(arena.querySelector('[data-blind-kind="big"]')).not.toBeNull();
       expect(arena.querySelector('[data-blind-kind="boss"]')).not.toBeNull();
+      expect(arena.querySelector('[data-blind-kind="small"] .blind-card__emblem')).not.toBeNull();
+      expect(arena.querySelector('[data-blind-kind="small"] .blind-card__name-pill')).not.toBeNull();
+      expect(arena.querySelector('[data-blind-kind="small"] .blind-card__target-box')?.textContent).toContain(
+        'Минимум очков',
+      );
+      expect(arena.querySelector('[data-blind-kind="small"] .blind-card__tag-icon')).not.toBeNull();
+      expect(arena.querySelector('[data-blind-kind="boss"] .blind-card__stage-advance')?.textContent).toContain(
+        'Повышение ранга',
+      );
+      expect(arena.querySelector('[data-blind-kind="small"] .blind-card__battle-btn')).not.toBeNull();
 
-      findButtonByText(arena, 'Сразиться')?.click();
+      findButtonByText(arena, 'Принять заказ')?.click();
       expect(handlers.onCommand).toHaveBeenCalledWith({ type: 'SELECT_BLIND' });
 
-      findButtonByText(arena, 'Пропустить ->')?.click();
+      findButtonByText(arena, 'Пропустить заказ')?.click();
       expect(handlers.onCommand).toHaveBeenCalledWith({ type: 'SKIP_BLIND' });
+
+      // Стопка карт Колоды в правом нижнем углу стола
+      const deckStackBtn = hand.querySelector<HTMLButtonElement>('.deck-stack-btn.hand-actions__deck');
+      expect(deckStackBtn).not.toBeNull();
+      expect(deckStackBtn?.dataset.deckId).toBe('b_red');
+      expect(deckStackBtn?.querySelector('.deck-stack__count')?.textContent?.trim()).toBe('52/52');
+      deckStackBtn?.click();
+      expect(handlers.onOpenDeckModal).toHaveBeenCalledTimes(1);
 
       const rerollBtn = findButtonByText(arena, 'Сменить Босса');
       expect(rerollBtn).not.toBeNull();
@@ -660,8 +689,10 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       findButtonByText(handZoneReady, 'По масти')?.click();
       expect(handlers.onCommand).toHaveBeenCalledWith({ type: 'SORT_HAND', by: 'suit' });
 
-      const deckBtn = findButtonByText(handZoneReady, 'Колода (1/4)');
+      const deckBtn = handZoneReady.querySelector<HTMLButtonElement>('[data-action="open-deck"]');
       expect(deckBtn).not.toBeNull();
+      expect(deckBtn?.getAttribute('aria-label')).toBe('Колода (1/4)');
+      expect(deckBtn?.querySelector('.deck-stack__count')?.textContent).toBe('1/4');
       deckBtn?.click();
       expect(handlers.onOpenDeckModal).toHaveBeenCalledTimes(1);
 
@@ -797,11 +828,11 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       renderRunView(root, createViewModel(state), handlers);
 
       const arena = root.querySelector('[data-belt="arena"]') as HTMLElement;
-      expect(arena.textContent).toContain('Награда за Стража');
+      expect(arena.textContent).toContain('Награда за заказ');
       expect(arena.textContent).toContain('Оставшиеся руки (2)');
       expect(arena.textContent).toContain('Проценты');
-      expect(arena.textContent).toContain('Бонус Реликвий');
-      expect(arena.textContent).toContain('Бонус Знаков');
+      expect(arena.textContent).toContain('Бонус Навыков');
+      expect(arena.textContent).toContain('Бонус Талонов');
       expect(arena.textContent).toContain('18 з.');
 
       findButtonByText(arena, 'Забрать 18 з.')?.click();
@@ -873,6 +904,8 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       renderRunView(root, createViewModel(state), handlers);
 
       const arena = root.querySelector('[data-belt="arena"]') as HTMLElement;
+      const hud = root.querySelector('[data-belt="hud"]') as HTMLElement;
+      expect(hud.querySelector('.hud-shop-sign')?.textContent).toContain('ГИЛЬДИЯ');
       expect(arena.querySelectorAll('button button, [role="button"] button').length).toBe(0);
       expect(arena.querySelectorAll('.card-frame__price-badge').length).toBe(0);
 
@@ -944,7 +977,7 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       renderRunView(root, createViewModel(state, { selectedCardIds: [] }), handlers);
       const arena = root.querySelector('[data-belt="arena"]') as HTMLElement;
       const scrollSlot = arena.querySelector('[data-choice-uid="ch_scroll"]') as HTMLElement;
-      expect(findButtonByText(scrollSlot, 'Выбрать')?.disabled).toBe(true);
+      expect(findButtonByText(scrollSlot, 'Взять')?.disabled).toBe(true);
 
       // В Поясе 4 показана временная рука набора
       const handZone = root.querySelector('[data-belt="hand"]') as HTMLElement;
@@ -955,7 +988,7 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       const arenaReady = root.querySelector('[data-belt="arena"]') as HTMLElement;
       const scrollBtnActive = findButtonByText(
         arenaReady.querySelector('[data-choice-uid="ch_scroll"]') as HTMLElement,
-        'Выбрать',
+        'Взять',
       )!;
       expect(scrollBtnActive.disabled).toBe(false);
       scrollBtnActive.click();
@@ -967,36 +1000,77 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
 
       findButtonByText(
         arenaReady.querySelector('[data-choice-uid="ch_card"]') as HTMLElement,
-        'Выбрать',
+        'Взять',
       )?.click();
       expect(handlers.onCommand).toHaveBeenCalledWith({
         type: 'PICK_BOOSTER_ITEM',
         choiceUid: 'ch_card',
       });
 
-      findButtonByText(arenaReady, 'Пропустить набор')?.click();
+      findButtonByText(arenaReady, 'Закрыть сундук')?.click();
       expect(handlers.onCommand).toHaveBeenCalledWith({ type: 'SKIP_BOOSTER' });
     });
 
-    it('экраны victory и game_over: статистика и кнопки продолжения/перезапуска', () => {
+    it('экраны victory и game_over: статистика, копирование кода забега и кнопки продолжения/выхода', async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText },
+      });
+
       const base = createPlayingState('RUN_END');
       const victoryState: RunState = {
         ...base,
         phase: 'victory',
+        relics: [createRelicInstance('j_joker', 'r1')],
         stats: {
           bestHandScore: 12345,
+          bestHandType: 'Straight Flush',
           handsPlayed: 14,
+          cardsPlayed: 52,
           discardsUsed: 5,
+          cardsDiscarded: 18,
+          cardsPurchased: 7,
+          rerollsCount: 3,
           cardsDestroyed: 2,
           dollarsSpent: 64,
         },
       };
+      const baseMeta = createInitialMetaSave(1_000, { lang: 'ru' });
+      const meta = {
+        ...baseMeta,
+        discoveredRelics: ['j_joker' as const, 'j_blueprint' as const],
+        stats: {
+          ...baseMeta.stats,
+          bestHandScore: 5000,
+          highestAnte: 4,
+          highestRound: 10,
+          maxDollars: 10,
+        },
+        activeRunTracker: {
+          baselineBestHandScore: 5000,
+          baselineHighestAnte: 4,
+          baselineHighestRound: 10,
+          newDiscoveries: 2,
+        },
+      };
       const handlers = createMockHandlers();
-      renderRunView(root, createViewModel(victoryState), handlers);
+      renderRunView(root, createViewModel(victoryState, { meta }), handlers);
 
       const arena = root.querySelector('[data-belt="arena"]') as HTMLElement;
       expect(arena.textContent).toContain('Победа');
       expect(arena.textContent).toContain('12345');
+      expect(arena.textContent).toContain('52');
+      expect(arena.textContent).toContain('18');
+      expect(arena.textContent).toContain('7');
+      expect(arena.textContent).toContain('3');
+      expect(arena.textContent).toContain('Новый рекорд!');
+      expect(arena.querySelector('.run-end-victim-box .blind-card__emblem')).not.toBeNull();
+
+      const copySeedBtn = arena.querySelector<HTMLButtonElement>('[data-action="copy-seed"]');
+      expect(copySeedBtn).not.toBeNull();
+      copySeedBtn!.click();
+      expect(writeText).toHaveBeenCalledWith('RUN_END');
 
       findButtonByText(arena, 'Бесконечный режим')?.click();
       expect(handlers.onCommand).toHaveBeenCalledWith({ type: 'CONTINUE_ENDLESS' });
@@ -1004,16 +1078,73 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       findButtonByText(arena, 'Новый забег')?.click();
       expect(handlers.onReturnToDeckSelect).toHaveBeenCalledTimes(1);
 
-      const defeatState: RunState = { ...victoryState, phase: 'game_over' };
-      renderRunView(root, createViewModel(defeatState), handlers);
-      const arenaDefeat = root.querySelector('[data-belt="arena"]') as HTMLElement;
-      expect(arenaDefeat.textContent).toContain('Поражение');
+      findButtonByText(arena, 'Главное меню')?.click();
+      expect(handlers.onBackToMainMenu).toHaveBeenCalledTimes(1);
 
-      findButtonByText(arenaDefeat, 'Играть снова')?.click();
+      const defeatState: RunState = { ...victoryState, phase: 'game_over' };
+      renderRunView(root, createViewModel(defeatState, { meta }), handlers);
+      const arenaDefeat = root.querySelector('[data-belt="arena"]') as HTMLElement;
+      expect(arenaDefeat.textContent).toContain('Заказ провален');
+      expect(arenaDefeat.querySelector('.run-end-victim-box .blind-card__emblem')).not.toBeNull();
+
+      findButtonByText(arenaDefeat, 'Новый забег')?.click();
       expect(handlers.onStartRun).toHaveBeenCalledTimes(1);
 
-      findButtonByText(arenaDefeat, 'Выбор колоды')?.click();
-      expect(handlers.onReturnToDeckSelect).toHaveBeenCalledTimes(2);
+      findButtonByText(arenaDefeat, 'Главное меню')?.click();
+      expect(handlers.onBackToMainMenu).toHaveBeenCalledTimes(2);
+    });
+
+    it('привязывает tooltip-данные к картам, реликвиям и скрывает ранг/масть у карт рубашкой вверх', () => {
+      const base = createPlayingState('TOOLTIP_TEST');
+      const openId = base.handIds[0]!;
+      const hiddenId = base.handIds[1]!;
+      const state: RunState = {
+        ...base,
+        relics: [createRelicInstance('j_joker', 'r1')],
+        deck: base.deck.map((card): PlayingCard => {
+          if (card.id === openId) {
+            return { ...card, rank: 13, suit: 'hearts', facing: 'front' };
+          }
+          if (card.id === hiddenId) {
+            return {
+              ...card,
+              rank: 14,
+              suit: 'spades',
+              enhancement: 'bonus',
+              edition: 'foil',
+              seal: 'gold',
+              facing: 'back',
+            };
+          }
+          return card;
+        }),
+      };
+
+      renderRunView(root, createViewModel(state), createMockHandlers());
+
+      const handCards = root.querySelectorAll<HTMLElement>('.hand-card-slot');
+      expect(handCards.length).toBeGreaterThanOrEqual(2);
+
+      const openEl = Array.from(handCards).find((el) => el.dataset.cardId === openId)!;
+      const hiddenEl = Array.from(handCards).find((el) => el.dataset.cardId === hiddenId)!;
+
+      const openTooltip = getTooltipData(openEl);
+      expect(openTooltip).not.toBeNull();
+      expect(openTooltip!.title).toContain('Червы');
+
+      expect(hiddenEl.dataset.tooltipFacing).toBe('back');
+      const hiddenTooltip = getTooltipData(hiddenEl);
+      expect(hiddenTooltip).not.toBeNull();
+      expect(hiddenTooltip!.hidden).toBe(true);
+      expect(hiddenTooltip!.hiddenTitle).toBe('Скрытая карта');
+      expect(hiddenTooltip!.hiddenDescription).toContain('Скрыто способностью Босса');
+      expect(hiddenTooltip!.title).toBe('');
+      expect(hiddenTooltip!.hiddenDescription ?? '').not.toContain('Пики');
+      expect(hiddenTooltip!.description ?? '').not.toContain('Тисн');
+
+      const relicEl = root.querySelector<HTMLElement>('.inventory-slot[data-relic-uid]');
+      expect(relicEl).not.toBeNull();
+      expect(getTooltipData(relicEl!)).not.toBeNull();
     });
   });
 
@@ -1134,21 +1265,242 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       expect(BOSS_DEFINITIONS.bl_hook.reward).toBeGreaterThan(0);
     });
 
-    it('screens.css и style.css не содержат :hover, сжимают Пояс 4 без руки, просвечивают фон и гарантируют тап-зоны >= 44px', async () => {
+    it('screens.css и style.css допускают :hover только под @media (hover: hover) and (pointer: fine), сжимают Пояс 4 без руки и гарантируют тап-зоны >= 44px', async () => {
       const fsModule = 'node:fs';
       const { readFileSync } = (await import(/* @vite-ignore */ fsModule)) as {
         readFileSync: (file: string, encoding: 'utf8') => string;
+      };
+      const stripFineHoverMedia = (cssText: string): string => {
+        const marker = '@media (hover: hover) and (pointer: fine)';
+        let result = cssText;
+        let idx = result.indexOf(marker);
+        while (idx !== -1) {
+          const openBrace = result.indexOf('{', idx);
+          if (openBrace === -1) break;
+          let depth = 0;
+          let end = openBrace;
+          for (let i = openBrace; i < result.length; i += 1) {
+            if (result[i] === '{') depth += 1;
+            else if (result[i] === '}') {
+              depth -= 1;
+              if (depth === 0) {
+                end = i + 1;
+                break;
+              }
+            }
+          }
+          result = result.slice(0, idx) + result.slice(end);
+          idx = result.indexOf(marker);
+        }
+        return result;
       };
       const screensCss = readFileSync('src/ui/screens.css', 'utf8');
       const styleCss = readFileSync('src/style.css', 'utf8');
       expect(screensCss.length).toBeGreaterThan(100);
       expect(screensCss).toContain('18fr 18fr 32fr 32fr');
       expect(screensCss).toContain('auto auto minmax(0, 1fr) auto');
-      expect(screensCss).not.toMatch(/:hover\b/);
+      expect(screensCss).toContain('@media (min-width: 960px) and (orientation: landscape)');
+      expect(screensCss).toContain('@media (hover: hover) and (pointer: fine)');
+      expect(screensCss).toContain('brightness(0.86)');
+      expect(screensCss).toContain('.deck-stack-btn');
+      expect(styleCss).toContain('@media (min-width: 960px) and (orientation: landscape)');
+      expect(stripFineHoverMedia(screensCss)).not.toMatch(/:hover\b/);
       expect(screensCss).toMatch(/min-height:\s*(?:44|4[5-9]|[5-9]\d)px/);
       expect(screensCss).toMatch(/min-width:\s*(?:44|4[5-9]|[5-9]\d)px/);
-      expect(styleCss).not.toMatch(/:hover\b/);
+      expect(stripFineHoverMedia(styleCss)).not.toMatch(/:hover\b/);
       expect(styleCss).toMatch(/\.stage-portrait[\s\S]*rgba\(\s*16\s*,\s*40\s*,\s*34\s*,\s*0\.\d+\s*\)/);
+    });
+
+    it('присваивает стабильные DOM-ключи слотам карт руки, Play Zone, стопке колоды, реликвиям и расходникам', () => {
+      const root = document.createElement('div');
+      let state = createInitialRunState('b_red', 'STORY21KEYS');
+      const selectSmall = dispatch(state, { type: 'SELECT_BLIND' });
+      state = selectSmall.nextState;
+      const relic = createRelicInstance('j_joker', 'relic_story21');
+      const consumable = createConsumableInstance('c_pluto', 'cons_story21');
+      state = {
+        ...state,
+        relics: [relic],
+        consumables: [consumable],
+      };
+
+      const playedCardIds = state.handIds.slice(0, 2);
+      const handCardIds = state.handIds.slice(2);
+      const viewState: RunState = {
+        ...state,
+        handIds: handCardIds,
+      };
+
+      renderRunView(
+        root,
+        createViewModel(viewState, {
+          playedCardIds,
+          isAnimating: true,
+        }),
+        createMockHandlers(),
+      );
+
+      for (const cardId of handCardIds) {
+        const slot = root.querySelector(`.hand-card-slot[data-zone="hand"][data-card-id="${cardId}"]`);
+        expect(slot, `Слот карты руки ${cardId} должен иметь data-zone="hand"`).not.toBeNull();
+      }
+      for (const cardId of playedCardIds) {
+        const slot = root.querySelector(`.play-zone__card[data-zone="play"][data-card-id="${cardId}"]`);
+        expect(slot, `Слот сыгранной карты ${cardId} должен иметь data-zone="play"`).not.toBeNull();
+      }
+
+      const deckBtn = root.querySelector('.deck-stack-btn[data-deck-stack="true"]');
+      expect(deckBtn).not.toBeNull();
+
+      const relicSlot = root.querySelector(`[data-zone="relic"][data-relic-uid="${relic.uid}"]`);
+      expect(relicSlot).not.toBeNull();
+
+      const consumableSlot = root.querySelector(`[data-zone="consumable"][data-consumable-uid="${consumable.uid}"]`);
+      expect(consumableSlot).not.toBeNull();
+    });
+
+    it('возвращает formulaEl, chipsPillEl, multPillEl и значения предпросмотра в ScreenRefs для scoreFlame', () => {
+      const root = document.createElement('div');
+      const state = createPlayingState('FLAME_REFS');
+      const card = state.handIds[0]!;
+
+      const emptyRefs = renderRunView(root, createViewModel(state), createMockHandlers());
+      expect(emptyRefs.formulaEl).toBeInstanceOf(HTMLElement);
+      expect(emptyRefs.chipsPillEl).toBeInstanceOf(HTMLElement);
+      expect(emptyRefs.multPillEl).toBeInstanceOf(HTMLElement);
+      expect(emptyRefs.previewChips).toBe(0);
+      expect(emptyRefs.previewMult).toBe(0);
+      expect(emptyRefs.previewTargetScore).toBe(state.targetScore);
+
+      const selectedRefs = renderRunView(
+        root,
+        createViewModel(state, { selectedCardIds: [card] }),
+        createMockHandlers(),
+      );
+      expect(selectedRefs.previewChips).toBeGreaterThan(0);
+      expect(selectedRefs.previewMult).toBeGreaterThan(0);
+    });
+
+    it('возвращает cashout в ScreenRefs с строками детализации, итогом и кнопкой CLAIM_CASHOUT', () => {
+      const root = document.createElement('div');
+      const base = createPlayingState('CASHOUT_REFS');
+      const state: RunState = {
+        ...base,
+        phase: 'cashout',
+        handsLeft: 2,
+        cashout: {
+          blindReward: 4,
+          unusedHandsBonus: 2,
+          interestBonus: 3,
+          relicBonus: 0,
+          tagBonus: 1,
+          totalReward: 10,
+        },
+      };
+
+      const refs = renderRunView(root, createViewModel(state), createMockHandlers());
+      expect(refs.cashout).toBeDefined();
+      expect(refs.cashout?.totalReward).toBe(10);
+      expect(refs.cashout?.rows).toHaveLength(6);
+      expect(refs.cashout?.rows[0]?.amount).toBe(4);
+      expect(refs.cashout?.rows[5]?.isTotal).toBe(true);
+      expect(refs.cashout?.rows[5]?.amount).toBe(10);
+      expect(refs.cashout?.claimBtnEl).toBeInstanceOf(HTMLButtonElement);
+    });
+
+    it('отображает кнопку DEV в HUD строго только при vm.isDebug=true', () => {
+      const root = document.createElement('div');
+      const state = createPlayingState('HUD_DEV_BTN');
+      const onOpenDebugPanel = vi.fn();
+
+      renderRunView(root, createViewModel(state, { isDebug: false }), {
+        ...createMockHandlers(),
+        onOpenDebugPanel,
+      });
+      expect(root.querySelector('[data-action="open-debug"]')).toBeNull();
+
+      renderRunView(root, createViewModel(state, { isDebug: true }), {
+        ...createMockHandlers(),
+        onOpenDebugPanel,
+      });
+      const devBtn = root.querySelector<HTMLButtonElement>('[data-action="open-debug"]');
+      expect(devBtn).not.toBeNull();
+      devBtn?.click();
+      expect(onOpenDebugPanel).toHaveBeenCalledTimes(1);
+    });
+
+    it('показывает подсказку «Выберите до 5 карт» строго в фазе playing и задаёт min-height у .hud-hand-row', async () => {
+      const root = document.createElement('div');
+      const base = createPlayingState('PREVIEW_HINT_PHASES');
+
+      // В фазе playing без выбранных карт подсказка присутствует
+      const playingRefs = renderRunView(root, createViewModel(base), createMockHandlers());
+      expect(playingRefs.handTypeEl.textContent).toBe('Выберите до 5 карт');
+
+      // В остальных фазах (без выбранной/разыгрываемой руки) подсказка отсутствует
+      const nonPlayingPhases: ReadonlyArray<RunState['phase']> = [
+        'blind_select',
+        'shop',
+        'cashout',
+        'booster',
+        'victory',
+        'game_over',
+      ];
+      for (const phase of nonPlayingPhases) {
+        const phaseState: RunState =
+          phase === 'cashout'
+            ? {
+                ...base,
+                phase,
+                cashout: {
+                  blindReward: 4,
+                  unusedHandsBonus: 1,
+                  interestBonus: 0,
+                  relicBonus: 0,
+                  tagBonus: 0,
+                  totalReward: 5,
+                },
+              }
+            : { ...base, phase };
+        const refs = renderRunView(root, createViewModel(phaseState), createMockHandlers());
+        expect(refs.handTypeEl.textContent, `В фазе ${phase} не должно быть подсказки`).toBe('');
+        expect(root.querySelector('[data-belt="hud"]')?.textContent ?? '').not.toContain(
+          'Выберите до 5 карт',
+        );
+      }
+
+      // В screens.css у .hud-hand-row задан min-height, чтобы левый HUD не скакал по высоте
+      const fsModule = 'node:fs';
+      const { readFileSync } = (await import(/* @vite-ignore */ fsModule)) as {
+        readFileSync: (file: string, encoding: 'utf8') => string;
+      };
+      const screensCss = readFileSync('src/ui/screens.css', 'utf8');
+      expect(screensCss).toMatch(/\.hud-hand-row\s*\{[^}]*min-height\s*:/);
+    });
+
+    it('подсвечивает активный режим сортировки (is-active и aria-pressed) по state.handSortMode ?? rank', () => {
+      const root = document.createElement('div');
+      const base = createPlayingState('SORT_ACTIVE_MODE');
+
+      // 1. По умолчанию (или при undefined / 'rank') активна кнопка «По рангу»
+      const defaultState: RunState = { ...base, handSortMode: undefined };
+      renderRunView(root, createViewModel(defaultState), createMockHandlers());
+      const rankDefaultBtn = root.querySelector<HTMLButtonElement>('.hand-actions__sort-rank');
+      const suitDefaultBtn = root.querySelector<HTMLButtonElement>('.hand-actions__sort-suit');
+      expect(rankDefaultBtn?.classList.contains('is-active')).toBe(true);
+      expect(rankDefaultBtn?.getAttribute('aria-pressed')).toBe('true');
+      expect(suitDefaultBtn?.classList.contains('is-active')).toBe(false);
+      expect(suitDefaultBtn?.getAttribute('aria-pressed')).toBe('false');
+
+      // 2. При handSortMode === 'suit' активна кнопка «По масти»
+      const suitState: RunState = { ...base, handSortMode: 'suit' };
+      renderRunView(root, createViewModel(suitState), createMockHandlers());
+      const rankSuitModeBtn = root.querySelector<HTMLButtonElement>('.hand-actions__sort-rank');
+      const suitSuitModeBtn = root.querySelector<HTMLButtonElement>('.hand-actions__sort-suit');
+      expect(rankSuitModeBtn?.classList.contains('is-active')).toBe(false);
+      expect(rankSuitModeBtn?.getAttribute('aria-pressed')).toBe('false');
+      expect(suitSuitModeBtn?.classList.contains('is-active')).toBe(true);
+      expect(suitSuitModeBtn?.getAttribute('aria-pressed')).toBe('true');
     });
   });
 });

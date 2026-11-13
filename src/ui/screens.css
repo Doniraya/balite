@@ -35,7 +35,7 @@
     rgba(14, 31, 25, 0.78) 60%,
     rgba(8, 18, 14, 0.86) 100%
   );
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-ui, 'Pixellari', 'Segoe UI', system-ui, sans-serif);
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -52,9 +52,12 @@
 .belt {
   position: relative;
   min-height: 0;
-  border: 1px solid var(--screen-border);
-  border-radius: 12px;
-  background: rgba(12, 26, 21, 0.82);
+  border: 2px solid var(--screen-border);
+  border-radius: 8px;
+  background: rgba(12, 26, 21, 0.84);
+  box-shadow:
+    0 3px 0 rgba(4, 10, 8, 0.78),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
   padding: clamp(4px, 0.6dvh, 6px) clamp(6px, 0.8vw, 8px);
   box-sizing: border-box;
 }
@@ -80,19 +83,24 @@
   justify-content: center;
   gap: 6px;
   padding: 8px 12px;
-  border: 1px solid var(--screen-border);
-  border-radius: 10px;
+  border: 2px solid var(--screen-border);
+  border-radius: 7px;
   background: var(--screen-panel-alt);
   color: var(--screen-text);
+  font-family: inherit;
   font-size: 13px;
   font-weight: 700;
   line-height: 1.15;
   text-align: center;
-  transition: transform 0.1s ease, opacity 0.15s ease, border-color 0.15s ease;
+  box-shadow:
+    0 3px 0 rgba(6, 14, 11, 0.92),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  transition: transform 0.08s ease, box-shadow 0.08s ease, opacity 0.15s ease, border-color 0.15s ease;
 }
 
 .ui-btn:active:not(:disabled) {
-  transform: scale(0.96);
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 rgba(6, 14, 11, 0.92);
 }
 
 .ui-btn:focus-visible {
@@ -107,18 +115,27 @@
 
 .ui-btn--primary {
   background: linear-gradient(180deg, #2d8759 0%, #1e6240 100%);
-  border-color: rgba(137, 232, 180, 0.5);
+  border-color: rgba(137, 232, 180, 0.62);
+  box-shadow:
+    0 3px 0 #103924,
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 .ui-btn--accent {
   background: linear-gradient(180deg, #e5b242 0%, #b58322 100%);
   color: #191308;
   border-color: #ffe39a;
+  box-shadow:
+    0 3px 0 #6e4e11,
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
 .ui-btn--danger {
   background: linear-gradient(180deg, #c94c4c 0%, #962f2f 100%);
-  border-color: rgba(255, 166, 166, 0.55);
+  border-color: rgba(255, 166, 166, 0.65);
+  box-shadow:
+    0 3px 0 #5b1919,
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .ui-btn--compact {
@@ -165,6 +182,13 @@
   display: flex;
   flex-direction: column;
   gap: clamp(2px, 0.4dvh, 4px);
+}
+
+.hud-title-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .hud-title-bar__name {
@@ -309,6 +333,7 @@
   justify-content: space-between;
   gap: 4px;
   min-width: 0;
+  min-height: clamp(16px, 2.2dvh, 22px);
 }
 
 .hud-hand-row__name {
@@ -331,6 +356,7 @@
 }
 
 .hud-formula {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
@@ -338,21 +364,28 @@
 }
 
 .hud-pill {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: clamp(2px, 0.35dvh, 3px) clamp(4px, 0.6dvh, 6px);
-  border-radius: 8px;
+  border-radius: 6px;
+  border: 2px solid rgba(255, 255, 255, 0.22);
   font-variant-numeric: tabular-nums;
 }
 
 .hud-pill--chips {
   background: var(--screen-chips);
+  border-color: #79adff;
+  box-shadow: 0 3px 0 #153c82;
 }
 
 .hud-pill--mult {
   background: var(--screen-mult);
+  border-color: #ff948d;
+  box-shadow: 0 3px 0 #82221c;
 }
 
 .hud-pill__label {
@@ -367,6 +400,8 @@
 }
 
 .hud-formula__x {
+  position: relative;
+  z-index: 2;
   font-size: clamp(12px, min(2.8vw, 1.6dvh), 15px);
   font-weight: 900;
   color: var(--screen-gold);
@@ -431,6 +466,19 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Кнопка быстрого вызова Админ-панели в HUD (?debug) */
+.hud-dev-btn {
+  margin-left: auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 2px 8px;
+  border-color: rgba(244, 197, 82, 0.8);
+  background: linear-gradient(180deg, #334155 0%, #1e293b 100%);
+  color: #fde68a;
+  font-weight: 800;
+  letter-spacing: 0.04em;
 }
 
 /* ==================== ПОЯС 2: ИНВЕНТАРЬ ==================== */
@@ -736,6 +784,11 @@
   flex: 1;
 }
 
+/* Призыв к выбору Стража на ПК отображается в левом HUD вместо карточки босса */
+.hud-choose-prompt {
+  display: none;
+}
+
 /* Выбор Стража */
 .blinds-grid {
   display: grid;
@@ -749,42 +802,149 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: clamp(4px, 0.6dvh, 6px);
+  align-items: stretch;
+  gap: clamp(4px, 0.6dvh, 8px);
   min-width: 0;
   padding: clamp(5px, 0.8dvh, 8px);
   border-radius: 10px;
-  border: 1px solid var(--screen-border);
-  background: rgba(13, 29, 23, 0.92);
+  border: 2px solid var(--screen-border);
+  background: linear-gradient(180deg, rgba(24, 34, 42, 0.94) 0%, rgba(13, 24, 21, 0.96) 100%);
+  box-shadow: 0 3px 0 rgba(5, 10, 8, 0.82);
 }
 
 .blind-card--current {
-  border-color: var(--screen-gold);
-  background: rgba(25, 54, 42, 0.94);
+  border-color: #2c7bf6;
+  background: linear-gradient(180deg, rgba(28, 46, 56, 0.96) 0%, rgba(15, 34, 31, 0.98) 100%);
+}
+
+.blind-card--upcoming {
+  border-color: rgba(210, 165, 82, 0.45);
 }
 
 .blind-card--defeated,
 .blind-card--skipped {
-  opacity: 0.65;
+  opacity: 0.62;
 }
 
-.blind-card__status {
-  font-size: clamp(9.5px, min(2.1vw, 1.25dvh), 11px);
-  font-weight: 800;
-  text-transform: uppercase;
-  color: var(--screen-gold);
+.blind-card__top {
+  display: flex;
+  align-items: stretch;
 }
 
-.blind-card__title {
-  font-size: clamp(12px, min(2.7vw, 1.55dvh), 14px);
-  font-weight: 800;
+.blind-card__battle-btn {
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  font-size: clamp(11px, min(2.4vw, 1.4dvh), 14px);
+  background: linear-gradient(180deg, #ff9d1c 0%, #d96b08 100%);
+  border-color: #ffd584;
+  color: #fffdf7;
+  text-shadow: 0 2px 0 rgba(74, 32, 0, 0.75);
+  box-shadow:
+    0 3px 0 #7c3803,
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
 }
 
-.blind-card__meta {
+.blind-card__status-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 6px;
+  border-radius: 7px;
+  border: 2px solid rgba(148, 163, 184, 0.25);
+  background: rgba(30, 41, 48, 0.86);
+  font-size: clamp(9.5px, min(2.1vw, 1.25dvh), 12px);
+  font-weight: 700;
+  color: rgba(203, 213, 225, 0.78);
+  text-align: center;
+}
+
+.blind-card__body {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  gap: clamp(4px, 0.65dvh, 8px);
+  flex: 1;
+  min-height: 0;
+  text-align: center;
+}
+
+.blind-card__name-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 2px solid rgba(96, 165, 250, 0.55);
+  background: rgba(15, 36, 58, 0.86);
+  color: #f8fafc;
+  font-size: clamp(11px, min(2.5vw, 1.45dvh), 14px);
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.blind-card--big .blind-card__name-pill {
+  border-color: rgba(245, 185, 66, 0.6);
+  background: rgba(58, 38, 12, 0.88);
+}
+
+.blind-card--boss .blind-card__name-pill {
+  border-color: rgba(248, 113, 113, 0.65);
+  background: rgba(58, 18, 22, 0.9);
+}
+
+.blind-card__token {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(2px, 0.4dvh, 6px) 0;
+}
+
+.blind-card__target-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 2px;
-  font-size: clamp(10.5px, min(2.3vw, 1.35dvh), 12px);
+  width: 100%;
+  padding: clamp(4px, 0.6dvh, 8px) 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(8, 15, 20, 0.66);
+}
+
+.blind-card__target-caption {
+  font-size: clamp(9.5px, min(2.1vw, 1.25dvh), 12px);
   color: var(--screen-muted);
+}
+
+.blind-card__target-value-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.blind-card__score-gem {
+  font-size: clamp(12px, min(2.6vw, 1.5dvh), 16px);
+  color: #60a5fa;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.7);
+}
+
+.blind-card__target-number {
+  font-size: clamp(15px, min(3.4vw, 2.1dvh), 22px);
+  font-weight: 700;
+  color: #ff5b52;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 0 rgba(40, 8, 8, 0.85);
+}
+
+.blind-card__reward {
+  font-size: clamp(10px, min(2.2vw, 1.3dvh), 13px);
+  font-weight: 700;
+  color: var(--screen-gold);
 }
 
 .blind-card__badge {
@@ -800,7 +960,8 @@
 .blind-card__boss-inspect {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   padding: 4px 6px;
   border-radius: 8px;
@@ -808,18 +969,160 @@
   background: rgba(0, 0, 0, 0.24);
   color: var(--screen-text);
   font-size: clamp(10px, min(2.2vw, 1.3dvh), 12px);
-  text-align: left;
+  text-align: center;
 }
 
-.blind-card__actions {
+.blind-card__footer {
   display: flex;
   flex-direction: column;
-  gap: clamp(4px, 0.6dvh, 6px);
+  align-items: center;
+  gap: clamp(3px, 0.5dvh, 6px);
+  margin-top: auto;
 }
 
-.blind-card__actions .ui-btn {
-  padding: 6px clamp(4px, 0.8vw, 10px);
+.blind-card__or {
+  font-size: clamp(10px, min(2.2vw, 1.25dvh), 13px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #e2e8f0;
+}
+
+.blind-card__skip-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.blind-card__tag-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 2px solid #93c5fd;
+  background: linear-gradient(180deg, #f8fafc 0%, #cbd5e1 100%);
+  color: #d97706;
+  box-shadow: 0 2px 0 rgba(15, 23, 42, 0.85);
+}
+
+.blind-card__tag-glyph {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.blind-card__skip-btn {
+  width: 100%;
+  padding: 6px 6px;
+  font-size: clamp(9.5px, min(2vw, 1.2dvh), 12px);
+}
+
+.blind-card__stage-advance {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+}
+
+.blind-card__stage-advance-title {
+  font-size: clamp(11px, min(2.4vw, 1.45dvh), 15px);
+  color: var(--screen-gold);
+}
+
+.blind-card__stage-advance-desc {
+  font-size: clamp(9px, min(2vw, 1.15dvh), 11.5px);
+  color: var(--screen-muted);
+  line-height: 1.2;
+}
+
+/* Многослойная стопка Колоды рубашкой вверх */
+.deck-stack-btn {
+  --deck-primary: #9f1d35;
+  --deck-accent: #fda4af;
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 8px;
+  background: transparent;
+  border: 2px solid transparent;
+  box-shadow: none;
+}
+
+.deck-stack-btn[data-deck-id='b_red'] {
+  --deck-primary: #9f1d35;
+  --deck-accent: #fda4af;
+}
+
+.deck-stack-btn[data-deck-id='b_blue'] {
+  --deck-primary: #1d4ed8;
+  --deck-accent: #93c5fd;
+}
+
+.deck-stack-btn[data-deck-id='b_yellow'] {
+  --deck-primary: #b45309;
+  --deck-accent: #fde047;
+}
+
+.deck-stack-btn[data-deck-id='b_black'] {
+  --deck-primary: #1f2937;
+  --deck-accent: #cbd5e1;
+}
+
+.deck-stack__pile {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 58px;
+}
+
+.deck-stack__layer,
+.deck-stack__top {
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  border: 2px solid var(--deck-accent);
+  background: var(--deck-primary);
+}
+
+.deck-stack__layer--back {
+  transform: translate(4px, 4px);
+  filter: brightness(0.65);
+}
+
+.deck-stack__layer--mid {
+  transform: translate(2px, 2px);
+  filter: brightness(0.82);
+}
+
+.deck-stack__top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    inset 0 0 0 3px #f8fafc,
+    0 2px 0 rgba(5, 10, 14, 0.85);
+}
+
+.deck-stack__rune {
+  font-size: 16px;
+  color: var(--deck-accent);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.7);
+}
+
+.deck-stack__count {
   font-size: clamp(10.5px, min(2.3vw, 1.35dvh), 13px);
+  font-weight: 700;
+  color: #f8fafc;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.85);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Игровая Play Zone */
@@ -830,7 +1133,7 @@
   gap: clamp(4px, 0.8vw, 10px);
   flex: 1;
   min-height: 0;
-  padding: clamp(6px, 0.9dvh, 10px);
+  padding: clamp(12px, 1.8dvh, 18px) clamp(6px, 0.9dvh, 10px);
   border-radius: 12px;
   border: 1px dashed rgba(244, 197, 82, 0.24);
   background: rgba(6, 16, 12, 0.42);
@@ -844,11 +1147,14 @@
   position: relative;
   min-width: 44px;
   min-height: 44px;
-  transition: transform 0.16s ease, opacity 0.2s ease, filter 0.16s ease;
+  transition:
+    transform var(--trace-highlight-transition, 200ms) ease,
+    opacity var(--trace-highlight-transition, 200ms) ease,
+    filter var(--trace-highlight-transition, 200ms) ease;
 }
 
 .play-zone__card.is-highlighted {
-  transform: translateY(-10px) scale(1.06);
+  transform: translateY(-6px) scale(1.05);
   filter: drop-shadow(0 0 12px rgba(244, 197, 82, 0.9));
 }
 
@@ -873,6 +1179,23 @@
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.05);
   font-size: clamp(11.5px, min(2.5vw, 1.45dvh), 13px);
+  transition:
+    opacity calc(180ms / var(--anim-speed, 1)) ease,
+    transform calc(180ms / var(--anim-speed, 1)) ease;
+}
+
+.cashout-row[data-cashout-revealed='false'] {
+  transform: translateY(4px);
+}
+
+.cashout-row[data-cashout-revealed='true'] {
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cashout-row {
+    transition: none;
+  }
 }
 
 .cashout-row--zero {
@@ -1173,6 +1496,17 @@
   gap: clamp(4px, 0.6dvh, 6px);
 }
 
+.hand-actions__sort-rank.is-active,
+.hand-actions__sort-suit.is-active {
+  background: linear-gradient(180deg, #2d6fb8 0%, #1d4a7d 100%);
+  border-color: var(--screen-gold);
+  color: #fff6d6;
+  box-shadow:
+    0 3px 0 #102a49,
+    0 0 10px rgba(244, 197, 82, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
 .hand-actions--deck-only {
   display: flex;
   justify-content: flex-end;
@@ -1210,5 +1544,818 @@
 
   .hand-actions {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ==================== ЭМБЛЕМЫ СТРАЖЕЙ, ВЫВЕСКА МАГАЗИНА И КАРТОЧКА ИТОГА ==================== */
+
+.hud-shop-sign {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 10px;
+  border-radius: 12px;
+  border: 2px solid #e84a5f;
+  background: linear-gradient(180deg, rgba(62, 16, 26, 0.96), rgba(30, 11, 16, 0.96));
+  box-shadow:
+    inset 0 0 0 2px rgba(245, 185, 66, 0.45),
+    0 6px 18px rgba(0, 0, 0, 0.45);
+  text-align: center;
+}
+
+.hud-shop-sign__title {
+  font-size: clamp(22px, 2.3vw, 32px);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: var(--screen-gold);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.65);
+}
+
+.hud-shop-sign__sub {
+  font-size: clamp(11px, 1vw, 13px);
+  font-weight: 700;
+  color: #fde68a;
+}
+
+.hud-boss-btn__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.hud-boss-btn__emblem,
+.blind-card__emblem {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  color: #fff7e6;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.3), 0 3px 8px rgba(0, 0, 0, 0.4);
+}
+
+.blind-card__emblem--small {
+  background: radial-gradient(circle at 32% 28%, #4c8bf5 0%, #1d4ed8 72%, #132f7a 100%);
+  border-color: #93c5fd;
+}
+
+.blind-card__emblem--big {
+  background: radial-gradient(circle at 32% 28%, #fbbf24 0%, #c27803 72%, #78350f 100%);
+  border-color: #fde68a;
+}
+
+.blind-card__emblem--boss {
+  background: radial-gradient(circle at 32% 28%, #f87171 0%, #b91c1c 72%, #691010 100%);
+  border-color: #fda4af;
+}
+
+.blind-card__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.run-end-card__header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 2px;
+}
+
+.run-end-stat {
+  position: relative;
+  align-items: center;
+}
+
+.run-end-stat__value-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.run-end-record-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f5b942 0%, #ea580c 100%);
+  color: #1c1104;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.run-end-seed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.run-end-seed-row__info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.run-end-seed-row__code {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-family: var(--font-ui);
+  font-weight: 800;
+  color: var(--screen-gold);
+}
+
+.run-end-victim-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(8, 17, 13, 0.72);
+  font-size: 12px;
+}
+
+.run-end-victim-box__left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.run-end-victim-box__label {
+  font-size: 11px;
+  color: var(--screen-muted);
+}
+
+.run-end-victim-box__name {
+  font-weight: 800;
+  color: var(--screen-text);
+}
+
+/* ==================== ШИРОКАЯ 2-КОЛОНОЧНАЯ ПК-ВЕРСИЯ (>= 960px landscape, масштаб ~1.5x) ==================== */
+
+@media (min-width: 960px) and (orientation: landscape) {
+  .run-shell {
+    display: grid;
+    grid-template-columns: clamp(300px, 24.5vw, 440px) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'hud inventory'
+      'hud arena'
+      'hud hand';
+    column-gap: clamp(14px, 1.6vw, 26px);
+    row-gap: clamp(10px, 1.2dvh, 16px);
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    padding: clamp(10px, 1.4dvh, 18px) clamp(14px, 1.6vw, 24px);
+    background: transparent;
+  }
+
+  .run-shell[data-has-hand='false'] {
+    grid-template-columns: clamp(300px, 24.5vw, 440px) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      'hud inventory'
+      'hud arena';
+  }
+
+  .run-shell[data-has-hand='false'][data-empty-hand-belt='true'] {
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      'hud inventory'
+      'hud arena';
+  }
+
+  /* Левая панель HUD на всю высоту с крупным читаемым масштабом ~1.5x */
+  .belt--hud {
+    grid-area: hud;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: clamp(12px, 1.6dvh, 20px);
+    background: rgba(14, 24, 30, 0.92);
+  }
+
+  .hud-title-bar {
+    flex-direction: column;
+    justify-content: center;
+    align-items: stretch;
+    text-align: center;
+    gap: 20px;
+  }
+
+  .hud-title-bar__name {
+    font-size: clamp(30px, 2.8vw, 42px);
+  }
+
+  .hud-title-bar__sub {
+    font-size: clamp(14px, 1.3vw, 19px);
+  }
+
+  .hud-title-bar__actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .hud-title-bar__actions .ui-btn {
+    min-height: 52px;
+    font-size: clamp(16px, 1.4vw, 20px);
+  }
+
+  .hud-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    grid-template-rows: minmax(0, auto) auto minmax(0, 1fr) auto auto;
+    gap: clamp(10px, 1.3dvh, 16px);
+    align-items: stretch;
+    height: 100%;
+  }
+
+  .hud-guardian-col,
+  .hud-meta-col {
+    display: contents;
+  }
+
+  .hud-choose-prompt {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: clamp(10px, 1.4dvh, 18px) 8px;
+    font-size: clamp(22px, min(2.2vw, 3.4dvh), 34px);
+    font-weight: 700;
+    line-height: 1.2;
+    color: #f8fafc;
+    text-shadow: 0 3px 0 rgba(5, 10, 14, 0.85);
+  }
+
+  .run-shell[data-phase='blind_select'] .hud-choose-prompt {
+    display: flex;
+  }
+
+  .run-shell[data-phase='blind_select'] .hud-boss-btn {
+    display: none;
+  }
+
+  .hud-shop-sign {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    padding: clamp(14px, 1.8dvh, 22px) 12px;
+  }
+
+  .hud-shop-sign__title {
+    font-size: clamp(28px, 2.8vw, 42px);
+  }
+
+  .hud-shop-sign__sub {
+    font-size: clamp(14px, 1.25vw, 18px);
+  }
+
+  .run-shell[data-phase='shop'] .hud-shop-sign {
+    display: flex;
+  }
+
+  .run-shell[data-phase='shop'] .hud-boss-btn {
+    display: none;
+  }
+
+  .hud-boss-btn {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    padding: clamp(10px, 1.4dvh, 16px);
+    gap: 8px;
+  }
+
+  .hud-boss-btn__emblem {
+    width: clamp(44px, 3.8vw, 56px);
+    height: clamp(44px, 3.8vw, 56px);
+    font-size: clamp(15px, 1.3vw, 19px);
+  }
+
+  .hud-boss-btn__title {
+    font-size: clamp(18px, min(1.7vw, 2.5dvh), 24px);
+  }
+
+  .hud-boss-btn__desc {
+    font-size: clamp(13px, min(1.25vw, 1.9dvh), 17px);
+    -webkit-line-clamp: 3;
+  }
+
+  .hud-calc-col {
+    grid-column: 1 / -1;
+    grid-row: 2 / span 2;
+    justify-content: center;
+    padding: clamp(12px, 1.5dvh, 18px);
+    gap: clamp(10px, 1.3dvh, 16px);
+  }
+
+  .hud-score-box {
+    padding: clamp(6px, 0.8dvh, 10px) clamp(8px, 1vw, 12px);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .hud-score-box__label {
+    font-size: clamp(13px, 1.15vw, 17px);
+  }
+
+  .hud-score-box__value {
+    font-size: clamp(26px, min(2.4vw, 3.8dvh), 40px);
+  }
+
+  .hud-score-box__target {
+    font-size: clamp(15px, min(1.35vw, 2.2dvh), 22px);
+  }
+
+  .hud-hand-row {
+    min-height: clamp(24px, 3.2dvh, 32px);
+  }
+
+  .hud-hand-row__name {
+    font-size: clamp(18px, min(1.65vw, 2.5dvh), 25px);
+  }
+
+  .hud-hand-row__level {
+    font-size: clamp(13px, 1.15vw, 17px);
+    padding: 3px 8px;
+  }
+
+  .hud-pill {
+    padding: clamp(10px, 1.3dvh, 16px) 10px;
+  }
+
+  .hud-pill__label {
+    font-size: clamp(12px, 1.05vw, 16px);
+  }
+
+  .hud-pill__val {
+    font-size: clamp(28px, min(2.6vw, 4.1dvh), 44px);
+  }
+
+  .hud-formula__x {
+    font-size: clamp(22px, min(2vw, 3.2dvh), 34px);
+  }
+
+  .hud-buttons-row {
+    grid-column: 1;
+    grid-row: 4 / span 2;
+    display: flex;
+    flex-direction: column;
+    justify-content: stretch;
+    gap: clamp(8px, 1.1dvh, 14px);
+  }
+
+  .hud-buttons-row .ui-btn {
+    flex: 1;
+    width: 100%;
+    min-height: 58px;
+    padding: 8px 10px;
+    font-size: clamp(16px, min(1.45vw, 2.2dvh), 22px);
+    white-space: normal;
+  }
+
+  .hud-buttons-row .ui-btn:first-child {
+    background: linear-gradient(180deg, #e04d46 0%, #b3302b 100%);
+    border-color: #fda4af;
+    box-shadow: 0 4px 0 #701916;
+  }
+
+  .hud-buttons-row .ui-btn:last-child {
+    background: linear-gradient(180deg, #f3a120 0%, #c97100 100%);
+    color: #fffef8;
+    border-color: #fde68a;
+    box-shadow: 0 4px 0 #7a4200;
+  }
+
+  .hud-stats-row {
+    grid-column: 2;
+    grid-row: 4;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(6px, 0.9dvh, 10px);
+  }
+
+  .hud-stat {
+    padding: clamp(6px, 0.8dvh, 10px) 6px;
+  }
+
+  .hud-stat__label {
+    font-size: clamp(12px, min(1.05vw, 1.7dvh), 16px);
+  }
+
+  .hud-stat__value {
+    font-size: clamp(24px, min(2.2vw, 3.4dvh), 36px);
+  }
+
+  .hud-stat--gold {
+    grid-column: 1 / -1;
+    padding: clamp(8px, 1dvh, 12px);
+    border: 2px solid rgba(244, 197, 82, 0.4);
+    background: rgba(22, 20, 10, 0.78);
+  }
+
+  .hud-stat--gold .hud-stat__value {
+    font-size: clamp(26px, min(2.35vw, 3.6dvh), 38px);
+  }
+
+  .hud-stage-row {
+    grid-column: 2;
+    grid-row: 5;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(6px, 0.9dvh, 10px);
+    align-items: stretch;
+  }
+
+  .hud-stage-label,
+  .hud-round-pill {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 8px 6px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    font-size: clamp(14px, min(1.3vw, 2dvh), 19px);
+    font-weight: 700;
+    white-space: normal;
+  }
+
+  /* Правая верхняя полка: Реликвии слева, Расходники + Знаки справа без скролла */
+  .belt--inventory {
+    grid-area: inventory;
+    --card-compact-width: clamp(68px, min(5.8vw, 10.5dvh), 104px);
+    padding: clamp(8px, 1dvh, 12px) clamp(12px, 1.4vw, 18px);
+  }
+
+  .inventory-strip__head {
+    font-size: clamp(13px, 1.15vw, 16px);
+  }
+
+  .inventory-strips {
+    grid-template-columns: minmax(0, 1.85fr) minmax(0, 1fr);
+    gap: clamp(12px, 1.5vw, 20px);
+  }
+
+  .inventory-strip__items {
+    overflow-x: visible;
+    gap: clamp(8px, 0.9vw, 12px);
+  }
+
+  .tags-strip {
+    justify-content: flex-end;
+    overflow-x: visible;
+    flex-wrap: wrap;
+  }
+
+  /* Правая центральная арена */
+  .belt--arena {
+    grid-area: arena;
+    padding: clamp(10px, 1.3dvh, 16px) clamp(14px, 1.6vw, 22px);
+  }
+
+  .arena-stage[data-phase='blind_select'],
+  .arena-stage[data-phase='shop'],
+  .arena-stage[data-phase='cashout'],
+  .arena-stage[data-phase='booster'] {
+    padding-right: clamp(112px, 10.5vw, 168px);
+  }
+
+  .arena-stage[data-phase='blind_select'] .arena-title {
+    display: none;
+  }
+
+  .arena-stage[data-phase='blind_select'] .arena-header:empty {
+    display: none;
+  }
+
+  .blinds-grid {
+    gap: clamp(12px, 1.3vw, 20px);
+    align-items: stretch;
+  }
+
+  .blind-card {
+    padding: clamp(12px, 1.5dvh, 20px) clamp(10px, 1.1vw, 16px);
+    gap: clamp(8px, 1.1dvh, 14px);
+    border-radius: 12px;
+  }
+
+  .blind-card__battle-btn {
+    min-height: clamp(50px, 6.4dvh, 64px);
+    font-size: clamp(18px, min(1.65vw, 2.5dvh), 24px);
+  }
+
+  .blind-card__status-pill {
+    min-height: clamp(46px, 5.8dvh, 58px);
+    font-size: clamp(16px, min(1.45vw, 2.2dvh), 22px);
+  }
+
+  .blind-card__name-pill {
+    padding: 6px 12px;
+    font-size: clamp(16px, min(1.45vw, 2.2dvh), 22px);
+  }
+
+  .blind-card__emblem {
+    width: clamp(68px, min(6.2vw, 9.8dvh), 96px);
+    height: clamp(68px, min(6.2vw, 9.8dvh), 96px);
+    font-size: clamp(22px, 2.1vw, 32px);
+    border-width: 3px;
+  }
+
+  .blind-card__boss-inspect {
+    padding: 8px 10px;
+    font-size: clamp(13px, min(1.2vw, 1.8dvh), 17px);
+  }
+
+  .blind-card__target-box {
+    padding: clamp(8px, 1.1dvh, 14px) 10px;
+    gap: 4px;
+  }
+
+  .blind-card__target-caption {
+    font-size: clamp(13px, min(1.2vw, 1.8dvh), 17px);
+  }
+
+  .blind-card__score-gem {
+    font-size: clamp(20px, 1.8vw, 28px);
+  }
+
+  .blind-card__target-number {
+    font-size: clamp(26px, min(2.4vw, 3.6dvh), 38px);
+  }
+
+  .blind-card__reward {
+    font-size: clamp(14px, min(1.3vw, 1.95dvh), 19px);
+  }
+
+  .blind-card__or {
+    font-size: clamp(15px, min(1.35vw, 2.1dvh), 20px);
+  }
+
+  .blind-card__tag-icon {
+    width: clamp(44px, 4vw, 56px);
+    height: clamp(44px, 4vw, 56px);
+  }
+
+  .blind-card__tag-glyph {
+    font-size: clamp(22px, 2vw, 28px);
+  }
+
+  .blind-card__skip-btn {
+    min-height: clamp(44px, 5.4dvh, 54px);
+    font-size: clamp(13px, min(1.2vw, 1.8dvh), 17px);
+  }
+
+  .blind-card__stage-advance-title {
+    font-size: clamp(18px, min(1.65vw, 2.4dvh), 24px);
+  }
+
+  .blind-card__stage-advance-desc {
+    font-size: clamp(13px, min(1.2vw, 1.8dvh), 17px);
+  }
+
+  .blind-card__badge {
+    font-size: clamp(12px, 1.05vw, 15px);
+    padding: 4px 8px;
+  }
+
+  .play-zone {
+    border: none;
+    background: transparent;
+    gap: clamp(10px, 1.3vw, 18px);
+    padding-block: clamp(16px, 2.4dvh, 24px);
+  }
+
+  .play-zone .card-frame {
+    --card-width: clamp(82px, min(7.4vw, 12.6dvh), 120px);
+  }
+
+  /* Магазин на ПК: слева Далее + Обновить, справа 2 товара; ниже слева Грамота, справа 2 бустера */
+  .arena-stage[data-phase='shop'] {
+    display: grid;
+    grid-template-columns: minmax(170px, 0.34fr) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: clamp(10px, 1.2dvh, 16px);
+    align-items: stretch;
+  }
+
+  .arena-stage[data-phase='shop'] .arena-header {
+    display: contents;
+  }
+
+  .arena-stage[data-phase='shop'] .arena-title {
+    display: none;
+  }
+
+  .arena-stage[data-phase='shop'] .shop-header-actions {
+    grid-column: 1;
+    grid-row: 1;
+    flex-direction: column;
+    justify-content: stretch;
+    gap: clamp(8px, 1dvh, 12px);
+  }
+
+  .arena-stage[data-phase='shop'] .shop-header-actions .ui-btn {
+    flex: 1;
+    min-height: 58px;
+    font-size: clamp(16px, 1.4vw, 21px);
+  }
+
+  .arena-stage[data-phase='shop'] .shop-sections {
+    display: contents;
+  }
+
+  .arena-stage[data-phase='shop'] .shop-row--offers {
+    grid-column: 2;
+    grid-row: 1;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: rgba(6, 14, 11, 0.45);
+  }
+
+  .arena-stage[data-phase='shop'] .shop-offers-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .arena-stage[data-phase='shop'] .shop-bottom-grid {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    grid-template-columns: minmax(190px, 0.42fr) minmax(0, 1fr);
+    gap: clamp(10px, 1.2dvh, 16px);
+    align-items: stretch;
+  }
+
+  .arena-stage[data-phase='shop'] .shop-bottom-grid > .shop-row {
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: rgba(6, 14, 11, 0.45);
+  }
+
+  .arena-stage[data-phase='shop'] .shop-slot-btn .card-frame {
+    --card-width: clamp(94px, min(8vw, 14dvh), 132px);
+  }
+
+  .shop-slot-btn__price {
+    font-size: clamp(14px, 1.25vw, 18px);
+  }
+
+  /* Карточка итога забега по центру на ПК */
+  .arena-stage[data-phase='victory'],
+  .arena-stage[data-phase='game_over'] {
+    justify-content: center;
+    align-items: center;
+  }
+
+  .run-end-card {
+    width: min(100%, 720px);
+    padding: clamp(16px, 2.2dvh, 24px);
+    gap: 14px;
+    border-width: 2px;
+  }
+
+  /* Правая нижняя зона: широкий веер руки и стопка Колоды в правом нижнем углу стола */
+  .belt--hand {
+    grid-area: hand;
+    background: rgba(12, 26, 21, 0.72);
+    padding: clamp(8px, 1dvh, 14px) clamp(14px, 1.5vw, 20px);
+  }
+
+  .run-shell[data-has-hand='false'] .belt--hand {
+    grid-area: arena;
+    align-self: end;
+    justify-self: end;
+    z-index: 4;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+    padding: 0 clamp(14px, 1.6vw, 24px) clamp(12px, 1.6dvh, 20px) 0;
+    pointer-events: none;
+  }
+
+  .run-shell[data-has-hand='false'] .belt--hand .deck-stack-btn {
+    pointer-events: auto;
+  }
+
+  .hand-fan,
+  .hand-cards {
+    padding: clamp(26px, 3.2dvh, 36px) 18px clamp(12px, 1.5dvh, 18px);
+  }
+
+  .hand-fan .card-frame,
+  .hand-cards .card-frame {
+    --card-width: clamp(88px, min(7.6vw, 14.2dvh), 124px);
+  }
+
+  .hand-card-slot {
+    margin-left: calc(6px - var(--hand-extra-overlap, 0px));
+  }
+
+  .hand-actions {
+    display: grid;
+    grid-template-columns: minmax(140px, 1.25fr) minmax(110px, 0.9fr) minmax(110px, 0.9fr) minmax(140px, 1.25fr) auto;
+    grid-template-areas: 'play sortRank sortSuit discard deck';
+    gap: clamp(10px, 1.1vw, 16px);
+    align-items: center;
+  }
+
+  .hand-actions .ui-btn:not(.deck-stack-btn) {
+    min-height: 54px;
+    font-size: clamp(15px, min(1.35vw, 2.1dvh), 20px);
+  }
+
+  .hand-actions__play {
+    grid-area: play;
+  }
+
+  .hand-actions__sort-rank {
+    grid-area: sortRank;
+  }
+
+  .hand-actions__sort-suit {
+    grid-area: sortSuit;
+  }
+
+  .hand-actions__discard {
+    grid-area: discard;
+  }
+
+  .hand-actions__deck {
+    grid-area: deck;
+    justify-self: end;
+  }
+
+  .deck-stack__pile {
+    width: clamp(68px, min(5.8vw, 9.6dvh), 88px);
+    height: clamp(94px, min(8vw, 13.2dvh), 122px);
+  }
+
+  .deck-stack__rune {
+    font-size: clamp(22px, 2vw, 30px);
+  }
+
+  .deck-stack__count {
+    font-size: clamp(14px, min(1.3vw, 2dvh), 18px);
+  }
+}
+
+/* Пружинные полёты карт поверх сцены (Story 2.1, без перехвата ввода) */
+.card-flight-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 35;
+}
+
+.card-flight-ghost {
+  position: absolute;
+  margin: 0 !important;
+  pointer-events: none;
+  transform-origin: center center;
+  will-change: transform, opacity;
+}
+
+[data-flight-active='true'] {
+  transition: none !important;
+  will-change: transform;
+}
+
+/* Лёгкое затемнение интерактивных кнопок на ПК с мышью/трекпадом */
+@media (hover: hover) and (pointer: fine) {
+  .ui-btn:not(:disabled):hover,
+  .hud-boss-btn:not(:disabled):hover,
+  .shop-slot-btn:not(:disabled):hover,
+  .blind-card__boss-inspect:not(:disabled):hover,
+  .deck-option:not(:disabled):hover,
+  .booster-choice:not(:disabled):hover {
+    filter: brightness(0.86);
+    cursor: pointer;
   }
 }

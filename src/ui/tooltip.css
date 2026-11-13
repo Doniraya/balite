@@ -1,0 +1,167 @@
+/* Мгновенные ховер-тултипы для ПК (Story 1.4) */
+
+.hover-tooltip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 95;
+  width: max-content;
+  min-width: 170px;
+  max-width: min(296px, calc(100vw - 24px));
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 2px solid var(--panel-border, rgba(235, 200, 118, 0.35));
+  background: rgba(11, 23, 20, 0.96);
+  color: var(--text-main, #f3efe6);
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.68),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-sizing: border-box;
+}
+
+.hover-tooltip[hidden] {
+  display: none !important;
+}
+
+.hover-tooltip[data-kind='relic'] {
+  border-color: rgba(245, 185, 66, 0.55);
+}
+
+.hover-tooltip[data-kind='consumable'] {
+  border-color: rgba(58, 134, 255, 0.55);
+}
+
+.hover-tooltip[data-kind='charter'] {
+  border-color: rgba(251, 191, 36, 0.6);
+}
+
+.hover-tooltip[data-kind='pack'] {
+  border-color: rgba(168, 85, 247, 0.55);
+}
+
+.hover-tooltip[data-kind='boss'] {
+  border-color: rgba(232, 74, 95, 0.65);
+}
+
+.hover-tooltip[data-kind='tag'] {
+  border-color: rgba(52, 211, 153, 0.55);
+}
+
+.hover-tooltip[data-hidden='true'] {
+  border-color: rgba(148, 163, 184, 0.48);
+  background: rgba(14, 22, 28, 0.96);
+}
+
+.hover-tooltip__header {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.hover-tooltip__title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hover-tooltip__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.25;
+  color: var(--text-main, #f3efe6);
+}
+
+.hover-tooltip__price {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.3;
+  color: #fde68a;
+  background: rgba(245, 185, 66, 0.16);
+  border: 1px solid rgba(245, 185, 66, 0.45);
+  white-space: nowrap;
+}
+
+.hover-tooltip__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text-muted, #a6b7ad);
+}
+
+.hover-tooltip__rarity {
+  color: #fcd34d;
+}
+
+.hover-tooltip__description {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.38;
+  color: #e2e8e4;
+}
+
+.hover-tooltip__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 2px;
+}
+
+.hover-tooltip__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+}
+
+.hover-tooltip__badge--gold,
+.hover-tooltip__badge--enhancement {
+  border-color: rgba(245, 185, 66, 0.52);
+  background: rgba(245, 185, 66, 0.16);
+  color: #fde68a;
+}
+
+.hover-tooltip__badge--blue,
+.hover-tooltip__badge--edition {
+  border-color: rgba(58, 134, 255, 0.55);
+  background: rgba(58, 134, 255, 0.18);
+  color: #bfdbfe;
+}
+
+.hover-tooltip__badge--danger {
+  border-color: rgba(232, 74, 95, 0.58);
+  background: rgba(232, 74, 95, 0.18);
+  color: #fecdd3;
+}
+
+.hover-tooltip__badge--purple,
+.hover-tooltip__badge--seal {
+  border-color: rgba(168, 85, 247, 0.55);
+  background: rgba(168, 85, 247, 0.18);
+  color: #e9d5ff;
+}
+
+.hover-tooltip__badge--emerald {
+  border-color: rgba(52, 211, 153, 0.52);
+  background: rgba(16, 185, 129, 0.16);
+  color: #a7f3d0;
+}

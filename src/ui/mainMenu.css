@@ -1,0 +1,290 @@
+/* Стили экрана Главного меню Balite (адаптив под широкий ПК и портрет 720×1280, без эффектов наведения курсора) */
+
+.main-menu {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  align-items: center;
+  justify-items: center;
+  padding:
+    max(14px, env(safe-area-inset-top, 0px))
+    max(16px, env(safe-area-inset-right, 0px))
+    max(20px, env(safe-area-inset-bottom, 0px))
+    max(16px, env(safe-area-inset-left, 0px));
+  box-sizing: border-box;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.main-menu__top {
+  width: 100%;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.main-menu__version {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(11, 18, 22, 0.68);
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  font-family: var(--font-ui, 'Pixellari', monospace);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(243, 239, 230, 0.88);
+}
+
+.main-menu__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(12px, 2.2dvh, 22px);
+  text-align: center;
+  max-width: 100%;
+}
+
+.main-menu__logo {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(4px, 1.1vw, 14px);
+  line-height: 0.95;
+}
+
+.main-menu__wordmark {
+  font-size: clamp(42px, min(11vw, 13dvh), 108px);
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  color: #f8f5ee;
+  text-shadow:
+    0 4px 0 #1e293b,
+    0 8px 0 rgba(8, 16, 20, 0.85),
+    0 14px 28px rgba(0, 0, 0, 0.6);
+}
+
+.main-menu__card-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(12px, 2dvh, 22px) 0;
+}
+
+.main-menu__staff {
+  position: absolute;
+  inset: -26% auto -26% 50%;
+  width: clamp(56px, 8vw, 92px);
+  height: 152%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.55));
+}
+
+.main-menu__card {
+  position: relative;
+  width: clamp(74px, min(18vw, 16dvh), 132px);
+  aspect-ratio: 5 / 7;
+  border-radius: 12px;
+  background: linear-gradient(160deg, #fbf7ec 0%, #ede2c9 100%);
+  border: 3px solid #f5b942;
+  box-shadow:
+    0 6px 0 #8a6420,
+    0 18px 34px rgba(0, 0, 0, 0.58);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  box-sizing: border-box;
+  animation: main-menu-card-float 4.6s ease-in-out infinite;
+}
+
+.main-menu__card-sigil {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+@keyframes main-menu-card-float {
+  0%,
+  100% {
+    transform: translateY(0px) rotate(-1.5deg);
+  }
+  50% {
+    transform: translateY(-7px) rotate(1.5deg);
+  }
+}
+
+.main-menu__subtitle {
+  margin: 0;
+  padding: 6px 16px;
+  border-radius: 999px;
+  background: rgba(10, 20, 18, 0.72);
+  border: 1px solid rgba(245, 185, 66, 0.36);
+  color: #f3efe6;
+  font-size: clamp(12px, min(2.8vw, 1.9dvh), 15px);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+/* Нижняя панель кнопок по центру + переключатель языка справа */
+.main-menu__dock {
+  width: min(100%, 960px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.main-menu__panel {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(20, 31, 36, 0.92);
+  border: 2px solid rgba(148, 163, 184, 0.42);
+  box-shadow:
+    0 6px 0 rgba(9, 14, 18, 0.94),
+    0 16px 36px rgba(0, 0, 0, 0.52),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.main-menu__btn,
+.main-menu__lang-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  color: #ffffff;
+  font-family: inherit;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: manipulation;
+  box-sizing: border-box;
+  transition: transform 0.08s ease, opacity 0.14s ease;
+}
+
+.main-menu__btn {
+  min-height: 54px;
+  padding: 10px 22px;
+  font-size: clamp(14px, 1.8vw, 18px);
+}
+
+.main-menu__btn:active:not(:disabled),
+.main-menu__lang-btn:active:not(:disabled) {
+  transform: translateY(2px) scale(0.98);
+}
+
+.main-menu__btn:focus-visible,
+.main-menu__lang-btn:focus-visible {
+  outline: 2px solid #f5b942;
+  outline-offset: 2px;
+}
+
+.main-menu__btn--play {
+  min-width: clamp(150px, 18vw, 200px);
+  background: linear-gradient(180deg, #1b9bff 0%, #0074dc 100%);
+  border-color: #7cc6ff;
+  box-shadow: 0 4px 0 #004e96;
+  font-size: clamp(16px, 2.2vw, 21px);
+}
+
+.main-menu__btn--settings {
+  background: linear-gradient(180deg, #f39a1f 0%, #c86f00 100%);
+  border-color: #ffd084;
+  box-shadow: 0 4px 0 #8a4a00;
+}
+
+.main-menu__btn--collection {
+  background: linear-gradient(180deg, #358972 0%, #246352 100%);
+  border-color: rgba(134, 239, 172, 0.42);
+  box-shadow: 0 4px 0 #174135;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 18px;
+}
+
+.main-menu__btn--collection:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
+}
+
+.main-menu__soon-badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(9, 18, 16, 0.72);
+  border: 1px solid rgba(245, 185, 66, 0.55);
+  color: #ffe39e;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.main-menu__lang-btn {
+  min-height: 54px;
+  padding: 10px 16px;
+  background: rgba(27, 41, 47, 0.92);
+  border-color: rgba(148, 163, 184, 0.42);
+  box-shadow: 0 4px 0 rgba(9, 14, 18, 0.92);
+  font-size: 14px;
+  text-transform: none;
+}
+
+.main-menu__lang-icon {
+  flex-shrink: 0;
+  color: #f5b942;
+}
+
+/* Адаптация под узкие портретные экраны смартфонов (<= 720px) */
+@media (max-width: 720px) {
+  .main-menu__dock {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .main-menu__panel {
+    width: min(100%, 420px);
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .main-menu__btn--play {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 56px;
+  }
+
+  .main-menu__btn {
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+
+  .main-menu__lang-btn {
+    min-height: 46px;
+  }
+}
+
+/* Подсветка и затемнение интерактивных кнопок меню при наведении на ПК */
+@media (hover: hover) and (pointer: fine) {
+  .main-menu__btn:not(:disabled):hover,
+  .main-menu__lang-btn:not(:disabled):hover {
+    filter: brightness(0.86);
+    cursor: pointer;
+  }
+}

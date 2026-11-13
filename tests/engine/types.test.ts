@@ -18,8 +18,11 @@ import {
   SEALS,
   SUITS,
   TAG_IDS,
+  type AnimationSpeed,
+  type CrtMode,
   type DispatchResult,
   type GameCommand,
+  type GameSettings,
   type MetaSave,
   type PlayerSaveData,
   type PlayingCard,
@@ -209,8 +212,13 @@ describe('Типы состояния, команд, хуков и сохран�
       nextCardUid: 2,
       stats: {
         bestHandScore: 0,
+        bestHandType: null,
         handsPlayed: 0,
+        cardsPlayed: 0,
         discardsUsed: 0,
+        cardsDiscarded: 0,
+        cardsPurchased: 0,
+        rerollsCount: 0,
         cardsDestroyed: 0,
         dollarsSpent: 0,
       },
@@ -261,6 +269,7 @@ describe('Типы состояния, команд, хуков и сохран�
         animationSpeed: 2,
         lang: 'ru',
         soundEnabled: true,
+        crtMode: 'light',
       },
       unlockedDecks: ['b_red'],
       discoveredRelics: ['j_blueprint', 'j_runner'],
@@ -271,8 +280,13 @@ describe('Типы состояния, команд, хуков и сохран�
         runsStarted: 1,
         runsWon: 0,
         highestAnte: 1,
+        highestRound: 1,
         bestHandScore: 0,
+        maxDollars: 4,
+        bestWinStreak: 0,
+        currentWinStreak: 0,
         totalHandsPlayed: 0,
+        handPlayCounts: {},
       },
     };
 
@@ -366,5 +380,19 @@ describe('Типы состояния, команд, хуков и сохран�
       hooks,
     };
     expect(relicDef.hooks.onUseConsumable).toBeDefined();
+  });
+
+  it('AnimationSpeed и GameSettings допускают значения 0.5, 1, 2 и 4, а CrtMode — off, light и original', () => {
+    const speeds: readonly AnimationSpeed[] = [0.5, 1, 2, 4];
+    const crtModes: readonly CrtMode[] = ['off', 'light', 'original'];
+    const settingsList: readonly GameSettings[] = speeds.map((animationSpeed, idx) => ({
+      animationSpeed,
+      lang: 'ru',
+      soundEnabled: true,
+      crtMode: crtModes[idx % crtModes.length]!,
+    }));
+
+    expect(settingsList.map((s) => s.animationSpeed)).toEqual([0.5, 1, 2, 4]);
+    expect(crtModes).toEqual(['off', 'light', 'original']);
   });
 });

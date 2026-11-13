@@ -3,20 +3,30 @@ import { createPlayingCard, createStandardDeck } from '../../src/engine/cards';
 import { createInitialHandLevels, getHandLevelStats } from '../../src/engine/handEval';
 import { createRngState, nextFloat, nextInt } from '../../src/engine/prng';
 import {
+  advanceActiveRunTracker,
+  createActiveRunTracker,
   createCompactFallbackSave,
   createInitialMetaSave,
   createPlayerSaveData,
   decodeCompactCard,
+  DEFAULT_ANIMATION_SPEED,
+  DEFAULT_CRT_MODE,
   encodeCompactCard,
+  getMostPlayedHand,
+  getMostPlayedHandInRun,
+  getRunEndSummary,
   mergePlayerSaveData,
   restoreRunStateFromSnapshot,
   sanitizePlayerSaveData,
   SAVE_SCHEMA_VERSION,
   serializeRunStateToSnapshot,
+  SETTINGS_SCHEMA_VERSION,
+  updateMetaStatsFromRunState,
 } from '../../src/engine/save';
 import {
   EDITIONS,
   ENHANCEMENTS,
+  HAND_TYPES,
   RANKS,
   SEALS,
   SUITS,
@@ -157,6 +167,7 @@ function createRichRunState(): RunState {
     deck,
     drawPileIds: deck.slice(8, 40).map((c) => c.id),
     handIds: deck.slice(0, 8).map((c) => c.id),
+    handSortMode: 'rank',
     discardPileIds: deck.slice(40).map((c) => c.id),
     relics,
     consumables: [
@@ -271,8 +282,13 @@ function createRichRunState(): RunState {
     nextCardUid: 53,
     stats: {
       bestHandScore: 18950,
+      bestHandType: 'Flush',
       handsPlayed: 22,
+      cardsPlayed: 84,
       discardsUsed: 11,
+      cardsDiscarded: 39,
+      cardsPurchased: 14,
+      rerollsCount: 6,
       cardsDestroyed: 3,
       dollarsSpent: 64,
     },
@@ -280,8 +296,11 @@ function createRichRunState(): RunState {
 }
 
 describe('SAVE_SCHEMA_VERSION и createInitialMetaSave', () => {
-  it('создаёт валидный начальный профиль MetaSave с дефолтной скоростью 2x и Алой колодой', () => {
+  it('создаёт валидный начальный профиль MetaSave с дефолтной скоростью 1x, crtMode light и Алой колодой', () => {
     expect(SAVE_SCHEMA_VERSION).toBe(1);
+    expect(DEFAULT_ANIMATION_SPEED).toBe(1);
+    expect(DEFAULT_CRT_MODE).toBe('light');
+    expect(SETTINGS_SCHEMA_VERSION).toBe(2);
 
     const meta = createInitialMetaSave(1700000000123);
     expect(meta).toEqual({
@@ -289,9 +308,11 @@ describe('SAVE_SCHEMA_VERSION и createInitialMetaSave', () => {
       revision: 0,
       updatedAt: 1700000000123,
       settings: {
-        animationSpeed: 2,
+        animationSpeed: 1,
         lang: 'ru',
         soundEnabled: true,
+        crtMode: 'light',
+        settingsVersion: 2,
       },
       unlockedDecks: ['b_red'],
       discoveredRelics: [],
@@ -302,17 +323,23 @@ describe('SAVE_SCHEMA_VERSION и createInitialMetaSave', () => {
         runsStarted: 0,
         runsWon: 0,
         highestAnte: 0,
+        highestRound: 0,
         bestHandScore: 0,
+        maxDollars: 0,
+        bestWinStreak: 0,
+        currentWinStreak: 0,
         totalHandsPlayed: 0,
+        handPlayCounts: {},
       },
     });
   });
 
-  it('поддерживает опции инициализации и защищается от невалидного nowMs', () => {
+  it('поддерживает опции инициализации (включая 0.5x и 2x) и защищается от невалидного nowMs', () => {
     const meta = createInitialMetaSave(Number.NaN, {
       lang: 'en',
       animationSpeed: 4,
       soundEnabled: false,
+      crtMode: 'original',
       musicVolume: 0.4,
       sfxVolume: 1.5,
       revision: 2,
@@ -325,10 +352,19 @@ describe('SAVE_SCHEMA_VERSION и createInitialMetaSave', () => {
       animationSpeed: 4,
       lang: 'en',
       soundEnabled: false,
+      crtMode: 'original',
       musicVolume: 0.4,
       sfxVolume: 1,
+      settingsVersion: 2,
     });
     expect(meta.unlockedDecks).toEqual(['b_red', 'b_blue']);
+
+    const slowMeta = createInitialMetaSave(100, { animationSpeed: 0.5, crtMode: 'off' });
+    expect(slowMeta.settings.animationSpeed).toBe(0.5);
+    expect(slowMeta.settings.crtMode).toBe('off');
+
+    const doubleMeta = createInitialMetaSave(100, { animationSpeed: 2 });
+    expect(doubleMeta.settings.animationSpeed).toBe(2);
   });
 });
 
@@ -411,6 +447,23 @@ describe('serializeRunStateToSnapshot и restoreRunStateFromSnapshot', () => {
     expect(restored.booster).not.toBe(state.booster);
     expect(restored.anteBlinds[0]).not.toBe(state.anteBlinds[0]);
   });
+
+  it('чинит статус upcoming -> current у активного узла в фазе blind_select при загрузке старого снимка', () => {
+    const state = createRichRunState();
+    const brokenBlindState: RunState = {
+      ...state,
+      phase: 'blind_select',
+      currentBlindIndex: 1,
+      anteBlinds: [
+        { ...state.anteBlinds[0], status: 'defeated' },
+        { ...state.anteBlinds[1], status: 'upcoming' },
+        { ...state.anteBlinds[2], status: 'upcoming' },
+      ],
+    };
+    const snapshot = serializeRunStateToSnapshot(brokenBlindState, 1, 100);
+    const restored = restoreRunStateFromSnapshot(snapshot);
+    expect(restored.anteBlinds[1].status).toBe('current');
+  });
 });
 
 describe('createPlayerSaveData и createCompactFallbackSave', () => {
@@ -426,8 +479,17 @@ describe('createPlayerSaveData и createCompactFallbackSave', () => {
         runsStarted: 4,
         runsWon: 1,
         highestAnte: 8,
+        highestRound: 24,
         bestHandScore: 18950,
+        maxDollars: 65,
+        bestWinStreak: 2,
+        currentWinStreak: 1,
         totalHandsPlayed: 95,
+        handPlayCounts: {
+          Pair: 40,
+          Flush: 25,
+          'Full House': 12,
+        },
       },
     };
     const snapshot = serializeRunStateToSnapshot(state, 9, 1700000055555);
@@ -500,8 +562,18 @@ describe('sanitizePlayerSaveData', () => {
           runsStarted: -10,
           runsWon: 2,
           highestAnte: 'NaN',
+          highestRound: -3,
           bestHandScore: 4200,
+          maxDollars: 'oops',
+          bestWinStreak: 1,
+          currentWinStreak: 3,
           totalHandsPlayed: 15,
+          handPlayCounts: {
+            Pair: 6.9,
+            Flush: 0,
+            Straight: -2,
+            InvalidHand: 99,
+          },
         },
       },
       activeRun: {
@@ -519,10 +591,12 @@ describe('sanitizePlayerSaveData', () => {
       revision: 4,
       updatedAt: 123456,
       settings: {
-        animationSpeed: 2,
+        animationSpeed: 1,
         lang: 'ru',
         soundEnabled: true,
+        crtMode: 'light',
         musicVolume: 1,
+        settingsVersion: 2,
       },
       unlockedDecks: ['b_red', 'b_yellow'],
       discoveredRelics: ['j_joker'],
@@ -533,8 +607,15 @@ describe('sanitizePlayerSaveData', () => {
         runsStarted: 0,
         runsWon: 2,
         highestAnte: 0,
+        highestRound: 0,
         bestHandScore: 4200,
+        maxDollars: 0,
+        bestWinStreak: 3,
+        currentWinStreak: 3,
         totalHandsPlayed: 15,
+        handPlayCounts: {
+          Pair: 6,
+        },
       },
     });
   });
@@ -577,6 +658,211 @@ describe('sanitizePlayerSaveData', () => {
       expect(sanitized.meta?.version).toBe(SAVE_SCHEMA_VERSION);
     }
   });
+
+  it('мигрирует старые сохранения v1 со скоростью по умолчанию 2 на 1, сохраняет явный выбор 1/4/0.5 и удерживает лимит 4000 байт', () => {
+    // Старое сохранение v1 без settingsVersion со старым дефолтом 2 -> мигрирует на 1
+    const legacyDefaultSave = {
+      revision: 5,
+      updatedAt: 9000,
+      meta: {
+        version: 1,
+        settings: {
+          animationSpeed: 2,
+          lang: 'ru',
+          soundEnabled: true,
+        },
+        unlockedDecks: ['b_red'],
+      },
+      activeRun: serializeRunStateToSnapshot(createRichRunState(), 5, 9000),
+    };
+
+    const migrated = sanitizePlayerSaveData(legacyDefaultSave);
+    expect(migrated.meta?.settings.animationSpeed).toBe(1);
+    expect(migrated.meta?.settings.settingsVersion).toBe(2);
+
+    // Компактный fallback после миграции укладывается в 4000 байт VK/OK
+    const fallbackJson = trySerializeWithinLimit(
+      migrated as PlayerSaveData,
+      4000,
+      createCompactFallbackSave,
+    );
+    expect(fallbackJson).not.toBeNull();
+    expect(utf8ByteLength(fallbackJson!)).toBeLessThanOrEqual(4000);
+    const parsedFallback = JSON.parse(fallbackJson!) as PlayerSaveData;
+    expect(parsedFallback.meta.settings.animationSpeed).toBe(1);
+    expect(parsedFallback.meta.settings.settingsVersion).toBe(2);
+
+    // Старое сохранение v1 без settingsVersion, но с явно выбранной скоростью 4 или 1 -> выбор сохраняется
+    const legacyFast = sanitizePlayerSaveData({
+      revision: 6,
+      updatedAt: 10000,
+      meta: {
+        version: 1,
+        settings: {
+          animationSpeed: 4,
+          lang: 'en',
+          soundEnabled: false,
+        },
+      },
+    });
+    expect(legacyFast.meta?.settings.animationSpeed).toBe(4);
+    expect(legacyFast.meta?.settings.settingsVersion).toBe(2);
+
+    // Старое сохранение без поля settings или без animationSpeed -> получает 1
+    const legacyMissingSpeed = sanitizePlayerSaveData({
+      revision: 7,
+      updatedAt: 11000,
+      meta: {
+        version: 1,
+        settings: {
+          lang: 'ru',
+          soundEnabled: true,
+        },
+      },
+    });
+    expect(legacyMissingSpeed.meta?.settings.animationSpeed).toBe(1);
+    expect(legacyMissingSpeed.meta?.settings.settingsVersion).toBe(2);
+
+    // Новое сохранение с settingsVersion: 2 сохраняет осознанный выбор 2x и 0.5x
+    const modernDouble = sanitizePlayerSaveData({
+      revision: 8,
+      updatedAt: 12000,
+      meta: {
+        version: 1,
+        settings: {
+          animationSpeed: 2,
+          lang: 'ru',
+          soundEnabled: true,
+          settingsVersion: 2,
+        },
+      },
+    });
+    expect(modernDouble.meta?.settings.animationSpeed).toBe(2);
+    expect(modernDouble.meta?.settings.settingsVersion).toBe(2);
+
+    const modernSlow = sanitizePlayerSaveData({
+      revision: 9,
+      updatedAt: 13000,
+      meta: {
+        version: 1,
+        settings: {
+          animationSpeed: 0.5,
+          lang: 'en',
+          soundEnabled: true,
+          settingsVersion: 2,
+        },
+      },
+    });
+    expect(modernSlow.meta?.settings.animationSpeed).toBe(0.5);
+    expect(modernSlow.meta?.settings.crtMode).toBe('light');
+
+    // Старое сохранение без crtMode или с невалидным crtMode -> безопасно мигрирует на 'light', а валидные 'off'/'original' сохраняются
+    const legacyNoCrt = sanitizePlayerSaveData({
+      revision: 10,
+      updatedAt: 14000,
+      meta: {
+        version: 1,
+        settings: {
+          animationSpeed: 1,
+          lang: 'ru',
+          soundEnabled: true,
+          crtMode: 'invalid_crt',
+          settingsVersion: 2,
+        },
+      },
+    });
+    expect(legacyNoCrt.meta?.settings.crtMode).toBe('light');
+
+    const modernCrtOff = sanitizePlayerSaveData({
+      revision: 11,
+      updatedAt: 15000,
+      meta: {
+        version: 1,
+        settings: {
+          animationSpeed: 1,
+          lang: 'ru',
+          soundEnabled: true,
+          crtMode: 'off',
+          settingsVersion: 2,
+        },
+      },
+    });
+    expect(modernCrtOff.meta?.settings.crtMode).toBe('off');
+
+    const compactWithCrtJson = trySerializeWithinLimit(
+      createPlayerSaveData(modernCrtOff.meta!, null, 11, 15000),
+      4000,
+      createCompactFallbackSave,
+    );
+    expect(compactWithCrtJson).not.toBeNull();
+    expect(utf8ByteLength(compactWithCrtJson!)).toBeLessThanOrEqual(4000);
+    expect((JSON.parse(compactWithCrtJson!) as PlayerSaveData).meta.settings.crtMode).toBe('off');
+  });
+
+  it('мигрирует старое сохранение MetaStats без новых полей и сохраняет лимит 4000 байт при всех 12 handPlayCounts', () => {
+    const legacySave = {
+      revision: 12,
+      updatedAt: 50_000,
+      meta: {
+        version: 1,
+        settings: {
+          animationSpeed: 1,
+          lang: 'ru',
+          soundEnabled: true,
+          settingsVersion: 2,
+        },
+        unlockedDecks: ['b_red', 'b_blue'],
+        stats: {
+          runsStarted: 7,
+          runsWon: 3,
+          highestAnte: 8,
+          bestHandScore: 31500,
+          totalHandsPlayed: 110,
+        },
+      },
+      activeRun: null,
+    };
+
+    const migrated = sanitizePlayerSaveData(legacySave);
+    expect(migrated.meta?.stats).toEqual({
+      runsStarted: 7,
+      runsWon: 3,
+      highestAnte: 8,
+      highestRound: 0,
+      bestHandScore: 31500,
+      maxDollars: 0,
+      bestWinStreak: 0,
+      currentWinStreak: 0,
+      totalHandsPlayed: 110,
+      handPlayCounts: {},
+    });
+
+    // Проверяем, что даже со всеми 12 handPlayCounts компактный fallback укладывается в 4000 байт
+    const allCounts = Object.fromEntries(HAND_TYPES.map((hand, idx) => [hand, idx + 1]));
+    const fullMeta = {
+      ...migrated.meta!,
+      stats: {
+        ...migrated.meta!.stats,
+        highestRound: 27,
+        maxDollars: 145,
+        bestWinStreak: 4,
+        currentWinStreak: 2,
+        handPlayCounts: allCounts,
+      },
+    };
+    const fullSave = createPlayerSaveData(
+      fullMeta,
+      serializeRunStateToSnapshot(createRichRunState(), 12, 50_000),
+      12,
+      50_000,
+    );
+    const compactJson = trySerializeWithinLimit(fullSave, 4000, createCompactFallbackSave);
+    expect(compactJson).not.toBeNull();
+    expect(utf8ByteLength(compactJson!)).toBeLessThanOrEqual(4000);
+    const parsedCompact = JSON.parse(compactJson!) as PlayerSaveData;
+    expect(parsedCompact.meta.stats.handPlayCounts).toEqual(allCounts);
+    expect(parsedCompact.meta.stats.highestRound).toBe(27);
+  });
 });
 
 describe('mergePlayerSaveData', () => {
@@ -590,8 +876,13 @@ describe('mergePlayerSaveData', () => {
         runsStarted: 6,
         runsWon: 2,
         highestAnte: 8,
+        highestRound: 24,
         bestHandScore: 25000,
+        maxDollars: 88,
+        bestWinStreak: 3,
+        currentWinStreak: 0,
         totalHandsPlayed: 120,
+        handPlayCounts: { Pair: 30, Flush: 15 },
       },
     };
     const localRun = serializeRunStateToSnapshot(state, 8, 2000);
@@ -605,8 +896,13 @@ describe('mergePlayerSaveData', () => {
         runsStarted: 2,
         runsWon: 0,
         highestAnte: 3,
+        highestRound: 26,
         bestHandScore: 1500,
+        maxDollars: 120,
+        bestWinStreak: 5,
+        currentWinStreak: 2,
         totalHandsPlayed: 20,
+        handPlayCounts: { Pair: 10, Straight: 9 },
       },
     };
     const staleCloud = createPlayerSaveData(staleCloudMeta, null, 3, 1000);
@@ -618,13 +914,25 @@ describe('mergePlayerSaveData', () => {
     expect(merged.meta?.settings).toEqual(localMeta.settings);
     expect(merged.meta?.unlockedDecks).toEqual(['b_red', 'b_blue', 'b_yellow']);
     expect(merged.meta?.discoveredRelics).toEqual(['j_joker', 'j_blueprint', 'j_baron']);
-    expect(merged.meta?.stats.bestHandScore).toBe(25000);
+    expect(merged.meta?.stats).toEqual({
+      runsStarted: 6,
+      runsWon: 2,
+      highestAnte: 8,
+      highestRound: 26,
+      bestHandScore: 25000,
+      maxDollars: 120,
+      bestWinStreak: 5,
+      // currentWinStreak берётся от более свежего локального сейва
+      currentWinStreak: 0,
+      totalHandsPlayed: 120,
+      handPlayCounts: { Pair: 30, Flush: 15, Straight: 9 },
+    });
   });
 
   it('использует updatedAt как тай-брейкер при равной ревизии и применяет более свежий облачный сейв', () => {
     const state = createRichRunState();
-    const localMeta = createInitialMetaSave(1000, { lang: 'ru', animationSpeed: 2 });
-    const cloudMeta = createInitialMetaSave(3000, { lang: 'en', animationSpeed: 4 });
+    const localMeta = createInitialMetaSave(1000, { lang: 'ru', animationSpeed: 2, crtMode: 'off' });
+    const cloudMeta = createInitialMetaSave(3000, { lang: 'en', animationSpeed: 4, crtMode: 'original' });
     const cloudRun = serializeRunStateToSnapshot(state, 5, 3000);
 
     const local = createPlayerSaveData(localMeta, null, 5, 1000);
@@ -643,7 +951,18 @@ describe('mergePlayerSaveData', () => {
       ...createInitialMetaSave(4000, { lang: 'ru', animationSpeed: 2 }),
       unlockedDecks: ['b_red', 'b_blue'],
       discoveredRelics: ['j_runner'],
-      stats: { runsStarted: 3, runsWon: 0, highestAnte: 4, bestHandScore: 18950, totalHandsPlayed: 40 },
+      stats: {
+        runsStarted: 3,
+        runsWon: 0,
+        highestAnte: 4,
+        highestRound: 11,
+        bestHandScore: 18950,
+        maxDollars: 42,
+        bestWinStreak: 1,
+        currentWinStreak: 0,
+        totalHandsPlayed: 40,
+        handPlayCounts: { Pair: 18 },
+      },
     };
     const localRun = serializeRunStateToSnapshot(state, 7, 4000);
     const local = createPlayerSaveData(localMeta, localRun, 7, 4000);
@@ -664,5 +983,276 @@ describe('mergePlayerSaveData', () => {
     expect(merged.meta?.unlockedDecks).toEqual(['b_red', 'b_blue', 'b_black']);
     expect(merged.meta?.discoveredRelics).toEqual(['j_runner']);
     expect(merged.meta?.discoveredBosses).toEqual(['bl_wall']);
+  });
+});
+
+describe('updateMetaStatsFromRunState и getMostPlayedHand', () => {
+  it('обновляет highestRound, maxDollars, handPlayCounts, серии побед и определяет самый частый расклад', () => {
+    const baseMeta = createInitialMetaSave(1000);
+    const baseRun = createRichRunState();
+
+    // Начало забега
+    const startedStats = updateMetaStatsFromRunState(
+      baseMeta.stats,
+      { ...baseRun, ante: 1, round: 0, dollars: 4, stats: { ...baseRun.stats, bestHandScore: 0 } },
+      { runStarted: true },
+    );
+    expect(startedStats.runsStarted).toBe(1);
+    expect(startedStats.maxDollars).toBe(4);
+    expect(getMostPlayedHand(startedStats)).toBeNull();
+
+    // Сыграны две руки: Flush и Pair, затем ещё Flush
+    const afterHand1 = updateMetaStatsFromRunState(
+      startedStats,
+      {
+        ...baseRun,
+        ante: 2,
+        round: 5,
+        dollars: 22,
+        lastPlayedHandType: 'Flush',
+        stats: { ...baseRun.stats, bestHandScore: 1200 },
+      },
+      { handPlayed: true },
+    );
+    const afterHand2 = updateMetaStatsFromRunState(
+      afterHand1,
+      {
+        ...baseRun,
+        ante: 3,
+        round: 8,
+        dollars: -3,
+        lastPlayedHandType: 'Pair',
+        stats: { ...baseRun.stats, bestHandScore: 900 },
+      },
+      { handPlayed: true },
+    );
+    const afterHand3 = updateMetaStatsFromRunState(
+      afterHand2,
+      {
+        ...baseRun,
+        ante: 8,
+        round: 24,
+        dollars: 55,
+        lastPlayedHandType: 'Flush',
+        stats: { ...baseRun.stats, bestHandScore: 24000 },
+      },
+      { handPlayed: true },
+    );
+
+    expect(afterHand3.totalHandsPlayed).toBe(3);
+    expect(afterHand3.highestAnte).toBe(8);
+    expect(afterHand3.highestRound).toBe(24);
+    expect(afterHand3.maxDollars).toBe(55);
+    expect(afterHand3.bestHandScore).toBe(24000);
+    expect(afterHand3.handPlayCounts).toEqual({ Flush: 2, Pair: 1 });
+    expect(getMostPlayedHand(afterHand3)).toEqual({ handType: 'Flush', count: 2 });
+
+    // Победа на 8-м Этапе увеличивает серию побед
+    const afterWin1 = updateMetaStatsFromRunState(
+      afterHand3,
+      { ...baseRun, phase: 'victory', ante: 8, round: 24 },
+      { runWon: true },
+    );
+    expect(afterWin1.runsWon).toBe(1);
+    expect(afterWin1.currentWinStreak).toBe(1);
+    expect(afterWin1.bestWinStreak).toBe(1);
+
+    // Вторая победа подряд
+    const afterWin2 = updateMetaStatsFromRunState(
+      afterWin1,
+      { ...baseRun, phase: 'victory', ante: 8, round: 25 },
+      { runWon: true },
+    );
+    expect(afterWin2.runsWon).toBe(2);
+    expect(afterWin2.currentWinStreak).toBe(2);
+    expect(afterWin2.bestWinStreak).toBe(2);
+
+    // Поражение в бесконечном режиме НЕ сбрасывает текущую серию побед
+    const afterEndlessLoss = updateMetaStatsFromRunState(
+      afterWin2,
+      { ...baseRun, phase: 'game_over', endlessMode: true, ante: 10, round: 30 },
+      { runLost: true },
+    );
+    expect(afterEndlessLoss.currentWinStreak).toBe(2);
+    expect(afterEndlessLoss.bestWinStreak).toBe(2);
+    expect(afterEndlessLoss.highestRound).toBe(30);
+
+    // Поражение в обычном забеге сбрасывает currentWinStreak, но сохраняет bestWinStreak
+    const afterNormalLoss = updateMetaStatsFromRunState(
+      afterEndlessLoss,
+      { ...baseRun, phase: 'game_over', endlessMode: false, ante: 4, round: 10 },
+      { runLost: true },
+    );
+    expect(afterNormalLoss.currentWinStreak).toBe(0);
+    expect(afterNormalLoss.bestWinStreak).toBe(2);
+  });
+});
+
+describe('миграция RunStats, activeRunTracker и getRunEndSummary', () => {
+  it('безопасно мигрирует старый RunSnapshot без новых полей RunStats и отбрасывает битый activeRun', () => {
+    const state = createRichRunState();
+    const meta = createInitialMetaSave(20_000);
+    const snapshot = serializeRunStateToSnapshot(state, 3, 20_000);
+
+    // Имитируем старый снимок v1 без cardsPlayed / cardsDiscarded / cardsPurchased / rerollsCount / bestHandType
+    const legacyRunSnapshot = {
+      ...snapshot,
+      stats: {
+        bestHandScore: 1234,
+        handsPlayed: 7,
+        discardsUsed: 4,
+        cardsDestroyed: 1,
+        dollarsSpent: 15,
+      },
+    };
+
+    const sanitized = sanitizePlayerSaveData({
+      revision: 3,
+      updatedAt: 20_000,
+      meta,
+      activeRun: legacyRunSnapshot,
+    });
+    expect(sanitized.activeRun).not.toBeNull();
+    expect(sanitized.activeRun?.stats).toEqual({
+      bestHandScore: 1234,
+      bestHandType: null,
+      handsPlayed: 7,
+      cardsPlayed: 0,
+      discardsUsed: 4,
+      cardsDiscarded: 0,
+      cardsPurchased: 0,
+      rerollsCount: 0,
+      cardsDestroyed: 1,
+      dollarsSpent: 15,
+    });
+
+    // Невалидное значение нового поля отбрасывает activeRun, не теряя meta
+    const brokenRun = {
+      ...snapshot,
+      stats: {
+        ...snapshot.stats,
+        cardsPlayed: -5,
+      },
+    };
+    const sanitizedBroken = sanitizePlayerSaveData({
+      revision: 4,
+      updatedAt: 21_000,
+      meta,
+      activeRun: brokenRun,
+    });
+    expect(sanitizedBroken.activeRun).toBeNull();
+    expect(sanitizedBroken.meta?.version).toBe(SAVE_SCHEMA_VERSION);
+  });
+
+  it('строит getRunEndSummary с частой рукой забега, стражем, новыми открытиями и флагами рекорда под лимит 4000 байт', () => {
+    const baseRun = createRichRunState();
+    const prevMeta: MetaSave = {
+      ...createInitialMetaSave(1000),
+      discoveredRelics: ['j_joker'],
+      stats: {
+        ...createInitialMetaSave(1000).stats,
+        bestHandScore: 10000,
+        highestAnte: 5,
+        highestRound: 10,
+      },
+    };
+
+    const startTracker = createActiveRunTracker(prevMeta);
+    expect(startTracker).toEqual({
+      baselineBestHandScore: 10000,
+      baselineHighestAnte: 5,
+      baselineHighestRound: 10,
+      newDiscoveries: 0,
+    });
+
+    const nextMeta: MetaSave = {
+      ...prevMeta,
+      discoveredRelics: ['j_joker', 'j_runner', 'j_blueprint'],
+      discoveredBosses: ['bl_wall'],
+      activeRunTracker: startTracker,
+    };
+    const updatedTracker = advanceActiveRunTracker(prevMeta, nextMeta, false);
+    expect(updatedTracker.newDiscoveries).toBe(3);
+
+    const metaWithTracker: MetaSave = {
+      ...nextMeta,
+      activeRunTracker: updatedTracker,
+    };
+
+    // Проверяем сохранность activeRunTracker при санитизации и соблюдение 4000 байт в compactFallback
+    const saveData = createPlayerSaveData(
+      metaWithTracker,
+      serializeRunStateToSnapshot(baseRun, 8, 50_000),
+      8,
+      50_000,
+    );
+    const sanitized = sanitizePlayerSaveData(JSON.parse(JSON.stringify(saveData)) as unknown);
+    expect(sanitized.meta?.activeRunTracker).toEqual(updatedTracker);
+
+    const compactJson = trySerializeWithinLimit(saveData, 4000, createCompactFallbackSave);
+    expect(compactJson).not.toBeNull();
+    expect(utf8ByteLength(compactJson!)).toBeLessThanOrEqual(4000);
+
+    // Итог забега: ante=4 (не рекорд), round=10 (не рекорд), bestHandScore=18950 (рекорд!), Pair=7 (чаще Flush Five=2)
+    const lostRun: RunState = {
+      ...baseRun,
+      phase: 'game_over',
+    };
+    expect(getMostPlayedHandInRun(lostRun)).toEqual({ handType: 'Pair', count: 7 });
+
+    const summary = getRunEndSummary(lostRun, metaWithTracker);
+    expect(summary).toEqual({
+      outcome: 'game_over',
+      seed: 'SAVE-TEST-SEED',
+      ante: 4,
+      round: 10,
+      bestHandScore: 18950,
+      bestHandType: 'Flush',
+      mostPlayedHand: { handType: 'Pair', count: 7 },
+      cardsPlayed: 84,
+      cardsDiscarded: 39,
+      cardsPurchased: 14,
+      rerollsCount: 6,
+      newDiscoveries: 3,
+      defeatedBy: {
+        kind: 'boss',
+        bossId: 'bl_wall',
+      },
+      records: {
+        bestHandScore: true,
+        highestAnte: false,
+        highestRound: false,
+      },
+    });
+  });
+
+  it('сохраняет и восстанавливает handSortMode с откатом к rank для старых снимков', () => {
+    const suitRun: RunState = {
+      ...createRichRunState(),
+      handSortMode: 'suit',
+    };
+
+    const snapshot = serializeRunStateToSnapshot(suitRun, 1, 1_000);
+    expect(snapshot.handSortMode).toBe('suit');
+
+    const saveData = createPlayerSaveData(
+      createInitialMetaSave(1_000, { revision: 1 }),
+      snapshot,
+      1,
+      1_000,
+    );
+    const sanitized = sanitizePlayerSaveData(
+      JSON.parse(JSON.stringify(saveData)) as unknown,
+    );
+    expect(sanitized.activeRun?.handSortMode).toBe('suit');
+    const restored = restoreRunStateFromSnapshot(sanitized.activeRun!);
+    expect(restored.handSortMode).toBe('suit');
+
+    // Старый снимок без поля handSortMode восстанавливается с 'rank' по умолчанию
+    const legacyRaw = JSON.parse(JSON.stringify(saveData)) as Record<string, unknown>;
+    delete (legacyRaw.activeRun as Record<string, unknown>).handSortMode;
+    const sanitizedLegacy = sanitizePlayerSaveData(legacyRaw);
+    expect(sanitizedLegacy.activeRun).not.toBeNull();
+    expect(restoreRunStateFromSnapshot(sanitizedLegacy.activeRun!).handSortMode).toBe('rank');
   });
 });

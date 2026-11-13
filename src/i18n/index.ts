@@ -34,6 +34,21 @@ export { RU_DICTIONARY } from './ru';
 export type * from './types';
 
 /**
+ * Буквенная шкала рангов приключенца в гильдии (от F на 1-м этапе до SS на 8-м).
+ */
+const GUILD_RANKS = ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS'] as const;
+
+/**
+ * Возвращает буквенный ранг приключенца для номера этапа забега (F → SS, далее SS+).
+ */
+export function getGuildRank(ante: number): string {
+  const index = Math.floor(ante) - 1;
+  if (index < 0) return GUILD_RANKS[0];
+  if (index < GUILD_RANKS.length) return GUILD_RANKS[index]!;
+  return 'SS+';
+}
+
+/**
  * Карта поддерживаемых словарей по коду языка.
  */
 export const DICTIONARIES: Readonly<Record<I18nLang, LocaleDictionary>> = {
@@ -252,11 +267,104 @@ const FLAT_MESSAGES: Record<I18nLang, Map<string, string>> = {
 
 const CATALOG_CACHE: Partial<Record<I18nLang, CatalogTexts>> = {};
 
+// DEV-оверлей оригинальной терминологии подключается строго под import.meta.env.DEV и вырезается из prod-бандла
+const DEV_ORIGINAL_STORAGE_KEY = 'balite_dev_original_terms_v1';
+let devOriginalEnabled = false;
+let devOriginalDictionaries: Readonly<Record<I18nLang, LocaleDictionary>> | null = null;
+let devOriginalFlatMessages: Readonly<Record<I18nLang, Map<string, string>>> | null = null;
+let devCatalogCache: Partial<Record<I18nLang, CatalogTexts>> = {};
+
+function getActiveDictionaries(): Readonly<Record<I18nLang, LocaleDictionary>> {
+  if (import.meta.env.DEV && devOriginalEnabled && devOriginalDictionaries) {
+    return devOriginalDictionaries;
+  }
+  return DICTIONARIES;
+}
+
+function getActiveFlatMessages(): Readonly<Record<I18nLang, Map<string, string>>> {
+  if (import.meta.env.DEV && devOriginalEnabled && devOriginalFlatMessages) {
+    return devOriginalFlatMessages;
+  }
+  return FLAT_MESSAGES;
+}
+
+/**
+ * Возвращает сохранённое состояние DEV-переключателя оригинальной терминологии (strictly DEV-only).
+ */
+export function readStoredDevOriginalTermsFlag(): boolean {
+  if (!import.meta.env.DEV) {
+    return false;
+  }
+  try {
+    return (
+      typeof localStorage !== 'undefined' &&
+      localStorage.getItem(DEV_ORIGINAL_STORAGE_KEY) === '1'
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Показывает, активен ли в данный момент DEV-словарь оригинальной терминологии.
+ */
+export function isDevOriginalTermsEnabled(): boolean {
+  if (!import.meta.env.DEV) {
+    return false;
+  }
+  return devOriginalEnabled && devOriginalDictionaries !== null;
+}
+
+/**
+ * Включает или отключает DEV-словарь оригинальной терминологии с ленивой подгрузкой модуля оверлея.
+ * В продакшен-сборке (`import.meta.env.DEV === false`) полностью вырезается сборщиком Vite.
+ */
+export async function setDevOriginalTermsEnabled(
+  enabled: boolean,
+  persist = true,
+): Promise<boolean> {
+  if (!import.meta.env.DEV) {
+    return false;
+  }
+
+  if (enabled) {
+    if (!devOriginalDictionaries) {
+      const overlayModule = await import('./devOriginalOverlay');
+      const built = overlayModule.buildDevOriginalDictionaries(DICTIONARIES);
+      devOriginalDictionaries = built;
+      devOriginalFlatMessages = {
+        ru: flattenDictionary(built.ru),
+        en: flattenDictionary(built.en),
+      };
+      devCatalogCache = {};
+    }
+    devOriginalEnabled = true;
+  } else {
+    devOriginalEnabled = false;
+  }
+
+  if (persist) {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        if (devOriginalEnabled) {
+          localStorage.setItem(DEV_ORIGINAL_STORAGE_KEY, '1');
+        } else {
+          localStorage.removeItem(DEV_ORIGINAL_STORAGE_KEY);
+        }
+      }
+    } catch {
+      // Игнорируем ограничения sandbox/private-mode при обращении к localStorage
+    }
+  }
+
+  return devOriginalEnabled;
+}
+
 /**
  * Возвращает словарь локализации для указанного языка.
  */
 export function getDictionary(lang: I18nLang): LocaleDictionary {
-  return DICTIONARIES[resolveLang(lang)];
+  return getActiveDictionaries()[resolveLang(lang)];
 }
 
 /**
@@ -268,7 +376,7 @@ export function formatMessage(
   key: MessageKey | (string & {}),
   params?: MessageParams,
 ): string {
-  const flatMap = FLAT_MESSAGES[resolveLang(lang)];
+  const flatMap = getActiveFlatMessages()[resolveLang(lang)];
   const template = flatMap.get(key) ?? flatMap.get(`trace.${key}`);
   if (template === undefined) {
     return key;
@@ -300,12 +408,14 @@ function buildParameterizedSection<K extends string>(
  */
 export function getCatalogTexts(lang: I18nLang): CatalogTexts {
   const resolved = resolveLang(lang);
-  const cached = CATALOG_CACHE[resolved];
+  const useDevCache = import.meta.env.DEV && devOriginalEnabled && devOriginalDictionaries !== null;
+  const cache = useDevCache ? devCatalogCache : CATALOG_CACHE;
+  const cached = cache[resolved];
   if (cached) {
     return cached;
   }
 
-  const dict = DICTIONARIES[resolved];
+  const dict = getActiveDictionaries()[resolved];
   const catalog: CatalogTexts = {
     hands: dict.hands,
     relics: buildParameterizedSection(dict.relics, DEFAULT_RELIC_PARAMS),
@@ -329,7 +439,7 @@ export function getCatalogTexts(lang: I18nLang): CatalogTexts {
     consumableKinds: dict.consumableKinds,
   };
 
-  CATALOG_CACHE[resolved] = catalog;
+  cache[resolved] = catalog;
   return catalog;
 }
 
@@ -385,7 +495,7 @@ function resolveConsumableEntry(
  */
 export function createTranslator(lang: I18nLang): Translator {
   const resolved = resolveLang(lang);
-  const dict = DICTIONARIES[resolved];
+  const dict = getActiveDictionaries()[resolved];
   const catalog = getCatalogTexts(resolved);
 
   return {

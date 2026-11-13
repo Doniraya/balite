@@ -3,6 +3,10 @@
 .card-frame {
   --tilt-x: 0;
   --tilt-y: 0;
+  --sway-r: 0deg;
+  --sway-y: 0px;
+  --glare-x: 50%;
+  --glare-y: 50%;
   --suit-color: #1e293b;
   --rarity-color: rgba(226, 206, 165, 0.55);
   --card-radius: 10px;
@@ -15,11 +19,12 @@
   aspect-ratio: 5 / 7;
   padding: 0;
   margin: 0;
-  border: 1.5px solid var(--rarity-color);
+  border: 2px solid var(--rarity-color);
   border-radius: var(--card-radius);
   background: #141c2c;
   color: #f4efe4;
   font: inherit;
+  image-rendering: pixelated;
   text-align: left;
   appearance: none;
   -webkit-appearance: none;
@@ -28,9 +33,12 @@
   -webkit-user-select: none;
   touch-action: manipulation;
   transform-style: preserve-3d;
-  transform: perspective(640px)
-    rotateX(calc(var(--tilt-y, 0) * -9deg))
-    rotateY(calc(var(--tilt-x, 0) * 9deg));
+  transform:
+    translateY(var(--sway-y, 0px))
+    rotate(var(--sway-r, 0deg))
+    perspective(640px)
+    rotateX(calc(var(--tilt-y, 0) * -10deg))
+    rotateY(calc(var(--tilt-x, 0) * 10deg));
   transition:
     transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 180ms ease,
@@ -60,15 +68,22 @@
 }
 
 .card-frame.is-interactive:active:not(.is-disabled) {
-  transform: translateY(-4px) scale(0.97) perspective(640px)
-    rotateX(calc(var(--tilt-y, 0) * -7deg))
-    rotateY(calc(var(--tilt-x, 0) * 7deg));
+  transform:
+    translateY(calc(-4px + var(--sway-y, 0px)))
+    scale(0.97)
+    rotate(var(--sway-r, 0deg))
+    perspective(640px)
+    rotateX(calc(var(--tilt-y, 0) * -8deg))
+    rotateY(calc(var(--tilt-x, 0) * 8deg));
 }
 
 .card-frame.is-selected {
-  transform: translateY(-24px) perspective(640px)
-    rotateX(calc(var(--tilt-y, 0) * -9deg))
-    rotateY(calc(var(--tilt-x, 0) * 9deg));
+  transform:
+    translateY(calc(-24px + var(--sway-y, 0px)))
+    rotate(var(--sway-r, 0deg))
+    perspective(640px)
+    rotateX(calc(var(--tilt-y, 0) * -10deg))
+    rotateY(calc(var(--tilt-x, 0) * 10deg));
   border-color: #f5b942;
   box-shadow:
     0 16px 26px rgba(2, 6, 14, 0.65),
@@ -78,9 +93,13 @@
 }
 
 .card-frame.is-selected.is-interactive:active:not(.is-disabled) {
-  transform: translateY(-24px) scale(0.98) perspective(640px)
-    rotateX(calc(var(--tilt-y, 0) * -7deg))
-    rotateY(calc(var(--tilt-x, 0) * 7deg));
+  transform:
+    translateY(calc(-24px + var(--sway-y, 0px)))
+    scale(0.98)
+    rotate(var(--sway-r, 0deg))
+    perspective(640px)
+    rotateX(calc(var(--tilt-y, 0) * -8deg))
+    rotateY(calc(var(--tilt-x, 0) * 8deg));
 }
 
 .card-frame.is-forced {
@@ -90,7 +109,8 @@
 }
 
 .card-frame.is-triggering {
-  animation: card-frame-trigger-pulse 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: card-frame-trigger-pulse clamp(160ms, var(--trace-step-duration, 640ms), 1100ms)
+    cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .card-frame.is-disabled {
@@ -480,79 +500,148 @@
   font-weight: 700;
 }
 
-/* Слой 4: Издания (foil, holo/holographic, polychrome, negative), Печати и Подавление */
-.card-frame__edition-sheen {
+/* Слой 4: Издания (foil, holo/holographic, polychrome, negative), блик .card-glare, Печати и Подавление */
+.card-frame__edition-sheen,
+.card-glare {
   position: absolute;
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
 }
 
+/* Динамический блик, следующий за вектором наклона/указателя (--glare-x, --glare-y) */
+.card-glare {
+  opacity: 0.74;
+  mix-blend-mode: soft-light;
+  background: radial-gradient(
+    circle at var(--glare-x, 50%) var(--glare-y, 50%),
+    rgba(255, 255, 255, 0.44) 0%,
+    rgba(255, 255, 255, 0.14) 28%,
+    rgba(255, 255, 255, 0) 64%
+  );
+}
+
+/* Инвариант закрытой карты: рубашка вверх полностью скрывает любые эффекты лицевого издания */
+.card-frame.is-face-down .card-frame__edition-sheen,
+.card-frame.is-face-down .card-glare {
+  display: none !important;
+}
+
+.card-edition-foil .card-frame__edition-sheen,
 .card-frame__fx--foil {
   background:
     linear-gradient(
       115deg,
-      rgba(255, 255, 255, 0) 18%,
-      rgba(226, 232, 240, 0.62) 44%,
-      rgba(255, 255, 255, 0.85) 50%,
-      rgba(203, 213, 225, 0.45) 58%,
-      rgba(255, 255, 255, 0) 82%
+      rgba(255, 255, 255, 0) 16%,
+      rgba(226, 232, 240, 0.68) 44%,
+      rgba(255, 255, 255, 0.9) 50%,
+      rgba(191, 219, 254, 0.5) 58%,
+      rgba(255, 255, 255, 0) 84%
     );
-  background-size: 210% 210%;
+  background-size: 220% 220%;
   background-position:
-    calc(50% + var(--tilt-x, 0) * 42%)
-    calc(50% + var(--tilt-y, 0) * 42%);
+    calc(var(--glare-x, 50%) + var(--tilt-x, 0) * 32%)
+    calc(var(--glare-y, 50%) + var(--tilt-y, 0) * 32%);
   mix-blend-mode: screen;
-  opacity: 0.72;
+  opacity: 0.76;
+  animation: edition-foil-shimmer 4.6s ease-in-out infinite;
 }
 
+.card-edition-holographic .card-frame__edition-sheen,
 .card-frame__fx--holo,
 .card-frame__fx--holographic {
   background:
     linear-gradient(
       128deg,
-      rgba(56, 189, 248, 0.42) 0%,
-      rgba(167, 139, 250, 0.56) 28%,
-      rgba(244, 114, 182, 0.56) 52%,
-      rgba(52, 211, 153, 0.45) 76%,
-      rgba(56, 189, 248, 0.42) 100%
+      rgba(56, 189, 248, 0.46) 0%,
+      rgba(167, 139, 250, 0.58) 28%,
+      rgba(244, 114, 182, 0.58) 52%,
+      rgba(52, 211, 153, 0.48) 76%,
+      rgba(56, 189, 248, 0.46) 100%
     );
-  background-size: 220% 220%;
+  background-size: 230% 230%;
   background-position:
-    calc(50% + var(--tilt-x, 0) * 48%)
-    calc(50% + var(--tilt-y, 0) * 48%);
+    calc(var(--glare-x, 50%) + var(--tilt-x, 0) * 38%)
+    calc(var(--glare-y, 50%) + var(--tilt-y, 0) * 38%);
   mix-blend-mode: color-dodge;
-  opacity: 0.75;
+  opacity: 0.78;
+  animation: edition-holo-shimmer 5.2s ease-in-out infinite;
 }
 
+.card-edition-polychrome .card-frame__edition-sheen,
 .card-frame__fx--polychrome {
   background:
     conic-gradient(
-      from calc(45deg + var(--tilt-x, 0) * 35deg),
-      rgba(251, 113, 133, 0.58),
-      rgba(251, 191, 36, 0.58),
-      rgba(52, 211, 153, 0.58),
-      rgba(56, 189, 248, 0.58),
-      rgba(192, 132, 252, 0.58),
-      rgba(251, 113, 133, 0.58)
+      from calc(45deg + var(--tilt-x, 0) * 40deg),
+      rgba(251, 113, 133, 0.62),
+      rgba(251, 191, 36, 0.62),
+      rgba(52, 211, 153, 0.62),
+      rgba(56, 189, 248, 0.62),
+      rgba(192, 132, 252, 0.62),
+      rgba(251, 113, 133, 0.62)
     );
   background-position:
-    calc(50% + var(--tilt-x, 0) * 35%)
-    calc(50% + var(--tilt-y, 0) * 35%);
+    calc(var(--glare-x, 50%) + var(--tilt-x, 0) * 28%)
+    calc(var(--glare-y, 50%) + var(--tilt-y, 0) * 28%);
   mix-blend-mode: hard-light;
-  opacity: 0.55;
+  opacity: 0.6;
+  animation: edition-polychrome-prism 6s linear infinite;
 }
 
+.card-edition-negative .card-frame__edition-sheen,
 .card-frame__fx--negative {
   background:
     radial-gradient(
-      circle at calc(50% + var(--tilt-x, 0) * 35%) calc(50% + var(--tilt-y, 0) * 35%),
-      rgba(216, 180, 254, 0.75) 0%,
-      rgba(88, 28, 135, 0.62) 60%,
-      rgba(17, 24, 39, 0.85) 100%
+      circle at calc(var(--glare-x, 50%) + var(--tilt-x, 0) * 28%) calc(var(--glare-y, 50%) + var(--tilt-y, 0) * 28%),
+      rgba(216, 180, 254, 0.78) 0%,
+      rgba(88, 28, 135, 0.64) 60%,
+      rgba(17, 24, 39, 0.88) 100%
     );
   mix-blend-mode: difference;
-  opacity: 0.88;
+  opacity: 0.9;
+  animation: edition-negative-pulse 4.8s ease-in-out infinite;
+}
+
+@keyframes edition-foil-shimmer {
+  0%,
+  100% {
+    filter: brightness(0.98) contrast(1);
+  }
+  50% {
+    filter: brightness(1.16) contrast(1.08);
+  }
+}
+
+@keyframes edition-holo-shimmer {
+  0%,
+  100% {
+    filter: hue-rotate(0deg) saturate(1);
+  }
+  50% {
+    filter: hue-rotate(28deg) saturate(1.18);
+  }
+}
+
+@keyframes edition-polychrome-prism {
+  0% {
+    filter: hue-rotate(0deg) saturate(1.08);
+  }
+  50% {
+    filter: hue-rotate(180deg) saturate(1.22);
+  }
+  100% {
+    filter: hue-rotate(360deg) saturate(1.08);
+  }
+}
+
+@keyframes edition-negative-pulse {
+  0%,
+  100% {
+    opacity: 0.84;
+  }
+  50% {
+    opacity: 0.96;
+  }
 }
 
 .card-frame__seal {
@@ -625,7 +714,8 @@
 }
 
 .card-frame.is-selected.is-triggering {
-  animation: card-frame-selected-trigger-pulse 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: card-frame-selected-trigger-pulse clamp(160ms, var(--trace-step-duration, 640ms), 1100ms)
+    cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @keyframes card-frame-selected-trigger-pulse {
@@ -635,7 +725,33 @@
   45% {
     transform: translateY(-28px) scale(1.09) rotate(-2deg);
   }
-  100% {
+    100% {
     transform: translateY(-24px) scale(1) rotate(0deg);
+  }
+}
+
+/* Лёгкое затемнение интерактивных карт при наведении на ПК */
+@media (hover: hover) and (pointer: fine) {
+  .card-frame.is-interactive:not(:disabled):hover {
+    filter: brightness(0.86);
+    cursor: pointer;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-frame {
+    transition: none;
+    transform: none;
+  }
+
+  .card-frame.is-selected,
+  .card-frame.is-selected.is-interactive:active:not(.is-disabled) {
+    transform: translateY(-24px);
+  }
+
+  .card-frame__edition-sheen,
+  .card-frame.is-triggering,
+  .card-frame.is-selected.is-triggering {
+    animation: none !important;
   }
 }

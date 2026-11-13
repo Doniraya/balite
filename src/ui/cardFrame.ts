@@ -370,15 +370,23 @@ function applyCommonState(
  */
 function applyEditionFx(root: HTMLElement, fxLayer: HTMLElement, edition: Edition): void {
   root.dataset.edition = edition;
-  if (edition === 'base') return;
 
-  root.classList.add(`card-frame--edition-${edition}`);
+  // Слой динамического блика (pointer-events: none) для всех открытых карт
+  const glare = createHtmlEl('div', 'card-frame__glare card-glare');
+  glare.setAttribute('aria-hidden', 'true');
+
+  if (edition === 'base') {
+    fxLayer.appendChild(glare);
+    return;
+  }
+
+  root.classList.add(`card-frame--edition-${edition}`, `card-edition-${edition}`);
   const sheen = createHtmlEl('div', `card-frame__edition-sheen card-frame__fx--${edition}`);
   if (edition === 'holo') {
-    root.classList.add('card-frame--edition-holographic');
+    root.classList.add('card-frame--edition-holographic', 'card-edition-holographic');
     sheen.classList.add('card-frame__fx--holographic');
   }
-  fxLayer.appendChild(sheen);
+  fxLayer.append(sheen, glare);
 }
 
 /**
@@ -1699,12 +1707,15 @@ function clampUnit(value: number): number {
  * Возвращает функцию отписки от обработчиков.
  */
 export function attachCardTilt(el: HTMLElement): () => void {
+  const isDelegated = (): boolean => el.closest('[data-card-tilt-managed="true"]') !== null;
+
   const resetTilt = (): void => {
     el.style.setProperty('--tilt-x', '0');
     el.style.setProperty('--tilt-y', '0');
   };
 
   const handlePointerMove = (event: Event): void => {
+    if (isDelegated()) return;
     const pointer = event as PointerEvent;
     if (typeof pointer.clientX !== 'number' || typeof pointer.clientY !== 'number') {
       return;
@@ -1725,6 +1736,7 @@ export function attachCardTilt(el: HTMLElement): () => void {
   };
 
   const handlePointerLeave = (): void => {
+    if (isDelegated()) return;
     resetTilt();
   };
 
@@ -1736,6 +1748,8 @@ export function attachCardTilt(el: HTMLElement): () => void {
     el.removeEventListener('pointermove', handlePointerMove);
     el.removeEventListener('pointerleave', handlePointerLeave);
     el.removeEventListener('pointercancel', handlePointerLeave);
-    resetTilt();
+    if (!isDelegated()) {
+      resetTilt();
+    }
   };
 }
