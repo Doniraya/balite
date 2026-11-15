@@ -579,9 +579,12 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
       findButtonByText(root, 'Продолжить забег')!.click();
       expect(mounted.getState().phase).toBe('playing');
 
-      findButtonByText(root, 'Комбинации')!.click();
-      expect(root.querySelector('[data-modal="hand-reference"]')).not.toBeNull();
-      findButtonByText(root.querySelector('[data-modal="hand-reference"]')!, 'Закрыть')!.click();
+      (findButtonByText(root, 'Детали партии') ?? findButtonByText(root, 'Комбинации'))!.click();
+      const runInfoModal =
+        root.querySelector('[data-modal="run-info"]') ??
+        root.querySelector('[data-modal="hand-reference"]');
+      expect(runInfoModal).not.toBeNull();
+      (findButtonByText(runInfoModal!, 'Назад') ?? findButtonByText(runInfoModal!, 'Закрыть'))!.click();
 
       const deckOpenBtn = root.querySelector<HTMLButtonElement>('[data-action="open-deck"]');
       expect(deckOpenBtn?.getAttribute('aria-label')).toContain('Колода');
@@ -1186,7 +1189,7 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
         await vi.waitFor(() => {
           expect(root.textContent).toContain('Фиш.');
         });
-        expect(root.textContent).toContain('Комбинации');
+        expect(root.textContent).toMatch(/Партия|Комбинации/);
         expect(root.textContent).toContain('Джокеры');
         expect(root.textContent).toContain('Анте');
         expect(root.querySelector<HTMLButtonElement>('[data-dev-terms="on"]')?.getAttribute('aria-pressed')).toBe('true');

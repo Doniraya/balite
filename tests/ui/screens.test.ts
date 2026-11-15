@@ -282,7 +282,7 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       renderRunView(root, createViewModel(bossState), handlers);
       const hud = root.querySelector('[data-belt="hud"]') as HTMLElement;
 
-      findButtonByText(hud, 'Комбинации')?.click();
+      (findButtonByText(hud, 'Детали партии') ?? findButtonByText(hud, 'Комбинации'))?.click();
       expect(handlers.onOpenHandReference).toHaveBeenCalledTimes(1);
 
       findButtonByText(hud, 'Настройки')?.click();

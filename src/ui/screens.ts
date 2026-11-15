@@ -453,7 +453,7 @@ function buildConsumableTooltip(
 /**
  * Формирует данные ховер-тултипа для Грамоты Этапа.
  */
-function buildCharterTooltip(
+export function buildCharterTooltip(
   charterId: CharterId,
   translator: Translator,
   price?: string,
@@ -484,7 +484,7 @@ function buildPackTooltip(pack: PackOffer, translator: Translator, price?: strin
 /**
  * Формирует данные ховер-тултипа для Стража или Босса.
  */
-function buildBlindTooltip(
+export function buildBlindTooltip(
   kind: BlindKind,
   bossId: BossId | null,
   targetScore: number,
@@ -514,7 +514,7 @@ function buildBlindTooltip(
 /**
  * Формирует данные ховер-тултипа для Знака пропуска.
  */
-function buildTagTooltip(tagId: TagId, translator: Translator): TooltipData {
+export function buildTagTooltip(tagId: TagId, translator: Translator): TooltipData {
   const tagText = translator.getTagText(tagId);
   return {
     title: tagText.name,
@@ -1103,12 +1103,14 @@ function renderHudBelt(
   statsRow.append(handsStat, discardsStat, goldStat);
 
   const btnRow = createEl('div', 'hud-buttons-row hud-actions');
+  const runInfoBtn = createButton(
+    translator.t('ui.actions.runInfo'),
+    'ui-btn--compact hud-run-info-btn',
+    handlers.onOpenHandReference,
+  );
+  runInfoBtn.dataset.action = 'run-info';
   btnRow.append(
-    createButton(
-      translator.t('ui.actions.handReference'),
-      'ui-btn--compact',
-      handlers.onOpenHandReference,
-    ),
+    runInfoBtn,
     createButton(
       translator.t('ui.actions.settings'),
       'ui-btn--compact',

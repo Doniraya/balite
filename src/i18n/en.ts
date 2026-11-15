@@ -58,6 +58,7 @@ export const EN_DICTIONARY: LocaleDictionary = {
       sortBySuit: 'By Suit',
       deckButton: 'Deck ({remaining}/{total})',
       handReference: 'Combos',
+      runInfo: 'Run Info',
       settings: 'Settings',
       info: 'Info',
       sell: 'Sell for {dollars} Gold',
@@ -200,6 +201,45 @@ export const EN_DICTIONARY: LocaleDictionary = {
       played: 'Played: {count}',
       baseFormula: '{chips} Pwr × {mult} Mult',
       hiddenLayout: 'Hidden Combo',
+    },
+    runInfo: {
+      title: 'Run Info',
+      tabs: {
+        hands: 'Hands',
+        blinds: 'Orders',
+        vouchers: 'Charters',
+      },
+      blinds: {
+        defeated: 'Defeated',
+        current: 'Current',
+        upcoming: 'Upcoming',
+        skipped: 'Skipped',
+        minScore: 'Score at least',
+        reward: 'Reward: {dollars}g',
+        skipReward: 'Skip reward',
+        bossCannotSkip: 'Boss cannot be skipped',
+      },
+      vouchers: {
+        empty: 'No charters redeemed this run',
+        title: 'Charters redeemed this run',
+      },
+      backButton: 'Back',
+      handRules: {
+        'High Card':
+          'If played hand is not any of the above hands, only the highest ranked card scores',
+        Pair: '2 cards of the same rank. May be played with up to 3 other unscored cards',
+        'Two Pair': '2 pairs of cards of different ranks. May be played with 1 other unscored card',
+        'Three of a Kind':
+          '3 cards of the same rank. May be played with up to 2 other unscored cards',
+        Straight: '5 cards in consecutive sequence',
+        Flush: '5 cards of the same suit',
+        'Full House': '3 cards of one rank and 2 cards of another rank',
+        'Four of a Kind': '4 cards of the same rank. May be played with 1 other unscored card',
+        'Straight Flush': '5 cards in consecutive sequence of the same suit',
+        'Five of a Kind': '5 cards of the same rank',
+        'Flush House': 'A Three of a Kind and a Pair of the same suit',
+        'Flush Five': '5 cards of the same rank and suit',
+      },
     },
     deckModal: {
       title: 'Deck Overview',

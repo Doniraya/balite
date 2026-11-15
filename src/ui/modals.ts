@@ -28,9 +28,16 @@ import {
   type I18nLang,
   type Translator,
 } from '../i18n';
-import { renderPlayingCardFrame } from './cardFrame';
+import { renderEntityCardFrame, renderPlayingCardFrame } from './cardFrame';
 import { APP_VERSION } from './mainMenu';
-import { buildPlayingCardTooltip } from './screens';
+import { renderHandExamplePopup } from './runInfoExamples';
+import {
+  buildBlindTooltip,
+  buildCharterTooltip,
+  buildPlayingCardTooltip,
+  buildTagTooltip,
+  createBlindEmblem,
+} from './screens';
 import { setTooltipData } from './tooltip';
 
 /**
@@ -177,91 +184,448 @@ function createModalShell(
 }
 
 /**
- * Отрисовывает модальное окно справки по всем 12 раскладам с уровнями, счётчиками и формулами.
+ * Активная вкладка в окне «Детали партии» (Run Info).
+ */
+export type RunInfoTab = 'hands' | 'blinds' | 'vouchers';
+
+/**
+ * Отрисовывает модальное окно деталей партии (Run Info) по эталону Balatro
+ * с 3 вкладками («Комбинации», «Заказы», «Привилегии»), интерактивными 5 картами-примерами,
+ * карточками заказов текущего Этажа и сеткой купленных ваучеров.
+ */
+export function renderRunInfoModal(
+  state: RunState,
+  translator: Translator,
+  onClose: () => void,
+  initialTab: RunInfoTab = 'hands',
+): HTMLElement {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.setAttribute('role', 'dialog');
+  backdrop.setAttribute('aria-modal', 'true');
+  backdrop.dataset.modal = 'run-info';
+
+  backdrop.addEventListener('click', (event) => {
+    if (event.target === backdrop) {
+      onClose();
+    }
+  });
+
+  const sheet = document.createElement('div');
+  sheet.className = 'modal-sheet modal-sheet--run-info';
+  backdrop.appendChild(sheet);
+
+  let currentTab: RunInfoTab = initialTab;
+
+  // Шапка с 3 вкладками
+  const header = document.createElement('div');
+  header.className = 'run-info-header';
+
+  const tabList = document.createElement('div');
+  tabList.className = 'run-info-tabs';
+  tabList.setAttribute('role', 'tablist');
+
+  const tabsConfig: ReadonlyArray<{ id: RunInfoTab; labelKey: string }> = [
+    { id: 'hands', labelKey: 'ui.runInfo.tabs.hands' },
+    { id: 'blinds', labelKey: 'ui.runInfo.tabs.blinds' },
+    { id: 'vouchers', labelKey: 'ui.runInfo.tabs.vouchers' },
+  ];
+
+  const tabButtons = new Map<RunInfoTab, HTMLButtonElement>();
+
+  const body = document.createElement('div');
+  body.className = 'run-info-body modal-body';
+
+  function updateTabsUi(): void {
+    for (const [tabId, btn] of tabButtons.entries()) {
+      const isActive = tabId === currentTab;
+      btn.classList.toggle('run-info-tab--active', isActive);
+      btn.setAttribute('aria-selected', String(isActive));
+      const arrow = btn.querySelector('.run-info-tab-arrow');
+      if (isActive && !arrow) {
+        const arrowEl = document.createElement('span');
+        arrowEl.className = 'run-info-tab-arrow';
+        arrowEl.setAttribute('aria-hidden', 'true');
+        arrowEl.textContent = '▼';
+        btn.prepend(arrowEl);
+      } else if (!isActive && arrow) {
+        arrow.remove();
+      }
+    }
+  }
+
+  function renderCurrentTabContent(): void {
+    body.innerHTML = '';
+    if (currentTab === 'hands') {
+      renderHandsTab(body, state, translator);
+    } else if (currentTab === 'blinds') {
+      renderBlindsTab(body, state, translator);
+    } else {
+      renderVouchersTab(body, state, translator);
+    }
+  }
+
+  for (const { id, labelKey } of tabsConfig) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'run-info-tab';
+    btn.dataset.tab = id;
+    btn.setAttribute('role', 'tab');
+    btn.textContent = translator.t(labelKey);
+    btn.addEventListener('click', () => {
+      if (currentTab !== id) {
+        currentTab = id;
+        updateTabsUi();
+        renderCurrentTabContent();
+      }
+    });
+    tabButtons.set(id, btn);
+    tabList.appendChild(btn);
+  }
+
+  header.appendChild(tabList);
+  sheet.appendChild(header);
+  sheet.appendChild(body);
+
+  // Нижняя оранжево-золотая кнопка «Назад»
+  const footer = document.createElement('div');
+  footer.className = 'run-info-footer modal-footer';
+
+  const backBtn = document.createElement('button');
+  backBtn.type = 'button';
+  backBtn.className = 'run-info-back-btn modal-btn modal-btn--full';
+  backBtn.dataset.action = 'close';
+  backBtn.textContent = translator.t('ui.runInfo.backButton');
+  backBtn.addEventListener('click', onClose);
+  footer.appendChild(backBtn);
+  sheet.appendChild(footer);
+
+  updateTabsUi();
+  renderCurrentTabContent();
+
+  return backdrop;
+}
+
+/**
+ * Отрисовывает содержимое вкладки «Комбинации» с овалами формул и интерактивным поп-апом с 5 картами.
+ */
+function renderHandsTab(
+  container: HTMLElement,
+  state: RunState,
+  translator: Translator,
+): void {
+  const list = document.createElement('div');
+  list.className = 'run-info-hands-list hand-ref-list';
+
+  let activePopup: HTMLElement | null = null;
+
+  function closePopup(): void {
+    if (activePopup) {
+      activePopup.remove();
+      activePopup = null;
+    }
+  }
+
+  for (const handType of HAND_TYPES) {
+    const levelState = state.handLevels[handType];
+    const row = document.createElement('div');
+    row.className = 'run-info-hand-row hand-ref-row';
+    if (!levelState.visible) {
+      row.classList.add('run-info-hand-row--hidden', 'hand-ref-row--hidden');
+    }
+    row.dataset.handType = handType;
+    row.dataset.visible = String(levelState.visible);
+
+    // Слева бейдж уровня: [ ур.1 ]
+    const levelBadge = document.createElement('div');
+    levelBadge.className = 'run-info-level-badge hand-ref-level';
+    levelBadge.textContent = translator.t('ui.handReference.level', {
+      level: levelState.level,
+    });
+
+    // Название комбинации
+    const nameEl = document.createElement('div');
+    nameEl.className = 'run-info-hand-name hand-ref-name';
+
+    if (levelState.visible) {
+      const handText = translator.getHandText(handType);
+      nameEl.textContent = handText.name;
+    } else {
+      nameEl.textContent = translator.t('ui.handReference.hiddenLayout');
+    }
+
+    // Формула: [ 100 ] X [ 8 ]
+    const formulaEl = document.createElement('div');
+    formulaEl.className = 'run-info-formula hand-ref-formula';
+
+    // Включаем скрытый текст базовой формулы для совместимости со скрин-ридерами и тестами
+    const srFormula = document.createElement('span');
+    srFormula.className = 'sr-only';
+    srFormula.textContent = translator.t('ui.handReference.baseFormula', {
+      chips: levelState.chips,
+      mult: levelState.mult,
+    });
+    formulaEl.appendChild(srFormula);
+
+    const chipPill = document.createElement('span');
+    chipPill.className = 'run-info-chip-pill';
+    chipPill.setAttribute('aria-hidden', 'true');
+    chipPill.textContent = String(levelState.chips);
+
+    const multTimes = document.createElement('span');
+    multTimes.className = 'run-info-mult-times';
+    multTimes.setAttribute('aria-hidden', 'true');
+    multTimes.textContent = 'X';
+
+    const multPill = document.createElement('span');
+    multPill.className = 'run-info-mult-pill';
+    multPill.setAttribute('aria-hidden', 'true');
+    multPill.textContent = String(levelState.mult);
+
+    formulaEl.append(chipPill, multTimes, multPill);
+
+    // Счётчик сыгранных раз: # 0
+    const playedEl = document.createElement('div');
+    playedEl.className = 'run-info-played-count';
+    const hashSpan = document.createElement('span');
+    hashSpan.className = 'run-info-hash';
+    hashSpan.textContent = '#';
+    const playedNum = document.createElement('span');
+    playedNum.className = 'run-info-played-num';
+    playedNum.textContent = String(levelState.playedCount);
+    playedEl.append(hashSpan, ' ', playedNum);
+
+    // Скрытый playedEl для совместимости с hand-ref-meta
+    const srPlayed = document.createElement('span');
+    srPlayed.className = 'sr-only';
+    srPlayed.textContent = translator.t('ui.handReference.played', {
+      count: levelState.playedCount,
+    });
+    playedEl.appendChild(srPlayed);
+
+    row.append(levelBadge, nameEl, formulaEl, playedEl);
+
+    // Интерактивное наведение и клик для показа 5 мини-карт и правила
+    if (levelState.visible) {
+      const showPopup = (): void => {
+        closePopup();
+        const ruleKey = `ui.runInfo.handRules.${handType}`;
+        const ruleText = translator.t(ruleKey);
+        const popup = renderHandExamplePopup(
+          handType,
+          ruleText && ruleText !== ruleKey
+            ? ruleText
+            : translator.getHandText(handType).description,
+          translator,
+        );
+        popup.addEventListener('click', (e) => {
+          e.stopPropagation();
+          closePopup();
+        });
+        list.appendChild(popup);
+        activePopup = popup;
+      };
+
+      row.addEventListener('mouseenter', () => {
+        showPopup();
+      });
+
+      row.addEventListener('mouseleave', () => {
+        closePopup();
+      });
+
+      row.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (activePopup?.dataset.handType === handType) {
+          closePopup();
+        } else {
+          showPopup();
+        }
+      });
+    }
+
+    list.appendChild(row);
+  }
+
+  container.appendChild(list);
+}
+
+/**
+ * Отрисовывает содержимое вкладки «Заказы» (Блайнды) с 3 карточками текущего Этажа.
+ */
+function renderBlindsTab(
+  container: HTMLElement,
+  state: RunState,
+  translator: Translator,
+): void {
+  const grid = document.createElement('div');
+  grid.className = 'run-info-blinds-grid';
+
+  for (const slot of state.anteBlinds) {
+    const card = document.createElement('div');
+    card.className = `run-info-blind-card run-info-blind-card--${slot.kind} run-info-blind-card--${slot.status}`;
+    card.dataset.blindKind = slot.kind;
+    card.dataset.status = slot.status;
+
+    const blindText = translator.getBlindText(slot.kind, slot.bossId, state.ante);
+    const statusText = translator.t(`ui.runInfo.blinds.${slot.status}`);
+
+    // Бейдж статуса: [ Побежден ] / [ Текущий ] / [ Следующее ]
+    const statusPill = document.createElement('div');
+    statusPill.className = `run-info-blind-status-pill run-info-blind-status-pill--${slot.status}`;
+    statusPill.textContent = statusText;
+
+    // Пилюля названия
+    const namePill = document.createElement('div');
+    namePill.className = 'run-info-blind-name-pill';
+    namePill.textContent = blindText.name;
+
+    // Круглый жетон
+    const tokenWrap = document.createElement('div');
+    tokenWrap.className = 'run-info-blind-token';
+    const emblem = createBlindEmblem(
+      slot.kind,
+      slot.bossId,
+      state.ante,
+      'run-info-blind-emblem',
+    );
+    tokenWrap.appendChild(emblem);
+
+    const blindTooltip = buildBlindTooltip(
+      slot.kind,
+      slot.bossId,
+      slot.targetScore,
+      slot.reward,
+      false,
+      translator,
+      state.ante,
+    );
+    setTooltipData(namePill, blindTooltip);
+    setTooltipData(tokenWrap, blindTooltip);
+
+    card.append(statusPill, namePill, tokenWrap);
+
+    // Свойство босса прямо под жетоном
+    if (slot.kind === 'boss' && slot.bossId !== null) {
+      const bossDesc = document.createElement('div');
+      bossDesc.className = 'run-info-blind-boss-desc';
+      bossDesc.textContent = blindText.description;
+      setTooltipData(bossDesc, blindTooltip);
+      card.appendChild(bossDesc);
+    }
+
+    // Минимум очков и награда
+    const targetBox = document.createElement('div');
+    targetBox.className = 'run-info-blind-target';
+
+    const targetCaption = document.createElement('span');
+    targetCaption.className = 'run-info-blind-target-caption';
+    targetCaption.textContent = translator.t('ui.runInfo.blinds.minScore');
+
+    const targetVal = document.createElement('div');
+    targetVal.className = 'run-info-blind-target-value';
+    const gem = document.createElement('span');
+    gem.className = 'run-info-blind-gem';
+    gem.textContent = '◆';
+    const num = document.createElement('strong');
+    num.textContent = String(slot.targetScore);
+    targetVal.append(gem, ' ', num);
+
+    const rewardEl = document.createElement('div');
+    rewardEl.className = 'run-info-blind-reward';
+    rewardEl.textContent = translator.t('ui.runInfo.blinds.reward', {
+      dollars: slot.reward,
+    });
+
+    targetBox.append(targetCaption, targetVal, rewardEl);
+    card.appendChild(targetBox);
+
+    // Разделитель ИЛИ и талон пропуска для Малого и Старшего
+    if (slot.kind !== 'boss' && slot.skipTagId !== null) {
+      const orDiv = document.createElement('div');
+      orDiv.className = 'run-info-blind-or';
+      orDiv.textContent = translator.t('ui.blindSelect.orSeparator');
+
+      const tagCard = document.createElement('div');
+      tagCard.className = 'run-info-tag-card interactive-slot';
+      tagCard.dataset.tagId = slot.skipTagId;
+
+      const tagIcon = document.createElement('div');
+      tagIcon.className = 'run-info-tag-icon';
+      tagIcon.textContent = '✦';
+
+      const tagLabel = document.createElement('span');
+      tagLabel.className = 'run-info-tag-label';
+      tagLabel.textContent = translator.t('ui.runInfo.blinds.skipReward');
+
+      tagCard.append(tagIcon, tagLabel);
+
+      const tagTooltip = buildTagTooltip(slot.skipTagId, translator);
+      setTooltipData(tagCard, tagTooltip);
+
+      card.append(orDiv, tagCard);
+    }
+
+    grid.appendChild(card);
+  }
+
+  container.appendChild(grid);
+}
+
+/**
+ * Отрисовывает содержимое вкладки «Привилегии» (Ваучеры) с пустым состоянием или сеткой карточек.
+ */
+function renderVouchersTab(
+  container: HTMLElement,
+  state: RunState,
+  translator: Translator,
+): void {
+  const wrap = document.createElement('div');
+  wrap.className = 'run-info-vouchers-container';
+
+  if (state.charters.length === 0) {
+    const emptyEl = document.createElement('div');
+    emptyEl.className = 'run-info-vouchers-empty';
+    emptyEl.textContent = translator.t('ui.runInfo.vouchers.empty');
+    wrap.appendChild(emptyEl);
+  } else {
+    const titleEl = document.createElement('h3');
+    titleEl.className = 'run-info-vouchers-title';
+    titleEl.textContent = translator.t('ui.runInfo.vouchers.title');
+    wrap.appendChild(titleEl);
+
+    const grid = document.createElement('div');
+    grid.className = 'run-info-vouchers-grid';
+
+    for (const charterId of state.charters) {
+      const cardSlot = document.createElement('div');
+      cardSlot.className = 'run-info-voucher-slot';
+      const frameEl = renderEntityCardFrame({
+        kind: 'charter',
+        charterId,
+        translator,
+      });
+      frameEl.classList.add('run-info-voucher-card');
+      setTooltipData(frameEl, buildCharterTooltip(charterId, translator));
+      cardSlot.appendChild(frameEl);
+      grid.appendChild(cardSlot);
+    }
+
+    wrap.appendChild(grid);
+  }
+
+  container.appendChild(wrap);
+}
+
+/**
+ * Отрисовывает модальное окно справки по всем раскладам (алиас для обратной совместимости).
  */
 export function renderHandReferenceModal(
   state: RunState,
   translator: Translator,
   onClose: () => void,
 ): HTMLElement {
-  const { backdrop, body } = createModalShell(
-    translator.t('ui.handReference.title'),
-    null,
-    translator,
-    onClose,
-    'hand-reference',
-  );
-
-  const list = document.createElement('div');
-  list.className = 'hand-ref-list';
-
-  for (const handType of HAND_TYPES) {
-    const levelState = state.handLevels[handType];
-    const row = document.createElement('div');
-    row.className = 'hand-ref-row';
-    if (!levelState.visible) {
-      row.classList.add('hand-ref-row--hidden');
-    }
-    row.dataset.handType = handType;
-    row.dataset.visible = String(levelState.visible);
-
-    const mainCol = document.createElement('div');
-    mainCol.className = 'hand-ref-main';
-
-    const nameEl = document.createElement('div');
-    nameEl.className = 'hand-ref-name';
-
-    if (levelState.visible) {
-      const handText = translator.getHandText(handType);
-      nameEl.textContent = handText.name;
-      mainCol.appendChild(nameEl);
-
-      const descEl = document.createElement('div');
-      descEl.className = 'hand-ref-desc';
-      descEl.textContent = handText.description;
-      mainCol.appendChild(descEl);
-    } else {
-      // Скрытые расклады не раскрывают название и правила до первого появления в забеге
-      nameEl.textContent = translator.t('ui.handReference.hiddenLayout');
-      mainCol.appendChild(nameEl);
-    }
-
-    const statsCol = document.createElement('div');
-    statsCol.className = 'hand-ref-stats';
-
-    const metaRow = document.createElement('div');
-    metaRow.className = 'hand-ref-meta';
-
-    const levelBadge = document.createElement('span');
-    levelBadge.className = 'hand-ref-level';
-    levelBadge.textContent = translator.t('ui.handReference.level', {
-      level: levelState.level,
-    });
-    metaRow.appendChild(levelBadge);
-
-    const playedEl = document.createElement('span');
-    playedEl.textContent = translator.t('ui.handReference.played', {
-      count: levelState.playedCount,
-    });
-    metaRow.appendChild(playedEl);
-
-    const formulaEl = document.createElement('div');
-    formulaEl.className = 'hand-ref-formula';
-    formulaEl.textContent = translator.t('ui.handReference.baseFormula', {
-      chips: levelState.chips,
-      mult: levelState.mult,
-    });
-
-    statsCol.appendChild(metaRow);
-    statsCol.appendChild(formulaEl);
-
-    row.appendChild(mainCol);
-    row.appendChild(statsCol);
-    list.appendChild(row);
-  }
-
-  body.appendChild(list);
-  return backdrop;
+  return renderRunInfoModal(state, translator, onClose, 'hands');
 }
 
 /**

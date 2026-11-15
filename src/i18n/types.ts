@@ -189,6 +189,7 @@ export interface UiDictionary {
     readonly sortBySuit: string;
     readonly deckButton: string;
     readonly handReference: string;
+    readonly runInfo: string;
     readonly settings: string;
     readonly info: string;
     readonly sell: string;
@@ -331,6 +332,30 @@ export interface UiDictionary {
     readonly played: string;
     readonly baseFormula: string;
     readonly hiddenLayout: string;
+  };
+  readonly runInfo: {
+    readonly title: string;
+    readonly tabs: {
+      readonly hands: string;
+      readonly blinds: string;
+      readonly vouchers: string;
+    };
+    readonly blinds: {
+      readonly defeated: string;
+      readonly current: string;
+      readonly upcoming: string;
+      readonly skipped: string;
+      readonly minScore: string;
+      readonly reward: string;
+      readonly skipReward: string;
+      readonly bossCannotSkip: string;
+    };
+    readonly vouchers: {
+      readonly empty: string;
+      readonly title: string;
+    };
+    readonly backButton: string;
+    readonly handRules: Readonly<Record<HandType, string>>;
   };
   readonly deckModal: {
     readonly title: string;

@@ -42,6 +42,7 @@ export const DEV_ORIGINAL_OVERLAYS: Readonly<Record<I18nLang, DevLocaleOverlay>>
       },
       actions: {
         handReference: 'Комбинации',
+        runInfo: 'Партия\nДетали',
         sell: 'Продать за ${dollars}',
         buy: 'Купить (${dollars})',
         openPack: 'Открыть (${dollars})',
@@ -84,6 +85,46 @@ export const DEV_ORIGINAL_OVERLAYS: Readonly<Record<I18nLang, DevLocaleOverlay>>
         title: 'Покерные комбинации',
         baseFormula: '{chips} Фиш. × {mult} Множ',
         hiddenLayout: 'Секретная комбинация',
+      },
+      runInfo: {
+        title: 'Детали партии',
+        tabs: {
+          hands: 'Покерные руки',
+          blinds: 'Блайнды',
+          vouchers: 'Ваучеры',
+        },
+        blinds: {
+          defeated: 'Побежден',
+          current: 'Текущее',
+          upcoming: 'Следующее',
+          skipped: 'Пропущен',
+          minScore: 'Минимум очков',
+          reward: 'Награда: ${dollars}+',
+          skipReward: 'Пропустить награду',
+          bossCannotSkip: 'Босса нельзя пропустить',
+        },
+        vouchers: {
+          empty: 'В этой партии не были выкуплены ваучеры',
+          title: 'Ваучеры, выкупленные в этой партии',
+        },
+        backButton: 'Назад',
+        handRules: {
+          'High Card':
+            'Если сыгранная рука не является одной из вышеуказанных рук, считается только карта с наибольшим достоинством',
+          Pair: '2 карты одного достоинства. Они могут быть сыграны с максимум 3 неподсчитанными картами',
+          'Two Pair': '2 пары карт разного достоинства. Они могут быть сыграны с 1 неподсчитанной картой',
+          'Three of a Kind':
+            '3 карты одного достоинства. Они могут быть сыграны с 2 неподсчитанными картами',
+          Straight: '5 карт по порядку подряд',
+          Flush: '5 карт одной масти',
+          'Full House': 'Сет и пара',
+          'Four of a Kind':
+            '4 карты одного достоинства. Они могут быть сыграны с 1 неподсчитанной картой',
+          'Straight Flush': '5 карт по порядку одной масти',
+          'Five of a Kind': '5 карт одного достоинства',
+          'Flush House': 'Сет и пара одной масти',
+          'Flush Five': '5 карт одного достоинства и одной масти',
+        },
       },
       runEnd: {
         victorySubtitle: 'Все 8 Анте успешно пройдены!',
@@ -809,6 +850,7 @@ export const DEV_ORIGINAL_OVERLAYS: Readonly<Record<I18nLang, DevLocaleOverlay>>
       },
       actions: {
         handReference: 'Poker Hands',
+        runInfo: 'Run\nInfo',
         sell: 'Sell for ${dollars}',
         buy: 'Buy (${dollars})',
         openPack: 'Open (${dollars})',
@@ -850,6 +892,45 @@ export const DEV_ORIGINAL_OVERLAYS: Readonly<Record<I18nLang, DevLocaleOverlay>>
         title: 'Poker Hands',
         baseFormula: '{chips} Chips × {mult} Mult',
         hiddenLayout: 'Secret Hand',
+      },
+      runInfo: {
+        title: 'Run Info',
+        tabs: {
+          hands: 'Poker Hands',
+          blinds: 'Blinds',
+          vouchers: 'Vouchers',
+        },
+        blinds: {
+          defeated: 'Defeated',
+          current: 'Current',
+          upcoming: 'Upcoming',
+          skipped: 'Skipped',
+          minScore: 'Score at least',
+          reward: 'Reward: ${dollars}+',
+          skipReward: 'Skip reward',
+          bossCannotSkip: 'Boss cannot be skipped',
+        },
+        vouchers: {
+          empty: 'No vouchers redeemed this run',
+          title: 'Vouchers redeemed this run',
+        },
+        backButton: 'Back',
+        handRules: {
+          'High Card':
+            'If played hand is not any of the above hands, only the highest ranked card scores',
+          Pair: '2 cards of the same rank. May be played with up to 3 other unscored cards',
+          'Two Pair': '2 pairs of cards of different ranks. May be played with 1 other unscored card',
+          'Three of a Kind':
+            '3 cards of the same rank. May be played with up to 2 other unscored cards',
+          Straight: '5 cards in consecutive sequence',
+          Flush: '5 cards of the same suit',
+          'Full House': 'A Three of a Kind and a Pair',
+          'Four of a Kind': '4 cards of the same rank. May be played with 1 other unscored card',
+          'Straight Flush': '5 cards in consecutive sequence of the same suit',
+          'Five of a Kind': '5 cards of the same rank',
+          'Flush House': 'A Three of a Kind and a Pair of the same suit',
+          'Flush Five': '5 cards of the same rank and suit',
+        },
       },
       runEnd: {
         victorySubtitle: 'All 8 Antes cleared!',
