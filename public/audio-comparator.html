@@ -1,0 +1,1420 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Balite // Сравнение звуков (Audio Comparator)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Rubik:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-main: #0a0e17;
+      --bg-panel: #111827;
+      --bg-card: #151e2e;
+      --bg-card-hover: #1b263b;
+      --bg-chip: #1e293b;
+      --border-subtle: #233044;
+      --border-focus: #3b82f6;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      
+      --accent-gold: #f59e0b;
+      --accent-gold-glow: rgba(245, 158, 11, 0.25);
+      --accent-blue: #38bdf8;
+      --accent-blue-glow: rgba(56, 189, 248, 0.25);
+      --accent-green: #10b981;
+      --accent-green-glow: rgba(16, 185, 129, 0.25);
+      --accent-orange: #f97316;
+      --accent-orange-glow: rgba(249, 115, 22, 0.25);
+      --accent-purple: #a855f7;
+      --accent-crimson: #ef4444;
+      --accent-crimson-glow: rgba(239, 68, 68, 0.25);
+
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.4);
+      --transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      font-family: 'Rubik', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.5;
+      padding-bottom: 90px;
+      overflow-x: hidden;
+    }
+
+    /* Верхняя навигационная шапка */
+    header.header {
+      background: linear-gradient(180deg, rgba(17, 24, 39, 0.95) 0%, rgba(10, 14, 23, 0.9) 100%);
+      border-bottom: 1px solid var(--border-subtle);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+      padding: 14px 20px;
+    }
+
+    .header-content {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-badge {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: #000;
+      font-weight: 800;
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      text-transform: uppercase;
+      box-shadow: 0 0 14px var(--accent-gold-glow);
+    }
+
+    .brand-title {
+      font-size: 19px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .brand-subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    /* Панель глобального управления */
+    .controls-bar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .volume-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-chip);
+      border: 1px solid var(--border-subtle);
+      padding: 6px 12px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .volume-box input[type="range"] {
+      width: 90px;
+      cursor: pointer;
+      accent-color: var(--accent-gold);
+    }
+
+    .btn {
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 7px 14px;
+      border-radius: var(--radius-md);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: var(--transition);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 38px;
+      user-select: none;
+    }
+
+    .btn:active {
+      transform: scale(0.97);
+    }
+
+    .btn-secondary {
+      background: var(--bg-chip);
+      border-color: var(--border-subtle);
+      color: var(--text-main);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-focus);
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.25);
+      border-color: #ef4444;
+    }
+
+    /* Главный контейнер */
+    main.container {
+      max-width: 1200px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 24px 20px;
+      flex: 1;
+    }
+
+    /* Инфо-баннер */
+    .info-banner {
+      background: linear-gradient(90deg, rgba(245, 158, 11, 0.08) 0%, rgba(56, 189, 248, 0.06) 100%);
+      border: 1px solid rgba(245, 158, 11, 0.2);
+      border-radius: var(--radius-lg);
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .info-text {
+      flex: 1;
+      min-width: 280px;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .info-text strong {
+      color: var(--text-main);
+    }
+
+    .info-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* Категории */
+    .category-section {
+      margin-bottom: 32px;
+    }
+
+    .category-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .category-title {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--accent-gold);
+      text-transform: uppercase;
+      font-size: 14px;
+      letter-spacing: 0.05em;
+    }
+
+    .category-count {
+      font-size: 12px;
+      color: var(--text-dim);
+      background: var(--bg-chip);
+      padding: 2px 8px;
+      border-radius: 12px;
+    }
+
+    /* Сетка карточек */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+      gap: 16px;
+    }
+
+    @media (max-width: 480px) {
+      .cards-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Карточка звука */
+    .sound-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: var(--transition);
+      box-shadow: var(--shadow-card);
+      position: relative;
+    }
+
+    .sound-card:hover {
+      border-color: rgba(56, 189, 248, 0.4);
+      background: var(--bg-card-hover);
+    }
+
+    .sound-card.verdict-now {
+      border-left: 4px solid var(--accent-green);
+    }
+
+    .sound-card.verdict-before {
+      border-left: 4px solid var(--accent-orange);
+    }
+
+    .card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .card-title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .card-id {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--accent-blue);
+      background: rgba(56, 189, 248, 0.1);
+      padding: 1px 6px;
+      border-radius: 4px;
+      width: fit-content;
+    }
+
+    .card-sizes {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-dim);
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .card-desc {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    /* Кнопки прослушивания */
+    .audio-play-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .play-btn {
+      font-family: 'Rubik', sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 7px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-panel);
+      color: var(--text-main);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: var(--transition);
+      min-height: 34px;
+    }
+
+    .play-btn:active {
+      transform: scale(0.96);
+    }
+
+    .play-btn-now {
+      border-color: rgba(16, 185, 129, 0.4);
+      background: rgba(16, 185, 129, 0.12);
+      color: #6ee7b7;
+    }
+
+    .play-btn-now:hover {
+      background: rgba(16, 185, 129, 0.22);
+      border-color: var(--accent-green);
+      box-shadow: 0 0 10px var(--accent-green-glow);
+    }
+
+    .play-btn-before {
+      border-color: rgba(249, 115, 22, 0.4);
+      background: rgba(249, 115, 22, 0.12);
+      color: #fdba74;
+    }
+
+    .play-btn-before:hover {
+      background: rgba(249, 115, 22, 0.22);
+      border-color: var(--accent-orange);
+      box-shadow: 0 0 10px var(--accent-orange-glow);
+    }
+
+    .play-btn-synth {
+      border-color: rgba(168, 85, 247, 0.4);
+      background: rgba(168, 85, 247, 0.12);
+      color: #d8b4fe;
+    }
+
+    .play-btn-synth:hover {
+      background: rgba(168, 85, 247, 0.22);
+      border-color: var(--accent-purple);
+      box-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
+    }
+
+    .play-btn-combo {
+      border-color: rgba(56, 189, 248, 0.4);
+      background: rgba(56, 189, 248, 0.1);
+      color: #7dd3fc;
+    }
+
+    .play-btn-combo:hover {
+      background: rgba(56, 189, 248, 0.2);
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 10px var(--accent-blue-glow);
+    }
+
+    .play-btn.is-playing {
+      border-color: #fff;
+      animation: pulseGlow 0.8s infinite alternate;
+    }
+
+    @keyframes pulseGlow {
+      from { box-shadow: 0 0 4px #fff; }
+      to { box-shadow: 0 0 14px #fff; }
+    }
+
+    /* Блок вердикта для карточки */
+    .verdict-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border-subtle);
+      margin-top: 4px;
+    }
+
+    .verdict-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+      font-weight: 600;
+    }
+
+    .verdict-choices {
+      display: flex;
+      gap: 6px;
+    }
+
+    .choice-btn {
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 5px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-chip);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: var(--transition);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .choice-btn:hover {
+      background: var(--bg-card-hover);
+      color: var(--text-main);
+    }
+
+    .choice-btn.selected-now {
+      background: rgba(16, 185, 129, 0.2);
+      border-color: var(--accent-green);
+      color: #6ee7b7;
+      box-shadow: 0 0 8px var(--accent-green-glow);
+    }
+
+    .choice-btn.selected-before {
+      background: rgba(249, 115, 22, 0.2);
+      border-color: var(--accent-orange);
+      color: #fdba74;
+      box-shadow: 0 0 8px var(--accent-orange-glow);
+    }
+
+    /* Нижняя закрепленная панель для вердикта */
+    .bottom-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(17, 24, 39, 0.96);
+      backdrop-filter: blur(16px);
+      border-top: 1px solid var(--border-subtle);
+      padding: 12px 20px;
+      z-index: 99;
+      box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.5);
+    }
+
+    .bottom-bar-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .stats-group {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 13px;
+    }
+
+    .stat-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+
+    .stat-pill-now {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #6ee7b7;
+    }
+
+    .stat-pill-before {
+      background: rgba(249, 115, 22, 0.15);
+      border: 1px solid rgba(249, 115, 22, 0.3);
+      color: #fdba74;
+    }
+
+    .btn-copy-verdict {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: #ffffff;
+      font-size: 14px;
+      font-weight: 700;
+      padding: 10px 22px;
+      border-radius: var(--radius-md);
+      border: none;
+      box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: var(--transition);
+    }
+
+    .btn-copy-verdict:hover {
+      box-shadow: 0 6px 22px rgba(16, 185, 129, 0.6);
+      transform: translateY(-1px);
+    }
+
+    .btn-copy-verdict:active {
+      transform: translateY(1px);
+    }
+
+    /* Модальное окно или секция развернутого вердикта */
+    .verdict-preview-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      margin-top: 36px;
+    }
+
+    .verdict-preview-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .verdict-preview-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--accent-gold);
+    }
+
+    .verdict-textarea {
+      width: 100%;
+      height: 240px;
+      background: #0d121c;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      color: #cbd5e1;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      padding: 12px;
+      resize: vertical;
+      line-height: 1.6;
+    }
+
+    .verdict-textarea:focus {
+      outline: none;
+      border-color: var(--border-focus);
+    }
+
+    /* Toast всплывающее уведомление */
+    .toast {
+      position: fixed;
+      top: 80px;
+      right: 24px;
+      background: #059669;
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: var(--radius-md);
+      font-weight: 600;
+      font-size: 14px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      opacity: 0;
+      transform: translateY(-12px);
+      transition: var(--transition);
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Мобильная адаптивность */
+    @media (max-width: 640px) {
+      .header-content {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .controls-bar {
+        justify-content: space-between;
+      }
+      .bottom-bar-inner {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .btn-copy-verdict {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Всплывающий тост об успешном копировании -->
+  <div id="toast" class="toast">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+    <span>Вердикт скопирован в буфер обмена!</span>
+  </div>
+
+  <!-- Шапка сайта -->
+  <header class="header">
+    <div class="header-content">
+      <div class="brand">
+        <span class="brand-badge">Balite</span>
+        <div>
+          <div class="brand-title">Аудио-Компаратор // Прослушивание</div>
+          <div class="brand-subtitle">Сравнение: Сейчас (Свежий пак) vs Было (Коммит f452645)</div>
+        </div>
+      </div>
+
+      <div class="controls-bar">
+        <!-- Регулировка громкости -->
+        <div class="volume-box">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          <input type="range" id="volumeSlider" min="0" max="1" step="0.05" value="0.75" title="Громкость">
+          <span id="volumeVal" style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">75%</span>
+        </div>
+
+        <!-- Кнопка остановки звука -->
+        <button class="btn btn-secondary" id="btnStopAll" title="Остановить все звуки">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+          Стоп
+        </button>
+
+        <!-- Быстрые действия -->
+        <button class="btn btn-secondary" id="btnSelectAllNow" title="Выбрать «Оставить Сейчас» для всех звуков">
+          Все «Сейчас»
+        </button>
+        <button class="btn btn-secondary" id="btnSelectAllBefore" title="Выбрать «Вернуть Было» для всех звуков">
+          Все «Было»
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Главный контент -->
+  <main class="container">
+
+    <!-- Информационная плашка -->
+    <section class="info-banner">
+      <div class="info-text">
+        <strong>Как пользоваться:</strong> Нажимай кнопки <strong>[▶ Сейчас]</strong> и <strong>[▶ Было]</strong> для сравнительного прослушивания каждого действия. Для начисления очков Силы и Множителя попробуй <strong>[Комбо]</strong> (прогрессивный pitch-shift x1.0 &rarr; x1.2 &rarr; x1.5). Отметь вердикт («Оставить Сейчас» или «Вернуть Было»), а затем нажми зелёную кнопку внизу для отправки вердикта в чат!
+      </div>
+      <div class="info-actions">
+        <button class="btn btn-secondary" id="btnScrollToVerdict">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg>
+          К тексту вердикта
+        </button>
+      </div>
+    </section>
+
+    <!-- Секции по категориям будут сгенерированы динамически скриптом -->
+    <div id="categoriesContainer"></div>
+
+    <!-- Текстовый блок вердикта для копирования -->
+    <section class="verdict-preview-section" id="verdictSection">
+      <div class="verdict-preview-header">
+        <h3 class="verdict-preview-title">Сводный список решений (для вставки в чат)</h3>
+        <button class="btn btn-secondary" id="btnRefreshPreview">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          Обновить
+        </button>
+      </div>
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+        Этот текст автоматически формируется на основе выбранных кнопок. Вы можете также дописать свои комментарии прямо в поле перед копированием:
+      </p>
+      <textarea id="verdictTextarea" class="verdict-textarea" spellcheck="false"></textarea>
+    </section>
+
+  </main>
+
+  <!-- Закрепленный нижний бар -->
+  <div class="bottom-bar">
+    <div class="bottom-bar-inner">
+      <div class="stats-group">
+        <div class="stat-pill stat-pill-now">
+          <span>Оставить Сейчас:</span>
+          <strong id="countNow">0</strong>
+        </div>
+        <div class="stat-pill stat-pill-before">
+          <span>Вернуть Было:</span>
+          <strong id="countBefore">0</strong>
+        </div>
+        <span style="color: var(--text-dim); font-size: 12px;" id="countTotal">Всего действий: 16</span>
+      </div>
+
+      <button class="btn-copy-verdict" id="btnCopyVerdictBottom">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Скопировать вердикт для чата
+      </button>
+    </div>
+  </div>
+
+  <script>
+    // --- ДАННЫЕ О ЗВУКОВЫХ СОБЫТИЯХ ---
+    const AUDIO_ITEMS = [
+      // 1. Действия с картами
+      {
+        id: 'card_select',
+        name: 'Выбор карты в руке',
+        category: 'Действия с картами',
+        desc: 'Звучит при клике/тапе по игральной карте для добавления её в текущий выбор перед розыгрышем или сбросом.',
+        file: 'card_select.ogg',
+        sizeNow: '7.3 КБ',
+        sizeBefore: '6.2 КБ',
+        hasNow: true,
+        defaultVerdict: 'now'
+      },
+      {
+        id: 'card_deselect',
+        name: 'Снятие выбора с карты',
+        category: 'Действия с картами',
+        desc: 'Звучит при повторном клике по выбранной карте, когда она возвращается в общий строй руки.',
+        file: 'card_deselect.ogg',
+        sizeNow: '6.0 КБ',
+        sizeBefore: '5.2 КБ',
+        hasNow: true,
+        defaultVerdict: 'now'
+      },
+      {
+        id: 'card_deal',
+        name: 'Раздача карт в руку',
+        category: 'Действия с картами',
+        desc: 'Звучит при доборе карт из колоды (старт раунда, после сброса, переброс колоды).',
+        file: 'card_deal.ogg',
+        sizeNow: '5.8 КБ',
+        sizeBefore: '5.5 КБ',
+        hasNow: true,
+        defaultVerdict: 'now'
+      },
+      {
+        id: 'card_hover',
+        name: 'Наведение курсора на карту',
+        category: 'Действия с картами',
+        desc: 'Лёгкий шелест при наведении мыши / смещении фокуса на карту (десктоп).',
+        file: 'card_hover.ogg',
+        sizeNow: '4.1 КБ',
+        sizeBefore: '4.4 КБ',
+        hasNow: true,
+        defaultVerdict: 'now'
+      },
+
+      // 2. Интерфейс и магазин
+      {
+        id: 'button',
+        name: 'Клик по кнопкам интерфейса',
+        category: 'Интерфейс и экономика',
+        desc: 'Тактильный щелчок при нажатии на кнопки «Играть руку», «Сброс», переходы в меню и навигацию.',
+        file: 'button.ogg',
+        sizeNow: '4.9 КБ',
+        sizeBefore: '5.2 КБ',
+        hasNow: true,
+        defaultVerdict: 'now'
+      },
+      {
+        id: 'booster_open',
+        name: 'Открытие сундука гильдии',
+        category: 'Интерфейс и экономика',
+        desc: 'Звучит при вскрытии бустер-пака (наборов карт, свитков или реликвий) в лавке гильдии.',
+        file: 'booster_open.ogg',
+        sizeNow: '11.8 КБ',
+        sizeBefore: '12.0 КБ',
+        hasNow: true,
+        defaultVerdict: 'now'
+      },
+      {
+        id: 'gold',
+        name: 'Звон золота',
+        category: 'Интерфейс и экономика',
+        desc: 'Пересыпание монет при получении золота, выкупе товаров в лавке или награде за завершение Блайнда.',
+        file: 'gold.ogg',
+        sizeNow: '12.7 КБ',
+        sizeBefore: '12.7 КБ',
+        hasNow: true,
+        defaultVerdict: 'now'
+      },
+
+      // 3. Спецэффекты и способности
+      {
+        id: 'relic_trigger',
+        name: 'Срабатывание навыка / реликвии',
+        category: 'Способности и эффекты',
+        desc: 'Звучит при активации бонуса джокера/реликвии в слоте при расчёте очков комбинации.',
+        file: 'relic_trigger.ogg',
+        sizeNow: '18.1 КБ',
+        sizeBefore: '27.1 КБ',
+        hasNow: true,
+        defaultVerdict: 'now'
+      },
+      {
+        id: 'consumable',
+        name: 'Использование свитка / зелья',
+        category: 'Способности и эффекты',
+        desc: 'Мистический звук активации расходника (Таро, Планеты, Спектральной карты) на карту или колоду.',
+        file: 'consumable.ogg',
+        sizeNow: '13.2 КБ',
+        sizeBefore: '13.9 КБ',
+        hasNow: true,
+        defaultVerdict: 'now'
+      },
+      {
+        id: 'shatter',
+        name: 'Разрушение хрустальной карты',
+        category: 'Способности и эффекты',
+        desc: 'Звонкий хруст и осыпание осколков при поломке хрупкой карты (хрусталь/стекло) или гибели реликвии.',
+        file: 'shatter.ogg',
+        sizeNow: '13.9 КБ',
+        sizeBefore: '14.8 КБ',
+        hasNow: true,
+        defaultVerdict: 'now'
+      },
+      {
+        id: 'debuff',
+        name: 'Дебафф босса / блокировка',
+        category: 'Способности и эффекты',
+        desc: 'Тревожный сигнал при блокировке карты/руки свойством Босса или при срыве расходника («Nope!»). В текущем коде заменён на процедурный синтезатор Web Audio (200 мс спад).',
+        file: 'debuff.ogg',
+        sizeNow: 'Web Audio Synth',
+        sizeBefore: '24.6 КБ',
+        hasNow: false,
+        hasSynth: true,
+        defaultVerdict: 'now'
+      },
+
+      // 4. Динамика очков (Scoring Combo)
+      {
+        id: 'chip_hit',
+        name: 'Начисление Силы (Фишек)',
+        category: 'Динамика очков (Комбо)',
+        desc: 'Ритмичные щелчки начисления очков Силы (синие фишки) за сыгранные карты. В игре повышает тон при серии комбо!',
+        file: 'chip_hit.ogg',
+        sizeNow: '5.9 КБ',
+        sizeBefore: '4.9 КБ',
+        hasNow: true,
+        hasCombo: true,
+        defaultVerdict: 'now'
+      },
+      {
+        id: 'mult_hit',
+        name: 'Начисление Множителя',
+        category: 'Динамика очков (Комбо)',
+        desc: 'Акцентные удары начисления очков Множителя (красный множ) за комбинации и бонусы реликвий. Повышает тон в комбо!',
+        file: 'mult_hit.ogg',
+        sizeNow: '10.1 КБ',
+        sizeBefore: '8.6 КБ',
+        hasNow: true,
+        hasCombo: true,
+        defaultVerdict: 'now'
+      },
+      {
+        id: 'flame_surge',
+        name: 'Всплеск пламени порога',
+        category: 'Динамика очков (Комбо)',
+        desc: 'Мощный драматичный всплеск, когда набранные очки пересекают требуемый порог Блайнда (Огонь победы).',
+        file: 'flame_surge.ogg',
+        sizeNow: '32.9 КБ',
+        sizeBefore: '32.9 КБ',
+        hasNow: true,
+        defaultVerdict: 'now'
+      },
+
+      // 5. Финал раунда и забега
+      {
+        id: 'win',
+        name: 'Победа над боссом',
+        category: 'Финал раунда и забега',
+        desc: 'Торжественный триумфальный аккорд при успешном прохождении босса анте или победе в забеге.',
+        file: 'win.ogg',
+        sizeNow: '19.4 КБ',
+        sizeBefore: '19.4 КБ',
+        hasNow: true,
+        defaultVerdict: 'now'
+      },
+      {
+        id: 'lose',
+        name: 'Поражение в забеге',
+        category: 'Финал раунда и забега',
+        desc: 'Нисходящий угасающий тон поражения, когда исчерпаны руки и порог очков не достигнут.',
+        file: 'lose.ogg',
+        sizeNow: '10.2 КБ',
+        sizeBefore: '10.2 КБ',
+        hasNow: true,
+        defaultVerdict: 'now'
+      }
+    ];
+
+    // Хранилище решений пользователя
+    const userVerdicts = {};
+    AUDIO_ITEMS.forEach(item => {
+      userVerdicts[item.id] = item.defaultVerdict || 'now';
+    });
+
+    // --- АУДИО ДВИЖОК СТРАНИЦЫ ---
+    let audioCtx = null;
+    let masterGain = null;
+    let currentMasterVolume = 0.75;
+    const audioBufferCache = new Map(); // key -> AudioBuffer
+    const activeSources = new Set();
+
+    function getAudioContext() {
+      if (!audioCtx) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContextClass();
+        masterGain = audioCtx.createGain();
+        masterGain.gain.setValueAtTime(currentMasterVolume, audioCtx.currentTime);
+        masterGain.connect(audioCtx.destination);
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      return audioCtx;
+    }
+
+    // Загрузка и декодирование буфера с кэшированием
+    async function loadAudioBuffer(url) {
+      if (audioBufferCache.has(url)) {
+        return audioBufferCache.get(url);
+      }
+      const ctx = getAudioContext();
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const arrayBuf = await resp.arrayBuffer();
+        const decoded = await ctx.decodeAudioData(arrayBuf);
+        audioBufferCache.set(url, decoded);
+        return decoded;
+      } catch (err) {
+        console.warn('Web Audio decode failed for ' + url + ', using HTMLAudio fallback:', err);
+        return null;
+      }
+    }
+
+    // Воспроизведение звука с поддержкой playbackRate (pitch shift)
+    async function playSound(url, playbackRate = 1.0, onEnded = null) {
+      const ctx = getAudioContext();
+      const buffer = await loadAudioBuffer(url);
+
+      if (buffer) {
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.playbackRate.value = playbackRate;
+        source.connect(masterGain);
+        
+        activeSources.add(source);
+        source.onended = () => {
+          activeSources.delete(source);
+          if (onEnded) onEnded();
+        };
+
+        source.start(0);
+        return source;
+      } else {
+        // Fallback через HTMLAudioElement
+        const audio = new Audio(url);
+        audio.volume = currentMasterVolume;
+        audio.preservesPitch = false;
+        audio.playbackRate = playbackRate;
+        audio.onended = () => {
+          if (onEnded) onEnded();
+        };
+        audio.play().catch(e => console.warn('Audio play error:', e));
+        return audio;
+      }
+    }
+
+    // Воспроизведение цепочки комбо (pitch-shift)
+    async function playCombo(url, onEnded = null) {
+      const rates = [1.0, 1.2, 1.5];
+      const stepMs = 120;
+      
+      for (let i = 0; i < rates.length; i++) {
+        const isLast = (i === rates.length - 1);
+        playSound(url, rates[i], isLast ? onEnded : null);
+        if (!isLast) {
+          await new Promise(res => setTimeout(res, stepMs));
+        }
+      }
+    }
+
+    // Процедурный синтез звука Debuff (из synth.ts Balite)
+    function playDebuffSynthSound(onEnded = null) {
+      const ctx = getAudioContext();
+      const now = ctx.currentTime;
+
+      // Тон 1: Sawtooth 220Hz -> 110Hz с Lowpass фильтром 680Hz -> 180Hz (0.2s)
+      const osc1 = ctx.createOscillator();
+      const filter1 = ctx.createBiquadFilter();
+      const gain1 = ctx.createGain();
+
+      osc1.type = 'sawtooth';
+      osc1.frequency.setValueAtTime(220, now);
+      osc1.frequency.exponentialRampToValueAtTime(110, now + 0.2);
+
+      filter1.type = 'lowpass';
+      filter1.frequency.setValueAtTime(680, now);
+      filter1.frequency.exponentialRampToValueAtTime(180, now + 0.2);
+
+      gain1.gain.setValueAtTime(0.001, now);
+      gain1.gain.linearRampToValueAtTime(0.15, now + 0.005);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+
+      osc1.connect(filter1);
+      filter1.connect(gain1);
+      gain1.connect(masterGain);
+
+      osc1.start(now);
+      osc1.stop(now + 0.21);
+
+      // Тон 2: Triangle 155.56Hz -> 92.5Hz (0.19s, задержка 0.03s)
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      const t2 = now + 0.03;
+
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(155.56, t2);
+      osc2.frequency.exponentialRampToValueAtTime(92.5, t2 + 0.19);
+
+      gain2.gain.setValueAtTime(0.001, t2);
+      gain2.gain.linearRampToValueAtTime(0.13, t2 + 0.005);
+      gain2.gain.exponentialRampToValueAtTime(0.001, t2 + 0.19);
+
+      osc2.connect(gain2);
+      gain2.connect(masterGain);
+
+      osc2.start(t2);
+      osc2.stop(t2 + 0.20);
+
+      setTimeout(() => {
+        if (onEnded) onEnded();
+      }, 230);
+    }
+
+    function stopAllAudio() {
+      activeSources.forEach(s => {
+        try { s.stop(); } catch(e) {}
+      });
+      activeSources.clear();
+      document.querySelectorAll('.play-btn').forEach(b => b.classList.remove('is-playing'));
+    }
+
+    // --- РЕНДЕРИНГ КАРТОЧЕК ---
+    function renderApp() {
+      const container = document.getElementById('categoriesContainer');
+      container.innerHTML = '';
+
+      // Группировка по категориям
+      const categories = {};
+      AUDIO_ITEMS.forEach(item => {
+        if (!categories[item.category]) categories[item.category] = [];
+        categories[item.category].push(item);
+      });
+
+      for (const [catName, items] of Object.entries(categories)) {
+        const catSection = document.createElement('section');
+        catSection.className = 'category-section';
+
+        const catHeader = document.createElement('div');
+        catHeader.className = 'category-header';
+        catHeader.innerHTML = `
+          <h2 class="category-title">${catName}</h2>
+          <span class="category-count">${items.length}</span>
+        `;
+        catSection.appendChild(catHeader);
+
+        const grid = document.createElement('div');
+        grid.className = 'cards-grid';
+
+        items.forEach(item => {
+          const card = document.createElement('div');
+          card.className = `sound-card verdict-${userVerdicts[item.id] || 'now'}`;
+          card.id = `card-${item.id}`;
+
+          // Шапка карточки
+          const cardTop = document.createElement('div');
+          cardTop.className = 'card-top';
+          cardTop.innerHTML = `
+            <div class="card-title-group">
+              <span class="card-id">${item.file}</span>
+              <div class="card-title">${item.name}</div>
+            </div>
+            <div class="card-sizes">
+              <div>Сейчас: <strong style="color: #6ee7b7;">${item.sizeNow}</strong></div>
+              <div>Было: <strong style="color: #fdba74;">${item.sizeBefore}</strong></div>
+            </div>
+          `;
+          card.appendChild(cardTop);
+
+          // Описание
+          const desc = document.createElement('div');
+          desc.className = 'card-desc';
+          desc.textContent = item.desc;
+          card.appendChild(desc);
+
+          // Кнопки прослушивания
+          const playRow = document.createElement('div');
+          playRow.className = 'audio-play-row';
+
+          // Кнопка [▶ Сейчас]
+          if (item.hasNow) {
+            const btnNow = document.createElement('button');
+            btnNow.className = 'play-btn play-btn-now';
+            btnNow.innerHTML = `
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span>Сейчас</span>
+            `;
+            btnNow.onclick = () => {
+              btnNow.classList.add('is-playing');
+              playSound(`./audio-compare/now/${item.file}`, 1.0, () => {
+                btnNow.classList.remove('is-playing');
+              });
+            };
+            playRow.appendChild(btnNow);
+          }
+
+          // Кнопка [▶ Синтезатор] (для debuff)
+          if (item.hasSynth) {
+            const btnSynth = document.createElement('button');
+            btnSynth.className = 'play-btn play-btn-synth';
+            btnSynth.innerHTML = `
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span>Синтезатор (Web Audio 200мс)</span>
+            `;
+            btnSynth.onclick = () => {
+              btnSynth.classList.add('is-playing');
+              playDebuffSynthSound(() => {
+                btnSynth.classList.remove('is-playing');
+              });
+            };
+            playRow.appendChild(btnSynth);
+          }
+
+          // Кнопка [▶ Было]
+          const btnBefore = document.createElement('button');
+          btnBefore.className = 'play-btn play-btn-before';
+          btnBefore.innerHTML = `
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            <span>Было (f452645)</span>
+          `;
+          btnBefore.onclick = () => {
+            btnBefore.classList.add('is-playing');
+            playSound(`./audio-compare/before/${item.file}`, 1.0, () => {
+              btnBefore.classList.remove('is-playing');
+            });
+          };
+          playRow.appendChild(btnBefore);
+
+          // Кнопки Комбо для chip_hit и mult_hit
+          if (item.hasCombo) {
+            const btnComboNow = document.createElement('button');
+            btnComboNow.className = 'play-btn play-btn-combo';
+            btnComboNow.innerHTML = `
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
+              <span>Комбо Сейчас</span>
+            `;
+            btnComboNow.onclick = () => {
+              btnComboNow.classList.add('is-playing');
+              playCombo(`./audio-compare/now/${item.file}`, () => {
+                btnComboNow.classList.remove('is-playing');
+              });
+            };
+            playRow.appendChild(btnComboNow);
+
+            const btnComboBefore = document.createElement('button');
+            btnComboBefore.className = 'play-btn play-btn-combo';
+            btnComboBefore.innerHTML = `
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
+              <span>Комбо Было</span>
+            `;
+            btnComboBefore.onclick = () => {
+              btnComboBefore.classList.add('is-playing');
+              playCombo(`./audio-compare/before/${item.file}`, () => {
+                btnComboBefore.classList.remove('is-playing');
+              });
+            };
+            playRow.appendChild(btnComboBefore);
+          }
+
+          card.appendChild(playRow);
+
+          // Строка вердикта (Оставить Сейчас / Вернуть Было)
+          const verdictRow = document.createElement('div');
+          verdictRow.className = 'verdict-row';
+
+          const vLabel = document.createElement('span');
+          vLabel.className = 'verdict-label';
+          vLabel.textContent = 'Вердикт:';
+          verdictRow.appendChild(vLabel);
+
+          const choices = document.createElement('div');
+          choices.className = 'verdict-choices';
+
+          const btnChoiceNow = document.createElement('button');
+          btnChoiceNow.className = `choice-btn ${userVerdicts[item.id] === 'now' ? 'selected-now' : ''}`;
+          btnChoiceNow.innerHTML = `<span>🟢</span> <span>Оставить Сейчас</span>`;
+          btnChoiceNow.onclick = () => {
+            userVerdicts[item.id] = 'now';
+            updateCardVerdictClass(item.id);
+            btnChoiceNow.classList.add('selected-now');
+            btnChoiceBefore.classList.remove('selected-before');
+            updateStatsAndPreview();
+          };
+
+          const btnChoiceBefore = document.createElement('button');
+          btnChoiceBefore.className = `choice-btn ${userVerdicts[item.id] === 'before' ? 'selected-before' : ''}`;
+          btnChoiceBefore.innerHTML = `<span>🟠</span> <span>Вернуть Было</span>`;
+          btnChoiceBefore.onclick = () => {
+            userVerdicts[item.id] = 'before';
+            updateCardVerdictClass(item.id);
+            btnChoiceBefore.classList.add('selected-before');
+            btnChoiceNow.classList.remove('selected-now');
+            updateStatsAndPreview();
+          };
+
+          choices.appendChild(btnChoiceNow);
+          choices.appendChild(btnChoiceBefore);
+          verdictRow.appendChild(choices);
+
+          card.appendChild(verdictRow);
+          grid.appendChild(card);
+        });
+
+        catSection.appendChild(grid);
+        container.appendChild(catSection);
+      }
+
+      updateStatsAndPreview();
+    }
+
+    function updateCardVerdictClass(id) {
+      const card = document.getElementById(`card-${id}`);
+      if (card) {
+        card.classList.remove('verdict-now', 'verdict-before');
+        card.classList.add(`verdict-${userVerdicts[id]}`);
+      }
+    }
+
+    // Генерация текста вердикта для буфера обмена / поля
+    function generateVerdictText() {
+      let countNow = 0;
+      let countBefore = 0;
+
+      const lines = [];
+      lines.push('=== ВЕРДИКТ ПО ЗВУКАМ BALITE ===');
+      lines.push('');
+
+      AUDIO_ITEMS.forEach((item, index) => {
+        const v = userVerdicts[item.id];
+        let verdictLabel = 'Оставить Сейчас';
+        if (v === 'before') {
+          verdictLabel = 'Вернуть Было';
+          countBefore++;
+        } else {
+          if (item.id === 'debuff') {
+            verdictLabel = 'Оставить Сейчас (Синтезатор)';
+          }
+          countNow++;
+        }
+
+        const num = String(index + 1).padStart(2, '0');
+        lines.push(`${num}. ${item.name} (${item.file}): ${verdictLabel}`);
+      });
+
+      lines.push('');
+      lines.push(`Итого: Оставить Сейчас = ${countNow}, Вернуть Было = ${countBefore}`);
+      return lines.join('\n');
+    }
+
+    function updateStatsAndPreview() {
+      let countNow = 0;
+      let countBefore = 0;
+
+      AUDIO_ITEMS.forEach(item => {
+        if (userVerdicts[item.id] === 'now') countNow++;
+        else countBefore++;
+      });
+
+      document.getElementById('countNow').textContent = countNow;
+      document.getElementById('countBefore').textContent = countBefore;
+
+      const textarea = document.getElementById('verdictTextarea');
+      textarea.value = generateVerdictText();
+    }
+
+    function copyVerdictToClipboard() {
+      const textarea = document.getElementById('verdictTextarea');
+      const textToCopy = textarea.value;
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(textToCopy).then(showToast).catch(() => fallbackCopy(textarea));
+      } else {
+        fallbackCopy(textarea);
+      }
+    }
+
+    function fallbackCopy(textarea) {
+      textarea.select();
+      document.execCommand('copy');
+      showToast();
+    }
+
+    function showToast() {
+      const toast = document.getElementById('toast');
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2600);
+    }
+
+    // --- ОБРАБОТЧИКИ СОБЫТИЙ ШАПКИ И ЭЛЕМЕНТОВ ---
+    document.addEventListener('DOMContentLoaded', () => {
+      // Инициализация интерфейса
+      renderApp();
+
+      // Ползунок громкости
+      const volSlider = document.getElementById('volumeSlider');
+      const volVal = document.getElementById('volumeVal');
+      volSlider.addEventListener('input', (e) => {
+        currentMasterVolume = parseFloat(e.target.value);
+        volVal.textContent = Math.round(currentMasterVolume * 100) + '%';
+        if (masterGain && audioCtx) {
+          masterGain.gain.setValueAtTime(currentMasterVolume, audioCtx.currentTime);
+        }
+      });
+
+      // Кнопка стоп
+      document.getElementById('btnStopAll').addEventListener('click', stopAllAudio);
+
+      // Кнопки массового выбора
+      document.getElementById('btnSelectAllNow').addEventListener('click', () => {
+        AUDIO_ITEMS.forEach(item => {
+          userVerdicts[item.id] = 'now';
+        });
+        renderApp();
+      });
+
+      document.getElementById('btnSelectAllBefore').addEventListener('click', () => {
+        AUDIO_ITEMS.forEach(item => {
+          userVerdicts[item.id] = 'before';
+        });
+        renderApp();
+      });
+
+      // Скролл к вердикту
+      document.getElementById('btnScrollToVerdict').addEventListener('click', () => {
+        document.getElementById('verdictSection').scrollIntoView({ behavior: 'smooth' });
+      });
+
+      // Кнопка обновления превью
+      document.getElementById('btnRefreshPreview').addEventListener('click', () => {
+        updateStatsAndPreview();
+        showToast();
+      });
+
+      // Копирование вердикта
+      document.getElementById('btnCopyVerdictBottom').addEventListener('click', copyVerdictToClipboard);
+    });
+  </script>
+</body>
+</html>

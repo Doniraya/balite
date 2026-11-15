@@ -337,21 +337,29 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: flex-start;
   gap: 1px;
-  padding: 4px 5px;
+  padding: 0;
   color: var(--suit-color);
   line-height: 1;
+  pointer-events: none;
+  z-index: 2;
 }
 
 .card-frame__corner--top {
-  top: 0;
-  left: 0;
+  top: 2px;
+  left: 3px;
 }
 
 .card-frame__corner--bottom {
-  right: 0;
-  bottom: 0;
+  right: 3px;
+  bottom: 2px;
   transform: rotate(180deg);
+}
+
+.card-frame.is-compact .card-frame__corner--top {
+  top: 2px;
+  left: 2px;
 }
 
 .card-frame.is-compact .card-frame__corner--bottom {
@@ -359,22 +367,31 @@
 }
 
 .card-frame__rank {
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  font-family: 'Pixellari', monospace;
+  font-size: clamp(20px, 24px, 26px);
+  font-weight: 700;
+  line-height: 0.9;
+  letter-spacing: -0.03em;
+  text-align: center;
+  text-rendering: geometricPrecision;
 }
 
 .card-frame.is-compact .card-frame__rank {
-  font-size: 11px;
+  font-size: clamp(16px, 17px, 18px);
+  line-height: 0.9;
 }
 
 .card-frame__suit {
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .card-frame.is-compact .card-frame__suit {
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .card-frame__enhancement-badge {

@@ -796,5 +796,23 @@ describe('Слоёный каркас карт CardFrame (TDD)', () => {
       expect(css).toContain('prefers-reduced-motion: reduce');
       expect(css).toMatch(/\.card-frame\.is-face-down[\s\S]*display:\s*none/);
     });
+
+    it('cardFrame.css использует пиксельный шрифт Pixellari для рангов и аккуратное позиционирование угловых индексов', async () => {
+      const fsModule = 'node:fs';
+      const { readFileSync } = (await import(/* @vite-ignore */ fsModule)) as {
+        readFileSync: (file: string, encoding: 'utf8') => string;
+      };
+      const css = readFileSync('src/ui/cardFrame.css', 'utf8');
+
+      expect(css).toContain("'Pixellari'");
+      expect(css).toContain('.card-frame__corner--top');
+      expect(css).toContain('.card-frame__corner--bottom');
+      expect(css).toContain('.card-frame__rank');
+      expect(css).toContain('.card-frame__suit');
+      expect(css).toMatch(/font-family:\s*['"]Pixellari['"],\s*monospace/);
+      expect(css).toMatch(/font-weight:\s*700/);
+      expect(css).toMatch(/line-height:\s*0\.9/);
+      expect(css).toMatch(/letter-spacing:\s*-0\.03em/);
+    });
   });
 });

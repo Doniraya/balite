@@ -218,17 +218,18 @@
   align-items: center;
   justify-content: space-between;
   gap: 4px;
-  font-size: clamp(10px, min(2.3vw, 1.35dvh), 12px);
-  font-weight: 700;
+  font-size: clamp(11px, 2.4vw, 13px);
+  font-weight: 800;
   color: var(--screen-gold);
 }
 
 .hud-round-pill {
-  padding: 2px 6px;
+  padding: 2px 8px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
   color: var(--screen-text);
-  font-size: clamp(9.5px, min(2.1vw, 1.25dvh), 11px);
+  font-size: clamp(11px, 2.4vw, 13px);
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -257,7 +258,7 @@
 }
 
 .hud-boss-btn__title {
-  font-size: clamp(11px, min(2.5vw, 1.5dvh), 13px);
+  font-size: clamp(13px, 2.9vw, 16px);
   font-weight: 800;
   color: var(--screen-gold);
   white-space: nowrap;
@@ -267,7 +268,7 @@
 }
 
 .hud-boss-btn__desc {
-  font-size: clamp(9.5px, min(2.1vw, 1.25dvh), 11px);
+  font-size: clamp(10.5px, 2.3vw, 12.5px);
   color: var(--screen-muted);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -276,8 +277,8 @@
 }
 
 .hud-boss-btn__badge {
-  font-size: 10px;
-  font-weight: 700;
+  font-size: clamp(11px, 2.4vw, 13px);
+  font-weight: 800;
   color: #ffb8b8;
   text-transform: uppercase;
 }
@@ -302,7 +303,8 @@
 }
 
 .hud-score-box__label {
-  font-size: clamp(9.5px, min(2.1vw, 1.25dvh), 11px);
+  font-size: clamp(11px, 2.4vw, 13px);
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--screen-muted);
@@ -316,14 +318,14 @@
 }
 
 .hud-score-box__value {
-  font-size: clamp(15px, min(3.4vw, 2dvh), 20px);
+  font-size: clamp(17px, 4vw, 24px);
   font-weight: 900;
   color: var(--screen-text);
 }
 
 .hud-score-box__target {
-  font-size: clamp(10px, min(2.3vw, 1.35dvh), 12px);
-  font-weight: 700;
+  font-size: clamp(12px, 2.6vw, 14px);
+  font-weight: 800;
   color: var(--screen-gold);
 }
 
@@ -337,7 +339,7 @@
 }
 
 .hud-hand-row__name {
-  font-size: clamp(11px, min(2.6vw, 1.5dvh), 14px);
+  font-size: clamp(13px, 2.8vw, 16px);
   font-weight: 800;
   color: var(--screen-text);
   white-space: nowrap;
@@ -347,9 +349,9 @@
 
 .hud-hand-row__level {
   flex-shrink: 0;
-  font-size: clamp(9.5px, min(2.1vw, 1.25dvh), 11px);
+  font-size: clamp(11px, 2.3vw, 12.5px);
   font-weight: 700;
-  padding: 1px 5px;
+  padding: 1px 6px;
   border-radius: 6px;
   background: rgba(244, 197, 82, 0.16);
   color: var(--screen-gold);
@@ -389,12 +391,13 @@
 }
 
 .hud-pill__label {
-  font-size: clamp(9px, min(2vw, 1.15dvh), 10px);
-  opacity: 0.88;
+  font-size: clamp(10px, 2.2vw, 12px);
+  font-weight: 700;
+  opacity: 0.92;
 }
 
 .hud-pill__val {
-  font-size: clamp(13px, min(3vw, 1.8dvh), 17px);
+  font-size: clamp(17px, 3.8vw, 22px);
   font-weight: 900;
   line-height: 1.1;
 }
@@ -402,7 +405,7 @@
 .hud-formula__x {
   position: relative;
   z-index: 2;
-  font-size: clamp(12px, min(2.8vw, 1.6dvh), 15px);
+  font-size: clamp(16px, 3.6vw, 22px);
   font-weight: 900;
   color: var(--screen-gold);
 }
@@ -433,16 +436,18 @@
 }
 
 .hud-stat__label {
-  font-size: clamp(8.5px, min(2vw, 1.15dvh), 10px);
+  font-size: clamp(11px, 2.4vw, 13px);
+  font-weight: 700;
   color: var(--screen-muted);
   white-space: nowrap;
 }
 
 .hud-stat__value {
-  font-size: clamp(11.5px, min(2.7vw, 1.55dvh), 15px);
-  font-weight: 800;
+  font-size: clamp(16px, 3.6vw, 22px);
+  font-weight: 900;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  line-height: 1.1;
 }
 
 .hud-stat__value--gold {
@@ -462,7 +467,9 @@
   min-width: 44px;
   min-height: 44px;
   padding: 4px clamp(3px, 0.6vw, 8px);
-  font-size: clamp(9.5px, min(2.2vw, 1.3dvh), 12px);
+  font-size: clamp(13px, 2.8vw, 16px);
+  font-weight: 800;
+  letter-spacing: 0.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -732,20 +739,20 @@
 }
 
 .deck-option__name {
-  font-size: clamp(12.5px, min(2.8vw, 1.6dvh), 14px);
+  font-size: clamp(14px, 2.8vw, 17px);
   font-weight: 800;
   color: var(--screen-gold);
 }
 
 .deck-option__status {
-  font-size: clamp(10px, min(2.2vw, 1.25dvh), 11px);
+  font-size: clamp(12px, 2.4vw, 14px);
   color: var(--screen-muted);
 }
 
 .deck-option__desc {
-  font-size: clamp(11px, min(2.4vw, 1.4dvh), 12px);
+  font-size: clamp(12px, 2.5vw, 14px);
   color: var(--screen-text);
-  opacity: 0.9;
+  opacity: 0.95;
 }
 
 .seed-bar {
@@ -855,7 +862,7 @@
   border-radius: 7px;
   border: 2px solid rgba(148, 163, 184, 0.25);
   background: rgba(30, 41, 48, 0.86);
-  font-size: clamp(9.5px, min(2.1vw, 1.25dvh), 12px);
+  font-size: clamp(11px, 2.3vw, 13px);
   font-weight: 700;
   color: rgba(203, 213, 225, 0.78);
   text-align: center;
@@ -916,7 +923,7 @@
 }
 
 .blind-card__target-caption {
-  font-size: clamp(9.5px, min(2.1vw, 1.25dvh), 12px);
+  font-size: clamp(11px, 2.3vw, 13px);
   color: var(--screen-muted);
 }
 
@@ -953,7 +960,7 @@
   border-radius: 6px;
   background: rgba(217, 70, 62, 0.2);
   color: #ffc3c3;
-  font-size: clamp(9.5px, min(2.1vw, 1.25dvh), 11px);
+  font-size: clamp(11px, 2.3vw, 12.5px);
   font-weight: 700;
 }
 
@@ -1016,7 +1023,8 @@
 .blind-card__skip-btn {
   width: 100%;
   padding: 6px 6px;
-  font-size: clamp(9.5px, min(2vw, 1.2dvh), 12px);
+  font-size: clamp(11.5px, 2.5vw, 13.5px);
+  font-weight: 800;
 }
 
 .blind-card__stage-advance {
@@ -1033,7 +1041,7 @@
 }
 
 .blind-card__stage-advance-desc {
-  font-size: clamp(9px, min(2vw, 1.15dvh), 11.5px);
+  font-size: clamp(10.5px, 2.2vw, 12px);
   color: var(--screen-muted);
   line-height: 1.2;
 }
@@ -1118,8 +1126,8 @@
 }
 
 .deck-stack__count {
-  font-size: clamp(10.5px, min(2.3vw, 1.35dvh), 13px);
-  font-weight: 700;
+  font-size: clamp(14px, 2.8vw, 16px);
+  font-weight: 800;
   color: #f8fafc;
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.85);
   font-variant-numeric: tabular-nums;
@@ -1496,6 +1504,26 @@
   gap: clamp(4px, 0.6dvh, 6px);
 }
 
+.hand-actions .ui-btn {
+  padding: 6px clamp(4px, 0.8vw, 8px);
+  font-size: clamp(12px, 2.5vw, 14px);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.hand-actions__play,
+.hand-actions__discard {
+  font-size: clamp(13px, 3.4vw, 17px);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.hand-actions__sort-rank,
+.hand-actions__sort-suit {
+  font-size: clamp(12px, 2.5vw, 14px);
+  font-weight: 700;
+}
+
 .hand-actions__sort-rank.is-active,
 .hand-actions__sort-suit.is-active {
   background: linear-gradient(180deg, #2d6fb8 0%, #1d4a7d 100%);
@@ -1532,8 +1560,17 @@
   }
 
   .hand-actions .ui-btn {
-    padding: 4px 3px;
-    font-size: clamp(9.5px, min(2.1vw, 1.25dvh), 12px);
+    padding: 4px 2px;
+  }
+
+  .hand-actions__play,
+  .hand-actions__discard {
+    font-size: clamp(13px, 3.4vw, 17px);
+  }
+
+  .hand-actions__sort-rank,
+  .hand-actions__sort-suit {
+    font-size: clamp(12px, 2.5vw, 14px);
   }
 }
 
@@ -1860,11 +1897,11 @@
   }
 
   .hud-boss-btn__title {
-    font-size: clamp(18px, min(1.7vw, 2.5dvh), 24px);
+    font-size: clamp(20px, 1.8vw, 26px);
   }
 
   .hud-boss-btn__desc {
-    font-size: clamp(13px, min(1.25vw, 1.9dvh), 17px);
+    font-size: clamp(14px, 1.3vw, 18px);
     -webkit-line-clamp: 3;
   }
 
@@ -1883,15 +1920,15 @@
   }
 
   .hud-score-box__label {
-    font-size: clamp(13px, 1.15vw, 17px);
+    font-size: clamp(14px, 1.25vw, 17px);
   }
 
   .hud-score-box__value {
-    font-size: clamp(26px, min(2.4vw, 3.8dvh), 40px);
+    font-size: clamp(28px, min(2.6vw, 4dvh), 42px);
   }
 
   .hud-score-box__target {
-    font-size: clamp(15px, min(1.35vw, 2.2dvh), 22px);
+    font-size: clamp(16px, min(1.45vw, 2.3dvh), 22px);
   }
 
   .hud-hand-row {
@@ -1899,11 +1936,11 @@
   }
 
   .hud-hand-row__name {
-    font-size: clamp(18px, min(1.65vw, 2.5dvh), 25px);
+    font-size: clamp(19px, min(1.7vw, 2.6dvh), 26px);
   }
 
   .hud-hand-row__level {
-    font-size: clamp(13px, 1.15vw, 17px);
+    font-size: clamp(14px, 1.25vw, 17px);
     padding: 3px 8px;
   }
 
@@ -1912,15 +1949,15 @@
   }
 
   .hud-pill__label {
-    font-size: clamp(12px, 1.05vw, 16px);
+    font-size: clamp(14px, 1.25vw, 16px);
   }
 
   .hud-pill__val {
-    font-size: clamp(28px, min(2.6vw, 4.1dvh), 44px);
+    font-size: clamp(30px, min(2.8vw, 4.4dvh), 46px);
   }
 
   .hud-formula__x {
-    font-size: clamp(22px, min(2vw, 3.2dvh), 34px);
+    font-size: clamp(24px, min(2.2vw, 3.4dvh), 34px);
   }
 
   .hud-buttons-row {
@@ -1937,7 +1974,8 @@
     width: 100%;
     min-height: 58px;
     padding: 8px 10px;
-    font-size: clamp(16px, min(1.45vw, 2.2dvh), 22px);
+    font-size: clamp(17px, min(1.5vw, 2.3dvh), 22px);
+    font-weight: 800;
     white-space: normal;
   }
 
@@ -1967,11 +2005,12 @@
   }
 
   .hud-stat__label {
-    font-size: clamp(12px, min(1.05vw, 1.7dvh), 16px);
+    font-size: clamp(14px, 1.3vw, 16px);
+    font-weight: 700;
   }
 
   .hud-stat__value {
-    font-size: clamp(24px, min(2.2vw, 3.4dvh), 36px);
+    font-size: clamp(24px, 2.4vw, 34px);
   }
 
   .hud-stat--gold {
@@ -1982,7 +2021,7 @@
   }
 
   .hud-stat--gold .hud-stat__value {
-    font-size: clamp(26px, min(2.35vw, 3.6dvh), 38px);
+    font-size: clamp(26px, 2.6vw, 36px);
   }
 
   .hud-stage-row {
@@ -2003,7 +2042,7 @@
     padding: 8px 6px;
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.08);
-    font-size: clamp(14px, min(1.3vw, 2dvh), 19px);
+    font-size: clamp(15px, 1.4vw, 19px);
     font-weight: 700;
     white-space: normal;
   }
@@ -2287,7 +2326,13 @@
 
   .hand-actions .ui-btn:not(.deck-stack-btn) {
     min-height: 54px;
-    font-size: clamp(15px, min(1.35vw, 2.1dvh), 20px);
+    font-size: clamp(15px, 1.4vw, 18px);
+  }
+
+  .hand-actions__play,
+  .hand-actions__discard {
+    font-size: clamp(18px, 1.8vw, 24px) !important;
+    font-weight: 800;
   }
 
   .hand-actions__play {
@@ -2296,10 +2341,14 @@
 
   .hand-actions__sort-rank {
     grid-area: sortRank;
+    font-size: clamp(15px, 1.4vw, 18px) !important;
+    font-weight: 700;
   }
 
   .hand-actions__sort-suit {
     grid-area: sortSuit;
+    font-size: clamp(15px, 1.4vw, 18px) !important;
+    font-weight: 700;
   }
 
   .hand-actions__discard {
@@ -2321,7 +2370,8 @@
   }
 
   .deck-stack__count {
-    font-size: clamp(14px, min(1.3vw, 2dvh), 18px);
+    font-size: clamp(16px, 1.5vw, 20px);
+    font-weight: 800;
   }
 }
 

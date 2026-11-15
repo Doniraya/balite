@@ -3,6 +3,14 @@
   font-family: 'Pixellari';
   font-style: normal;
   font-display: swap;
+  font-weight: 100 900;
+  src: url('./assets/fonts/pixellari-cyrillic.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Pixellari';
+  font-style: normal;
+  font-display: swap;
   font-weight: 400;
   src: url('./assets/fonts/pixellari-cyrillic.woff2') format('woff2');
 }
@@ -12,6 +20,22 @@
   font-style: normal;
   font-display: swap;
   font-weight: 700;
+  src: url('./assets/fonts/pixellari-cyrillic.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Pixellari';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 800;
+  src: url('./assets/fonts/pixellari-cyrillic.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Pixellari';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 900;
   src: url('./assets/fonts/pixellari-cyrillic.woff2') format('woff2');
 }
 
