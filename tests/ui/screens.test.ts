@@ -1532,5 +1532,22 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
         expect(getBlindSpriteUrl('big', null, ante)).toBe(`./sprites/blinds/ante_${ante}_big.webp`);
       }
     });
+
+    it('screens.css содержит дизайн-токены средневековой таверны (мореный дуб, латунь, пергамент)', async () => {
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      const cssPath = path.resolve(__dirname, '../../src/ui/screens.css');
+      const css = fs.readFileSync(cssPath, 'utf-8');
+
+      // Проверяем наличие токенов дубовой палитры в :root
+      expect(css).toContain('--screen-bg-top: #2a160c');
+      expect(css).toContain('--screen-bg-bottom: #120905');
+      expect(css).toContain('--screen-panel: rgba(26, 15, 9, 0.94)');
+      expect(css).toContain('--screen-brass: #b8860b');
+      expect(css).toContain('--parchment-card-bg:');
+
+      // Устаревшие кислотно-зеленые токены сукна не должны быть в :root
+      expect(css).not.toContain('--screen-bg-top: #173429');
+    });
   });
 });

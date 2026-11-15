@@ -1,19 +1,26 @@
 /* Стили 4-поясного портретного интерфейса Balite (720×1280) без эффектов наведения курсора */
 
 .run-shell {
-  --screen-bg-top: #173429;
-  --screen-bg-bottom: #08120e;
-  --screen-panel: rgba(12, 26, 21, 0.88);
-  --screen-panel-alt: rgba(19, 40, 32, 0.92);
-  --screen-border: rgba(235, 200, 118, 0.28);
-  --screen-border-strong: rgba(244, 197, 82, 0.72);
-  --screen-text: #f3efe6;
-  --screen-muted: #b6c2b9;
-  --screen-gold: #f4c552;
-  --screen-chips: #2568d8;
-  --screen-mult: #d9463e;
-  --screen-success: #2fa36b;
-  --screen-danger: #c64545;
+  --screen-bg-top: #2a160c;
+  --screen-bg-bottom: #120905;
+  --screen-panel: rgba(26, 15, 9, 0.94);
+  --screen-panel-alt: rgba(38, 22, 13, 0.96);
+  --screen-border: rgba(212, 163, 72, 0.42);
+  --screen-border-strong: rgba(245, 185, 66, 0.85);
+  --screen-text: #fff6e5;
+  --screen-muted: #c9b499;
+  --screen-gold: #f5b942;
+  --screen-gold-rich: #ffd584;
+  --screen-brass: #b8860b;
+  --screen-brass-border: #8c5d1e;
+  --screen-chips: #1e58b8;
+  --screen-chips-highlight: #3b82f6;
+  --screen-mult: #b91c1c;
+  --screen-mult-highlight: #ef4444;
+  --screen-success: #2e7d32;
+  --screen-danger: #a82020;
+  --parchment-bg: #f5ecd5;
+  --parchment-card-bg: linear-gradient(180deg, rgba(46, 31, 20, 0.96) 0%, rgba(24, 16, 11, 0.98) 100%);
 
   position: relative;
   display: grid;
@@ -31,9 +38,9 @@
   color: var(--screen-text);
   background: radial-gradient(
     circle at 50% 24%,
-    rgba(23, 52, 41, 0.72) 0%,
-    rgba(14, 31, 25, 0.78) 60%,
-    rgba(8, 18, 14, 0.86) 100%
+    rgba(58, 32, 18, 0.76) 0%,
+    rgba(34, 18, 10, 0.84) 60%,
+    rgba(18, 9, 5, 0.92) 100%
   );
   font-family: var(--font-ui, 'Pixellari', 'Segoe UI', system-ui, sans-serif);
   -webkit-tap-highlight-color: transparent;
@@ -54,9 +61,9 @@
   min-height: 0;
   border: 2px solid var(--screen-border);
   border-radius: 8px;
-  background: rgba(12, 26, 21, 0.84);
+  background: var(--screen-panel);
   box-shadow:
-    0 3px 0 rgba(4, 10, 8, 0.78),
+    0 4px 12px rgba(0, 0, 0, 0.65),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
   padding: clamp(4px, 0.6dvh, 6px) clamp(6px, 0.8vw, 8px);
   box-sizing: border-box;
@@ -1947,7 +1954,8 @@
     flex-direction: column;
     justify-content: space-between;
     padding: clamp(12px, 1.6dvh, 20px);
-    background: rgba(14, 24, 30, 0.92);
+    background: rgba(28, 16, 10, 0.94);
+    border: 2px solid var(--screen-border);
   }
 
   .hud-title-bar {
@@ -2441,7 +2449,8 @@
   /* Правая нижняя зона: широкий веер руки и стопка Колоды в правом нижнем углу стола */
   .belt--hand {
     grid-area: hand;
-    background: rgba(12, 26, 21, 0.72);
+    background: rgba(28, 16, 10, 0.88);
+    border: 2px solid var(--screen-border);
     padding: clamp(8px, 1dvh, 14px) clamp(14px, 1.5vw, 20px);
   }
 
