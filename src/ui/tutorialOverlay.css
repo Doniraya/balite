@@ -674,3 +674,16 @@
     padding: 11px 30px;
   }
 }
+
+/* 9. Тактильная подсветка элементов сквозь оверлей обучения при наведении мыши */
+@media (hover: hover) and (pointer: fine) {
+  .card-frame.tut-hovered,
+  .shop-slot-btn.tut-hovered,
+  .hand-card-slot.tut-hovered,
+  .sidebar-card.tut-hovered {
+    filter: brightness(1.14) drop-shadow(0 0 8px rgba(245, 185, 66, 0.55));
+    transform: translateY(-4px);
+    transition: transform 0.15s ease, filter 0.15s ease;
+  }
+}
+

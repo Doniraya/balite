@@ -450,4 +450,103 @@ describe('createTutorialOverlay', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     expect(onSkip).not.toHaveBeenCalled();
   });
+
+  it('Hover Bridge: пробрасывает ховер и тултипы на игровые элементы под блокировщиком', () => {
+    const cardEl = document.createElement('div');
+    cardEl.className = 'hand-card-slot';
+    cardEl.dataset.tooltipTitle = 'Туз Пик';
+    cardEl.dataset.tooltipDescription = '+11 Силы';
+    document.body.appendChild(cardEl);
+
+    const onPointerOver = vi.fn();
+    const onPointerOut = vi.fn();
+    cardEl.addEventListener('pointerover', onPointerOver);
+    cardEl.addEventListener('pointerout', onPointerOut);
+
+    controller.showStep({
+      id: 'step-hover-test',
+      title: 'Изучите карты',
+      text: 'Наведитесь на любую карту.',
+    });
+
+    const overlayEl = document.querySelector<HTMLElement>('.tut-overlay')!;
+    const blockerEl = document.querySelector<HTMLElement>('.tut-click-blocker')!;
+
+    // Мокаем document.elementsFromPoint для jsdom
+    const origElementsFromPoint = document.elementsFromPoint;
+    document.elementsFromPoint = vi.fn().mockImplementation((x: number, y: number) => {
+      if (x === 100 && y === 100) {
+        return [blockerEl, overlayEl, cardEl, document.body];
+      }
+      return [blockerEl, overlayEl, document.body];
+    });
+
+    try {
+      // 1. Наведение мыши на координаты карты (100, 100)
+      window.dispatchEvent(
+        new PointerEvent('pointermove', {
+          clientX: 100,
+          clientY: 100,
+          pointerType: 'mouse',
+        }),
+      );
+
+      expect(cardEl.classList.contains('tut-hovered')).toBe(true);
+      expect(onPointerOver).toHaveBeenCalledTimes(1);
+      expect(blockerEl.style.cursor).toBe('pointer');
+
+      // 2. Уход мыши в пустое место (0, 0)
+      window.dispatchEvent(
+        new PointerEvent('pointermove', {
+          clientX: 500,
+          clientY: 500,
+          pointerType: 'mouse',
+        }),
+      );
+
+      expect(cardEl.classList.contains('tut-hovered')).toBe(false);
+      expect(onPointerOut).toHaveBeenCalledTimes(1);
+      expect(blockerEl.style.cursor).toBe('default');
+    } finally {
+      document.elementsFromPoint = origElementsFromPoint;
+      cardEl.remove();
+    }
+  });
+
+  it('Hover Bridge: клик по интерактивной кнопке под оверлеем активирует её', () => {
+    const combinationsBtn = document.createElement('button');
+    combinationsBtn.id = 'combinations-btn';
+    combinationsBtn.textContent = 'Комбинации';
+    document.body.appendChild(combinationsBtn);
+
+    const onBtnClick = vi.fn();
+    combinationsBtn.addEventListener('click', onBtnClick);
+
+    controller.showStep({
+      id: 'step-click-through',
+      title: 'Комбинации',
+      text: 'Нажмите кнопку «Комбинации».',
+    });
+
+    const overlayEl = document.querySelector<HTMLElement>('.tut-overlay')!;
+    const blockerEl = document.querySelector<HTMLElement>('.tut-click-blocker')!;
+
+    const origElementsFromPoint = document.elementsFromPoint;
+    document.elementsFromPoint = vi.fn().mockReturnValue([blockerEl, overlayEl, combinationsBtn, document.body]);
+
+    try {
+      const clickEvent = new MouseEvent('click', {
+        clientX: 150,
+        clientY: 250,
+        bubbles: true,
+      });
+      blockerEl.dispatchEvent(clickEvent);
+
+      expect(onBtnClick).toHaveBeenCalledTimes(1);
+      expect(onNext).not.toHaveBeenCalled();
+    } finally {
+      document.elementsFromPoint = origElementsFromPoint;
+      combinationsBtn.remove();
+    }
+  });
 });

@@ -4,7 +4,7 @@
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 95;
+  z-index: 1000;
   width: max-content;
   min-width: clamp(230px, 20vw, 290px);
   max-width: min(clamp(340px, 32vw, 440px), calc(100vw - 24px));

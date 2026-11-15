@@ -20,6 +20,13 @@ import type { Translator } from '../i18n';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /**
+ * Возвращает относительный путь к пиксель-арт спрайту Навыка (Реликвии / Джокера).
+ */
+export function getRelicSpriteUrl(relicId: RelicId): string {
+  return `./sprites/relics/${relicId}.webp`;
+}
+
+/**
  * Опции отрисовки слоёного каркаса игральной карты.
  */
 export interface PlayingCardFrameOptions {
@@ -1604,6 +1611,19 @@ export function renderEntityCardFrame(options: EntityCardFrameOptions): HTMLElem
 
       titleText = translator.getRelicText(options.relic.id).name;
       layers.chrome.appendChild(createHtmlEl('span', 'card-frame__rarity-badge', rarityLabel));
+
+      const spriteUrl = getRelicSpriteUrl(options.relic.id);
+      if (spriteUrl) {
+        const img = createHtmlEl('img', 'card-frame__relic-sprite') as HTMLImageElement;
+        img.src = spriteUrl;
+        img.alt = '';
+        img.loading = 'eager';
+        img.draggable = false;
+        img.onerror = () => {
+          img.remove();
+        };
+        layers.art.appendChild(img);
+      }
       break;
     }
 

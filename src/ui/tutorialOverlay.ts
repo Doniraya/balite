@@ -1,4 +1,5 @@
 import './tutorialOverlay.css';
+import { getTooltipData } from './tooltip';
 import {
   type CanonicalTutorialEmotion,
   normalizeTutorialEmotion,
@@ -564,6 +565,126 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
     }
   }
 
+  let lastHoveredElement: HTMLElement | null = null;
+
+  function clearHoveredElement(): void {
+    if (lastHoveredElement) {
+      lastHoveredElement.classList.remove('tut-hovered');
+      lastHoveredElement.dispatchEvent(
+        new PointerEvent('pointerout', {
+          bubbles: true,
+          cancelable: true,
+          pointerType: 'mouse',
+        }),
+      );
+      lastHoveredElement = null;
+    }
+    blockerEl.style.cursor = 'default';
+  }
+
+  function handlePointerMove(e: PointerEvent): void {
+    if (!isVisible) return;
+    if (e.pointerType === 'touch') return;
+
+    // Если курсор находится над плавающим кластером Миры или кнопками оверлея
+    const targetNode = e.target;
+    if (
+      targetNode instanceof Node &&
+      (cardEl.contains(targetNode) || topSkipBtn.contains(targetNode))
+    ) {
+      clearHoveredElement();
+      return;
+    }
+
+    if (typeof document.elementsFromPoint !== 'function') {
+      return;
+    }
+
+    const elements = document.elementsFromPoint(e.clientX, e.clientY);
+    let gameTarget: HTMLElement | null = null;
+    for (const el of elements) {
+      if (el instanceof HTMLElement && !overlayEl.contains(el)) {
+        gameTarget = el;
+        break;
+      }
+    }
+
+    if (!gameTarget) {
+      clearHoveredElement();
+      return;
+    }
+
+    // Ищем хост тултипа или интерактивный элемент
+    let hostEl: HTMLElement | null = null;
+    let curr: HTMLElement | null = gameTarget;
+    while (curr && curr !== document.body && curr !== document.documentElement) {
+      if (
+        getTooltipData(curr) ||
+        curr.dataset.tooltipTitle ||
+        curr.dataset.tooltipHidden === 'true' ||
+        curr.dataset.faceDown === 'true' ||
+        curr.classList.contains('hand-card-slot') ||
+        curr.classList.contains('interactive-slot') ||
+        curr.classList.contains('card-frame') ||
+        curr.classList.contains('shop-slot-btn') ||
+        curr.classList.contains('blind-card') ||
+        curr.classList.contains('sidebar-card') ||
+        curr.tagName === 'BUTTON'
+      ) {
+        hostEl = curr;
+        break;
+      }
+      curr = curr.parentElement;
+    }
+
+    if (!hostEl) {
+      hostEl = gameTarget;
+    }
+
+    if (hostEl === lastHoveredElement) {
+      return;
+    }
+
+    // Смена хоста
+    if (lastHoveredElement) {
+      lastHoveredElement.classList.remove('tut-hovered');
+      lastHoveredElement.dispatchEvent(
+        new PointerEvent('pointerout', {
+          bubbles: true,
+          cancelable: true,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          pointerType: 'mouse',
+        }),
+      );
+    }
+
+    lastHoveredElement = hostEl;
+    lastHoveredElement.classList.add('tut-hovered');
+
+    // Диспатчим pointerover для tooltip.ts
+    lastHoveredElement.dispatchEvent(
+      new PointerEvent('pointerover', {
+        bubbles: true,
+        cancelable: true,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        pointerType: 'mouse',
+      }),
+    );
+
+    // Курсор: если элемент интерактивен, ставим pointer на блокировщике
+    const isInteractive =
+      hostEl.tagName === 'BUTTON' ||
+      hostEl.classList.contains('hand-card-slot') ||
+      hostEl.classList.contains('card-frame') ||
+      hostEl.classList.contains('shop-slot-btn') ||
+      hostEl.classList.contains('blind-card') ||
+      hostEl.getAttribute('role') === 'button';
+
+    blockerEl.style.cursor = isInteractive ? 'pointer' : 'default';
+  }
+
   // Обработчики событий
   function handleNextClick(e?: Event): void {
     e?.stopPropagation();
@@ -575,7 +696,35 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
     options.onSkip();
   }
 
-  function handleBlockerClick(): void {
+  function handleBlockerClick(e?: MouseEvent): void {
+    // Если клик с мыши и под курсором есть игровой интерактивный элемент:
+    if (
+      e &&
+      typeof e.clientX === 'number' &&
+      typeof e.clientY === 'number' &&
+      (e.clientX > 0 || e.clientY > 0) &&
+      typeof document.elementsFromPoint === 'function'
+    ) {
+      const elements = document.elementsFromPoint(e.clientX, e.clientY);
+      let gameTarget: HTMLElement | null = null;
+      for (const el of elements) {
+        if (el instanceof HTMLElement && !overlayEl.contains(el)) {
+          gameTarget = el;
+          break;
+        }
+      }
+
+      if (gameTarget) {
+        const interactive = gameTarget.closest<HTMLElement>(
+          'button, .hand-card-slot, .card-frame, .shop-slot-btn, .blind-card, [role="button"]',
+        );
+        if (interactive) {
+          interactive.click();
+          return;
+        }
+      }
+    }
+
     // Если на шаге просто информационный показ без жесткого действия — клик по оверлею продолжает обучение
     if (!currentStep?.requireAction || currentStep.requireAction === 'next') {
       options.onNext();
@@ -621,6 +770,9 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
   window.addEventListener('keydown', handleKeyDown);
   window.addEventListener('resize', handleWindowResize);
   window.addEventListener('scroll', handleWindowResize, true);
+  window.addEventListener('pointermove', handlePointerMove, { passive: true });
+  window.addEventListener('pointerleave', clearHoveredElement);
+  window.addEventListener('blur', clearHoveredElement);
 
   /**
    * Контроллер управления оверлеем
@@ -696,6 +848,7 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
 
     hide(): void {
       isVisible = false;
+      clearHoveredElement();
       overlayEl.classList.remove('is-visible');
       currentTargetElement = null;
       currentArrowPosition = 'none';
@@ -715,6 +868,7 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
 
     destroy(): void {
       isVisible = false;
+      clearHoveredElement();
       currentTargetElement = null;
       currentStep = null;
 
@@ -725,6 +879,9 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('resize', handleWindowResize);
       window.removeEventListener('scroll', handleWindowResize, true);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerleave', clearHoveredElement);
+      window.removeEventListener('blur', clearHoveredElement);
 
       if (overlayEl.parentNode) {
         overlayEl.parentNode.removeChild(overlayEl);

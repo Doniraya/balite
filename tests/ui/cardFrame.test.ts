@@ -23,6 +23,7 @@ import {
 import { createTranslator } from '../../src/i18n';
 import {
   attachCardTilt,
+  getRelicSpriteUrl,
   renderEntityCardFrame,
   renderPlayingCardFrame,
 } from '../../src/ui/cardFrame';
@@ -337,6 +338,10 @@ describe('Слоёный каркас карт CardFrame (TDD)', () => {
       );
       expect(el1.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 120 168');
       expect(el1.querySelector('.card-frame__fx--foil')).not.toBeNull();
+      const relicSprite = el1.querySelector<HTMLImageElement>('.card-frame__relic-sprite');
+      expect(relicSprite).not.toBeNull();
+      expect(relicSprite?.src).toContain('sprites/relics/j_joker.webp');
+      expect(getRelicSpriteUrl('j_joker')).toBe('./sprites/relics/j_joker.webp');
 
       const el2 = renderEntityCardFrame({
         kind: 'relic',
