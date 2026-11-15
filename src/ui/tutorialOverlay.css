@@ -194,7 +194,7 @@
   border: none;
   box-shadow: none;
   padding: 0;
-  width: min(calc(100vw - 32px), 440px);
+  width: min(calc(100vw - 32px), 480px);
   pointer-events: auto;
   box-sizing: border-box;
   transition:
@@ -408,15 +408,15 @@
   box-shadow: 0 2px 0 #1b4fb3;
 }
 
-/* 6. Сцена парения маскота (В СЕРЕДИНЕ): чиби-Мира + конфетти */
+/* 6. Сцена парения маскота (В СЕРЕДИНЕ): крупная чиби-Мира + конфетти */
 .tut-mascot-stage {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 165px;
-  margin: 6px 0;
+  height: clamp(220px, 26vh, 275px);
+  margin: 8px 0;
   pointer-events: none;
 }
 
@@ -429,8 +429,8 @@
 
 .tut-flake {
   position: absolute;
-  border-radius: 1px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  border-radius: 2px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
   opacity: 0.95;
   animation: tut-flake-float 2.8s ease-in-out infinite alternate;
 }
@@ -440,23 +440,23 @@
 .tut-flake--gold { background: #feca57; }
 .tut-flake--red { background: #ee5253; }
 
-.tut-flake--1 { width: 7px; height: 7px; top: 18px; left: calc(50% - 72px); --rot: 18deg; animation-delay: 0s; }
-.tut-flake--2 { width: 6px; height: 9px; top: 38px; left: calc(50% - 90px); --rot: -22deg; animation-delay: -0.6s; }
-.tut-flake--3 { width: 8px; height: 6px; top: 82px; left: calc(50% - 82px); --rot: 32deg; animation-delay: -1.2s; }
-.tut-flake--4 { width: 7px; height: 7px; top: 122px; left: calc(50% - 68px); --rot: -15deg; animation-delay: -1.8s; }
-.tut-flake--5 { width: 6px; height: 8px; top: 22px; right: calc(50% - 76px); --rot: -25deg; animation-delay: -0.4s; }
-.tut-flake--6 { width: 8px; height: 6px; top: 52px; right: calc(50% - 92px); --rot: 20deg; animation-delay: -1.0s; }
-.tut-flake--7 { width: 7px; height: 7px; top: 92px; right: calc(50% - 84px); --rot: -35deg; animation-delay: -1.6s; }
-.tut-flake--8 { width: 6px; height: 8px; top: 126px; right: calc(50% - 66px); --rot: 12deg; animation-delay: -2.2s; }
-.tut-flake--9 { width: 7px; height: 6px; top: 8px; left: calc(50% - 24px); --rot: 40deg; animation-delay: -0.8s; }
-.tut-flake--10 { width: 8px; height: 7px; top: 136px; left: calc(50% + 18px); --rot: -30deg; animation-delay: -2.0s; }
+.tut-flake--1 { width: 9px; height: 9px; top: 24px; left: calc(50% - 105px); --rot: 18deg; animation-delay: 0s; }
+.tut-flake--2 { width: 8px; height: 11px; top: 55px; left: calc(50% - 128px); --rot: -22deg; animation-delay: -0.6s; }
+.tut-flake--3 { width: 10px; height: 8px; top: 125px; left: calc(50% - 120px); --rot: 32deg; animation-delay: -1.2s; }
+.tut-flake--4 { width: 9px; height: 9px; top: 185px; left: calc(50% - 98px); --rot: -15deg; animation-delay: -1.8s; }
+.tut-flake--5 { width: 8px; height: 10px; top: 28px; right: calc(50% - 110px); --rot: -25deg; animation-delay: -0.4s; }
+.tut-flake--6 { width: 10px; height: 8px; top: 75px; right: calc(50% - 132px); --rot: 20deg; animation-delay: -1.0s; }
+.tut-flake--7 { width: 9px; height: 9px; top: 135px; right: calc(50% - 122px); --rot: -35deg; animation-delay: -1.6s; }
+.tut-flake--8 { width: 8px; height: 10px; top: 195px; right: calc(50% - 95px); --rot: 12deg; animation-delay: -2.2s; }
+.tut-flake--9 { width: 9px; height: 8px; top: 10px; left: calc(50% - 35px); --rot: 40deg; animation-delay: -0.8s; }
+.tut-flake--10 { width: 10px; height: 9px; top: 210px; left: calc(50% + 28px); --rot: -30deg; animation-delay: -2.0s; }
 
 @keyframes tut-flake-float {
   0% {
     transform: translateY(0px) rotate(var(--rot, 0deg));
   }
   100% {
-    transform: translateY(-8px) rotate(calc(var(--rot, 0deg) + 14deg));
+    transform: translateY(-10px) rotate(calc(var(--rot, 0deg) + 16deg));
   }
 }
 
@@ -477,24 +477,25 @@
 }
 
 .tut-avatar-frame svg {
-  height: 150px;
-  width: 110px;
+  height: clamp(200px, 24vh, 250px);
+  width: auto;
+  max-width: 170px;
   display: block;
-  filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.55));
   animation: tut-mira-float 3.2s ease-in-out infinite;
 }
 
-/* Спрайт Миры: крупный парящий чиби-маскот */
+/* Спрайт Миры: заметный парящий чиби-маскот на всю высоту карт */
 .tut-avatar-img {
-  height: 155px;
+  height: clamp(210px, 25vh, 260px);
   width: auto;
-  max-width: 175px;
+  max-width: clamp(200px, 24vw, 260px);
   object-fit: contain;
   image-rendering: pixelated;
   image-rendering: -moz-crisp-edges;
   image-rendering: crisp-edges;
   display: block;
-  filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.55));
   animation: tut-mira-float 3.2s ease-in-out infinite;
   transform-origin: center center;
   pointer-events: none;
@@ -507,13 +508,13 @@
     transform: translateY(0px) rotate(0deg);
   }
   25% {
-    transform: translateY(-9px) rotate(-1.8deg);
+    transform: translateY(-10px) rotate(-1.8deg);
   }
   50% {
     transform: translateY(-2px) rotate(0.4deg);
   }
   75% {
-    transform: translateY(7px) rotate(1.8deg);
+    transform: translateY(8px) rotate(1.8deg);
   }
 }
 
@@ -552,16 +553,16 @@
 
 /* Главная красная Balatro 3D-кнопка «Дальше» */
 .tut-btn--next {
-  min-height: 48px;
-  min-width: 170px;
-  padding: 11px 32px;
-  font-size: 19px;
+  min-height: 54px;
+  min-width: 210px;
+  padding: 13px 40px;
+  font-size: 21px;
   background: linear-gradient(180deg, #f24444 0%, #d63031 100%);
   border: 2px solid #ff7675;
   color: #ffffff;
   box-shadow:
-    0 4px 0 #801d1d,
-    0 10px 20px rgba(0, 0, 0, 0.45);
+    0 5px 0 #801d1d,
+    0 12px 24px rgba(0, 0, 0, 0.45);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.15s ease, border-color 0.15s ease;
 }
@@ -575,7 +576,7 @@
   transform: translateY(2px);
   box-shadow:
     0 2px 0 #801d1d,
-    0 4px 10px rgba(0, 0, 0, 0.45);
+    0 5px 12px rgba(0, 0, 0, 0.45);
 }
 
 /* Режим ожидания действия (пульсирующая золотистая подсказка) */
@@ -584,19 +585,19 @@
   border: 2px solid #ffeaa7;
   color: #1a1608;
   box-shadow:
-    0 4px 0 #8a5800,
-    0 10px 22px rgba(245, 185, 66, 0.4);
+    0 5px 0 #8a5800,
+    0 12px 26px rgba(245, 185, 66, 0.45);
   animation: tut-action-pulse 1.6s infinite ease-in-out;
 }
 
 @keyframes tut-action-pulse {
   0%, 100% {
     transform: scale(1);
-    box-shadow: 0 4px 0 #8a5800, 0 10px 22px rgba(245, 185, 66, 0.4);
+    box-shadow: 0 5px 0 #8a5800, 0 12px 26px rgba(245, 185, 66, 0.45);
   }
   50% {
     transform: scale(1.03);
-    box-shadow: 0 4px 0 #8a5800, 0 12px 28px rgba(245, 185, 66, 0.7);
+    box-shadow: 0 5px 0 #8a5800, 0 14px 32px rgba(245, 185, 66, 0.7);
   }
 }
 
@@ -643,7 +644,7 @@
 @media (max-width: 600px) {
   .tut-floating-cluster,
   .tut-card {
-    width: min(calc(100vw - 20px), 380px);
+    width: min(calc(100vw - 20px), 400px);
   }
 
   .tut-speech-bubble {
@@ -651,24 +652,25 @@
   }
 
   .tut-mascot-stage {
-    height: 145px;
+    height: clamp(175px, 21vh, 205px);
     margin: 4px 0;
   }
 
   .tut-avatar-img {
-    height: 135px;
-    max-height: 140px;
+    height: clamp(170px, 20vh, 195px);
+    max-width: 190px;
   }
 
   .tut-avatar-frame svg {
-    height: 130px;
-    width: 95px;
+    height: clamp(165px, 19vh, 190px);
+    width: auto;
+    max-width: 130px;
   }
 
   .tut-btn--next {
-    min-height: 48px;
-    min-width: 150px;
-    font-size: 17px;
-    padding: 10px 24px;
+    min-height: 50px;
+    min-width: 180px;
+    font-size: 19px;
+    padding: 11px 30px;
   }
 }
