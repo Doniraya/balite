@@ -363,10 +363,37 @@ describe('Локализация Balite (i18n)', () => {
     expect(ruCatalog.scrolls.c_devil.name).toBe('Свиток Позолоты');
 
     expect(ruCatalog.runes.c_black_hole.name).toBe('Пандора: Дар Древних');
-    expect(ruCatalog.bosses.bl_final_vessel.name).toBe('Аметистовый дракон');
-    expect(ruCatalog.bosses.bl_final_bell.name).toBe('Лазурная гарпия');
-    expect(ruCatalog.blinds.small.name).toBe('Гоблин-налетчик');
-    expect(ruCatalog.blinds.big.name).toBe('Орк-берсерк');
+    expect(ruCatalog.bosses.bl_hook.name).toBe('Лаплас');
+    expect(ruCatalog.bosses.bl_wall.name).toBe('Белый Кит');
+    expect(ruCatalog.bosses.bl_psychic.name).toBe('Кьюбей');
+    expect(ruCatalog.bosses.bl_flint.name).toBe('Ифрит');
+    expect(ruCatalog.bosses.bl_water.name).toBe('Кракен');
+    expect(ruCatalog.bosses.bl_pillar.name).toBe('Махорага');
+    expect(ruCatalog.bosses.bl_manacle.name).toBe('Фенрир');
+    expect(ruCatalog.bosses.bl_club.name).toBe('Голиаф');
+    expect(ruCatalog.bosses.bl_final_vessel.name).toBe('Штормовой дракон');
+    expect(ruCatalog.bosses.bl_final_bell.name).toBe('Орстед');
+    expect(ruCatalog.blinds.small.name).toBe('Слизняк');
+    expect(ruCatalog.blinds.big.name).toBe('Гоблин');
+
+    // Проверка смены мобов по Анте 1..8
+    const ruTranslator = createTranslator('ru');
+    expect(ruTranslator.getBlindText('small', null, 1).name).toBe('Слизняк');
+    expect(ruTranslator.getBlindText('big', null, 1).name).toBe('Гоблин');
+    expect(ruTranslator.getBlindText('small', null, 2).name).toBe('Мурлок');
+    expect(ruTranslator.getBlindText('big', null, 2).name).toBe('Кобольд');
+    expect(ruTranslator.getBlindText('small', null, 3).name).toBe('Драугр');
+    expect(ruTranslator.getBlindText('big', null, 3).name).toBe('Орк');
+    expect(ruTranslator.getBlindText('small', null, 4).name).toBe('Мимик');
+    expect(ruTranslator.getBlindText('big', null, 4).name).toBe('Гарпия');
+    expect(ruTranslator.getBlindText('small', null, 5).name).toBe('Каменный голем');
+    expect(ruTranslator.getBlindText('big', null, 5).name).toBe('Минотавр');
+    expect(ruTranslator.getBlindText('small', null, 6).name).toBe('Мантикора');
+    expect(ruTranslator.getBlindText('big', null, 6).name).toBe('Виверна');
+    expect(ruTranslator.getBlindText('small', null, 7).name).toBe('Драконид');
+    expect(ruTranslator.getBlindText('big', null, 7).name).toBe('Архидемон');
+    expect(ruTranslator.getBlindText('small', null, 8).name).toBe('Теневой рыцарь');
+    expect(ruTranslator.getBlindText('big', null, 8).name).toBe('Вестник погибели');
     expect(ruCatalog.decks.b_red.name).toBe('Алая колода');
   });
 
@@ -424,15 +451,15 @@ describe('Локализация Balite (i18n)', () => {
     expect(enT.getCharterText('v_observatory').name).toBe('Library Pass');
     expect(ruT.getCharterText('v_observatory').name).toBe('Библиотечная карта');
     expect(ruT.getTagText('tag_investment').description).toContain('+25 з.');
-    expect(enT.getBossText('bl_final_vessel').name).toBe('Amethyst Dragon');
+    expect(enT.getBossText('bl_final_vessel').name).toBe('Storm Dragon');
     expect(ruT.getDeckText('b_yellow').description).toContain('+10 з.');
     expect(enT.getHandText('Flush').name).toBe('Flush');
     expect(ruT.getPackSubtitle(2, 5)).toBe('Выберите 2 из 5');
     expect(enT.getPackSubtitle(1, 3)).toBe('Choose 1 of 3');
 
     // Обычный заказ vs Босс-монстр
-    expect(ruT.getBlindText('small').name).toBe('Гоблин-налетчик');
-    expect(ruT.getBlindText('boss', 'bl_wall').name).toBe('Каменный титан');
+    expect(ruT.getBlindText('small').name).toBe('Слизняк');
+    expect(ruT.getBlindText('boss', 'bl_wall').name).toBe('Белый Кит');
     expect(enT.getPackTitle('buffoon', 'normal')).toBe('Skill Chest');
     expect(ruT.getPackTitle('buffoon', 'normal')).toBe('Обычный сундук Навыков');
     expect(enT.getRankLabel(14)).toBe('Ace');

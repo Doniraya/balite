@@ -446,8 +446,9 @@ function buildBlindTooltip(
   reward: number,
   disabled: boolean,
   translator: Translator,
+  ante?: number,
 ): TooltipData {
-  const blindText = translator.getBlindText(kind, bossId);
+  const blindText = translator.getBlindText(kind, bossId, ante);
   const badges: TooltipBadge[] = [];
   if (disabled) {
     badges.push({
@@ -922,7 +923,7 @@ function renderHudBelt(
   const bossSlot = state.anteBlinds[2];
   const inspectableBossId = activeSlot.bossId ?? bossSlot?.bossId ?? null;
   const isBossActive = activeSlot.kind === 'boss' && activeSlot.bossId !== null;
-  const blindText = translator.getBlindText(activeSlot.kind, activeSlot.bossId);
+  const blindText = translator.getBlindText(activeSlot.kind, activeSlot.bossId, state.ante);
 
   const bossBtn = createEl(
     'button',
@@ -965,6 +966,7 @@ function renderHudBelt(
       activeSlot.reward,
       isBossActive && state.activeBossDisabled,
       translator,
+      state.ante,
     ),
   );
 
@@ -1399,7 +1401,7 @@ function renderBlindSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void 
     const card = createEl('div', `blind-card blind-card--${slot.status} blind-card--${slot.kind}`);
     card.dataset.blindKind = slot.kind;
 
-    const blindText = translator.getBlindText(slot.kind, slot.bossId);
+    const blindText = translator.getBlindText(slot.kind, slot.bossId, state.ante);
     const statusText = translator.t(`ui.blindSelect.${slot.status}`);
     const isCurrent = slot.status === 'current';
 
@@ -1435,6 +1437,7 @@ function renderBlindSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void 
       slot.reward,
       false,
       translator,
+      state.ante,
     );
     setTooltipData(namePill, blindTooltip);
     setTooltipData(tokenWrap, blindTooltip);
@@ -2115,7 +2118,7 @@ function renderRunEndArena(
   }
 
   // Блок Стража (кем побеждён / кого одолел игрок) с иконкой
-  const blindText = translator.getBlindText(summary.defeatedBy.kind, summary.defeatedBy.bossId);
+  const blindText = translator.getBlindText(summary.defeatedBy.kind, summary.defeatedBy.bossId, summary.ante);
   const victimBox = createEl('div', 'run-end-victim-box');
   const victimLeft = createEl('div', 'run-end-victim-box__left');
   victimLeft.append(

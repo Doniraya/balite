@@ -381,6 +381,11 @@ export interface UiDictionary {
   };
 }
 
+export interface AnteMonsterEntry {
+  readonly small: CatalogTextEntry;
+  readonly big: CatalogTextEntry;
+}
+
 /**
  * Полный словарь локализации для одного языка (1:1 между ru и en).
  */
@@ -395,6 +400,7 @@ export interface LocaleDictionary {
   readonly tags: Readonly<Record<TagId, CatalogTextEntry>>;
   readonly bosses: Readonly<Record<BossId, CatalogTextEntry>>;
   readonly blinds: Readonly<Record<BlindKind, CatalogTextEntry>>;
+  readonly anteMonsters?: Readonly<Record<number, AnteMonsterEntry>>;
   readonly decks: Readonly<Record<DeckId, CatalogTextEntry>>;
   readonly enhancements: Readonly<Record<Enhancement, CatalogTextEntry>>;
   readonly editions: Readonly<Record<Edition, CatalogTextEntry>>;
@@ -438,6 +444,7 @@ export interface CatalogTexts {
   readonly tags: Readonly<Record<TagId, ParameterizedCatalogEntry>>;
   readonly bosses: Readonly<Record<BossId, ParameterizedCatalogEntry>>;
   readonly blinds: Readonly<Record<BlindKind, CatalogTextEntry>>;
+  readonly anteMonsters?: Readonly<Record<number, AnteMonsterEntry>>;
   readonly decks: Readonly<Record<DeckId, ParameterizedCatalogEntry>>;
   readonly enhancements: Readonly<Record<Enhancement, CatalogTextEntry>>;
   readonly editions: Readonly<Record<Edition, CatalogTextEntry>>;
@@ -465,7 +472,7 @@ export interface Translator {
   getTagText(id: TagId, params?: MessageParams): ParameterizedCatalogEntry;
   getBossText(id: BossId, params?: MessageParams): ParameterizedCatalogEntry;
   getDeckText(id: DeckId, params?: MessageParams): ParameterizedCatalogEntry;
-  getBlindText(kind: BlindKind, bossId?: BossId | null): CatalogTextEntry;
+  getBlindText(kind: BlindKind, bossId?: BossId | null, ante?: number): CatalogTextEntry;
   getPackTitle(type: PackType, size: PackSize): string;
   getPackSubtitle(chooseCount: number, totalCards: number): string;
   getRankLabel(rank: Rank, short?: boolean): string;

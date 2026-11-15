@@ -426,6 +426,7 @@ export function getCatalogTexts(lang: I18nLang): CatalogTexts {
     tags: buildParameterizedSection(dict.tags, DEFAULT_TAG_PARAMS),
     bosses: buildParameterizedSection(dict.bosses, DEFAULT_BOSS_PARAMS),
     blinds: dict.blinds,
+    anteMonsters: dict.anteMonsters,
     decks: buildParameterizedSection(dict.decks, DEFAULT_DECK_PARAMS),
     enhancements: dict.enhancements,
     editions: dict.editions,
@@ -525,9 +526,16 @@ export function createTranslator(lang: I18nLang): Translator {
     getDeckText(id: DeckId, params?: MessageParams): ParameterizedCatalogEntry {
       return formatParameterizedEntry(dict.decks, DEFAULT_DECK_PARAMS, id, params);
     },
-    getBlindText(kind: BlindKind, bossId?: BossId | null): CatalogTextEntry {
+    getBlindText(kind: BlindKind, bossId?: BossId | null, ante?: number): CatalogTextEntry {
       if (kind === 'boss' && bossId) {
         return catalog.bosses[bossId];
+      }
+      if (ante !== undefined && catalog.anteMonsters) {
+        const tier = Math.max(1, Math.min(8, Math.floor(ante)));
+        const monster = catalog.anteMonsters[tier]?.[kind as 'small' | 'big'];
+        if (monster) {
+          return monster;
+        }
       }
       return catalog.blinds[kind];
     },

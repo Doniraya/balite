@@ -711,58 +711,92 @@ export const EN_DICTIONARY: LocaleDictionary = {
   },
   bosses: {
     bl_hook: {
-      name: 'Troll Raider',
+      name: 'Laplace',
       description: 'Discards {count} random cards from hand per hand played',
     },
     bl_manacle: {
-      name: 'Iron Golem',
+      name: 'Fenrir',
       description: '-{count} hand size during this battle',
     },
     bl_psychic: {
-      name: 'Arcane Sphinx',
+      name: 'Kyubey',
       description: 'Must play {count} cards',
     },
     bl_pillar: {
-      name: 'Ruin Phantom',
+      name: 'Mahoraga',
       description: 'Cards played previously at this Rank are weakened',
     },
     bl_club: {
-      name: 'Ancient Treant',
+      name: 'Goliath',
       description: 'All Club cards are weakened',
     },
     bl_water: {
-      name: 'Sand Basilisk',
+      name: 'Kraken',
       description: 'Start battle with 0 discards',
     },
     bl_wall: {
-      name: 'Stone Titan',
+      name: 'White Whale',
       description: 'Extra-large target score (×4 base)',
     },
     bl_flint: {
-      name: 'Flint Wyvern',
+      name: 'Ifrit',
       description: 'Base Power and Mult of played combos are halved',
     },
     bl_final_vessel: {
-      name: 'Amethyst Dragon',
+      name: 'Storm Dragon',
       description: 'Colossal final Rank threshold (×6 base)',
     },
     bl_final_bell: {
-      name: 'Cerulean Harpy',
+      name: 'Orsted',
       description: 'Forces 1 random card in hand to always be selected',
     },
   },
   blinds: {
     small: {
-      name: 'Goblin Raider',
+      name: 'Slime',
       description: 'Standard guild quest (×1 target)',
     },
     big: {
-      name: 'Orc Berserker',
+      name: 'Goblin',
       description: 'Tough guild quest (×1.5 target)',
     },
     boss: {
       name: 'Boss Monster',
       description: 'Elite guild quest with a special rule',
+    },
+  },
+  anteMonsters: {
+    1: {
+      small: { name: 'Slime', description: 'Standard Rank F quest (target ×1)' },
+      big: { name: 'Goblin', description: 'Hard Rank F quest (target ×1.5)' },
+    },
+    2: {
+      small: { name: 'Murloc', description: 'Standard Rank E quest (target ×1)' },
+      big: { name: 'Kobold', description: 'Hard Rank E quest (target ×1.5)' },
+    },
+    3: {
+      small: { name: 'Draugr', description: 'Standard Rank D quest (target ×1)' },
+      big: { name: 'Orc', description: 'Hard Rank D quest (target ×1.5)' },
+    },
+    4: {
+      small: { name: 'Mimic', description: 'Standard Rank C quest (target ×1)' },
+      big: { name: 'Harpy', description: 'Hard Rank C quest (target ×1.5)' },
+    },
+    5: {
+      small: { name: 'Stone Golem', description: 'Standard Rank B quest (target ×1)' },
+      big: { name: 'Minotaur', description: 'Hard Rank B quest (target ×1.5)' },
+    },
+    6: {
+      small: { name: 'Manticore', description: 'Standard Rank A quest (target ×1)' },
+      big: { name: 'Wyvern', description: 'Hard Rank A quest (target ×1.5)' },
+    },
+    7: {
+      small: { name: 'Draconian', description: 'Standard Rank S quest (target ×1)' },
+      big: { name: 'Archdemon', description: 'Hard Rank S quest (target ×1.5)' },
+    },
+    8: {
+      small: { name: 'Shadow Knight', description: 'Standard Rank SS quest (target ×1)' },
+      big: { name: 'Harbinger of Ruin', description: 'Hard Rank SS quest (target ×1.5)' },
     },
   },
   decks: {
