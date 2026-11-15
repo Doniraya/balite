@@ -5,9 +5,16 @@ import {
   type TutorialArrowPosition,
   type TutorialEmotion,
   type TutorialPhase,
+  type TutorialPlacement,
 } from './tutorialSteps';
 
-export type { CanonicalTutorialEmotion, TutorialArrowPosition, TutorialEmotion, TutorialPhase };
+export type {
+  CanonicalTutorialEmotion,
+  TutorialArrowPosition,
+  TutorialEmotion,
+  TutorialPhase,
+  TutorialPlacement,
+};
 
 /**
  * Ожидаемое от игрока действие для перехода к следующему шагу.
@@ -34,6 +41,7 @@ export interface TutorialStep {
   readonly phase?: TutorialPhase;
   readonly targetSelector?: string;
   readonly arrowPosition?: TutorialArrowPosition;
+  readonly placement?: TutorialPlacement;
   readonly speaker?: string;
   readonly emotion?: TutorialEmotion;
   readonly requireAction?: TutorialAction;
@@ -393,12 +401,21 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
       blockerEl.style.clipPath = 'none';
       backdropEl.style.opacity = '1';
 
-      // Центрируем диалог по экрану
-      cardEl.style.top = '50%';
-      cardEl.style.left = '50%';
-      cardEl.style.bottom = 'auto';
-      cardEl.style.right = 'auto';
-      cardEl.style.transform = 'translate(-50%, -50%)';
+      // Если задано смещение влево на десктопе, освобождаем центр стола
+      if (currentStep?.placement === 'left' && window.innerWidth >= 860) {
+        cardEl.style.top = '50%';
+        cardEl.style.left = 'clamp(16px, 12vw, 200px)';
+        cardEl.style.bottom = 'auto';
+        cardEl.style.right = 'auto';
+        cardEl.style.transform = 'translateY(-50%)';
+      } else {
+        // Центрируем диалог по экрану
+        cardEl.style.top = '50%';
+        cardEl.style.left = '50%';
+        cardEl.style.bottom = 'auto';
+        cardEl.style.right = 'auto';
+        cardEl.style.transform = 'translate(-50%, -50%)';
+      }
       return;
     }
 
@@ -477,27 +494,73 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
     const vw = window.innerWidth;
     const targetCenterY = rect.top + rect.height / 2;
 
-    // Сброс горизонтальных координат
+    // Сброс горизонтальных и вертикальных координат
     cardEl.style.right = 'auto';
 
-    // На широком экране десктопа проверяем также боковое размещение
-    if (vw >= 960 && rect.right < vw * 0.38) {
-      cardEl.style.left = 'clamp(360px, 48vw, 680px)';
-      cardEl.style.top = '50%';
-      cardEl.style.bottom = 'auto';
-      cardEl.style.transform = 'translateY(-50%)';
-    } else if (targetCenterY > vh * 0.48) {
-      // Элемент находится в нижней половине экрана -> кластер размещается вверху
-      cardEl.style.top = 'clamp(14px, 3vh, 36px)';
-      cardEl.style.bottom = 'auto';
-      cardEl.style.left = '50%';
-      cardEl.style.transform = 'translateX(-50%)';
+    const placement = currentStep?.placement ?? 'auto';
+
+    if (vw >= 860) {
+      // НА ДЕСКТОПЕ:
+      if (
+        placement === 'left' ||
+        (placement === 'auto' &&
+          (currentStep?.phase === 'cashout' || currentStep?.phase === 'shop'))
+      ) {
+        // Размещаем кластер на левой стороне над панелью очков/HUD, чтобы центр стола был абсолютно свободен
+        cardEl.style.left = 'clamp(16px, 12vw, 220px)';
+        cardEl.style.top = '50%';
+        cardEl.style.bottom = 'auto';
+        cardEl.style.transform = 'translateY(-50%)';
+      } else if (placement === 'top-left') {
+        // Размещаем кластер в верхнем левом углу над панелью очков, не перекрывая веер карт внизу
+        cardEl.style.left = 'clamp(16px, 12vw, 220px)';
+        cardEl.style.top = 'clamp(12px, 2.5vh, 32px)';
+        cardEl.style.bottom = 'auto';
+        cardEl.style.transform = 'none';
+      } else if (placement === 'center') {
+        cardEl.style.left = '50%';
+        cardEl.style.top = '50%';
+        cardEl.style.bottom = 'auto';
+        cardEl.style.transform = 'translate(-50%, -50%)';
+      } else if (rect.right < vw * 0.38) {
+        // Целевой элемент в левой колонке HUD -> кластер размещается правее в столе
+        cardEl.style.left = 'clamp(360px, 48vw, 680px)';
+        cardEl.style.top = '50%';
+        cardEl.style.bottom = 'auto';
+        cardEl.style.transform = 'translateY(-50%)';
+      } else if (targetCenterY > vh * 0.48) {
+        // Целевой элемент в нижней половине экрана -> кластер вверху слева
+        cardEl.style.top = 'clamp(12px, 2.5vh, 32px)';
+        cardEl.style.bottom = 'auto';
+        cardEl.style.left = 'clamp(16px, 12vw, 220px)';
+        cardEl.style.transform = 'none';
+      } else {
+        // Элемент в верхней половине экрана -> кластер внизу слева
+        cardEl.style.top = 'auto';
+        cardEl.style.bottom = 'clamp(14px, 3vh, 36px)';
+        cardEl.style.left = 'clamp(16px, 12vw, 220px)';
+        cardEl.style.transform = 'none';
+      }
     } else {
-      // Элемент в верхней половине экрана -> кластер размещается внизу
-      cardEl.style.top = 'auto';
-      cardEl.style.bottom = 'clamp(14px, 3vh, 36px)';
-      cardEl.style.left = '50%';
-      cardEl.style.transform = 'translateX(-50%)';
+      // НА МОБИЛЬНОМ (ПОРТРЕТ 720×1280):
+      if (placement === 'center') {
+        cardEl.style.left = '50%';
+        cardEl.style.top = '50%';
+        cardEl.style.bottom = 'auto';
+        cardEl.style.transform = 'translate(-50%, -50%)';
+      } else if (targetCenterY > vh * 0.48) {
+        // Элемент находится в нижней половине экрана -> кластер размещается вверху
+        cardEl.style.top = 'clamp(14px, 3vh, 36px)';
+        cardEl.style.bottom = 'auto';
+        cardEl.style.left = '50%';
+        cardEl.style.transform = 'translateX(-50%)';
+      } else {
+        // Элемент в верхней половине экрана -> кластер размещается внизу
+        cardEl.style.top = 'auto';
+        cardEl.style.bottom = 'clamp(14px, 3vh, 36px)';
+        cardEl.style.left = '50%';
+        cardEl.style.transform = 'translateX(-50%)';
+      }
     }
   }
 

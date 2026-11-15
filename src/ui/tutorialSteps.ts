@@ -11,6 +11,15 @@ export type TutorialPhase = 'blind_select' | 'playing' | 'cashout' | 'shop';
 export type TutorialArrowPosition = 'top' | 'bottom' | 'left' | 'right' | 'none';
 
 /**
+ * Предпочтительное размещение плавающего кластера маскота относительно экрана/цели:
+ * - left: на левой стороне экрана над HUD (идеально для кэшаута, магазина и доски заказов, чтобы освободить центр)
+ * - top-left: вверху слева над панелью очков (идеально при взаимодействии с картами внизу)
+ * - center: по центру экрана (для приветствия и финального поздравления)
+ * - auto: автоматический выбор позиции (вверху/внизу от цели)
+ */
+export type TutorialPlacement = 'auto' | 'left' | 'top-left' | 'center';
+
+/**
  * Персонаж-рассказчик реплики обучения:
  * В стандартном режиме (6+/12+) — Мира (управляющая Гильдии).
  * В DEV-режиме оригинальных терминов Balatro — Джимбо (весёлый шут).
@@ -88,6 +97,7 @@ export interface TutorialStep {
   readonly phase: TutorialPhase;
   readonly targetSelector?: string;
   readonly arrowPosition: TutorialArrowPosition;
+  readonly placement?: TutorialPlacement;
   readonly speaker: TutorialSpeaker;
   readonly emotion: TutorialEmotion;
   readonly requireAction: TutorialRequiredAction;
@@ -101,6 +111,7 @@ interface RawTutorialStepDefinition {
   readonly phase: TutorialPhase;
   readonly targetSelector?: string;
   readonly arrowPosition: TutorialArrowPosition;
+  readonly placement?: TutorialPlacement;
   readonly emotion: TutorialEmotion;
   readonly requireAction: TutorialRequiredAction;
   readonly standard: {
@@ -115,21 +126,23 @@ interface RawTutorialStepDefinition {
 
 /**
  * Канонический список из 21 подробного шага интерактивного обучения Balite.
- * Охватывает все тонкости игровой математики, экономику, позиционирование реликвий и механику расхода карт.
+ * Охватывает все тонкости игровой математики, экономику, позиционирование навыков и механику расхода карт.
+ * В стандартном режиме (6+/12+) строго соблюдает канонический словарь гильдии (ru.ts).
  */
 const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
   // --------------------------------------------------------------------------
-  // ФАЗА: BLIND_SELECT (Выбор Стража)
+  // ФАЗА: BLIND_SELECT (Выбор Заказа)
   // --------------------------------------------------------------------------
   {
     id: 'welcome_guild',
     phase: 'blind_select',
     arrowPosition: 'none',
+    placement: 'left',
     emotion: 'welcome',
     requireAction: 'next',
     standard: {
       title: 'Добро пожаловать в Гильдию!',
-      text: 'Приветствую, исследователь! Меня зовут {C:attention}Мира{}, я управляющая Гильдии. Рада видеть тебя в наших рядах! Твоя цель — пройти все 8 Этапов подземелья, побеждая грозных {C:attention}Стражей{} силой карточной математики и собирая могущественные синергии.',
+      text: 'Приветствую, исследователь! Меня зовут {C:attention}Мира{}, я управляющая Гильдии. Рада видеть тебя в наших рядах! Твоя цель — пройти все 8 Рангов подземелья, выполняя {C:attention}Заказы{} на монстров силой карточной математики и собирая могущественные синергии Навыков.',
     },
     devOriginal: {
       title: 'Добро пожаловать в Balite!',
@@ -141,11 +154,12 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'blind_select',
     targetSelector: '.blind-card--current',
     arrowPosition: 'bottom',
+    placement: 'left',
     emotion: 'welcome',
     requireAction: 'next',
     standard: {
-      title: 'Выбор Стража',
-      text: 'Каждый Этап охраняют три Стража: {C:blue}Младший{}, {C:attention}Старший{} и {C:red}Главный страж (Босс){}. Чтобы одолеть Стража, нужно набрать его целевой счёт за ограниченное число попыток. За каждую победу казна выплачивает щедрое {C:money}золото{}!',
+      title: 'Выбор Заказа на доске',
+      text: 'На каждом Ранге гильдии тебя ждут три Заказа: {C:blue}Младший заказ{}, {C:attention}Старший заказ{} и опасный {C:red}Босс-монстр{}. Чтобы выполнить Заказ, нужно набрать его целевой счёт за ограниченное число рук. За каждую победу казна выплачивает щедрое {C:money}золото{}!',
     },
     devOriginal: {
       title: 'Выбор Блайнда',
@@ -157,11 +171,12 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'blind_select',
     targetSelector: '.blind-card--upcoming .blind-card__skip-row',
     arrowPosition: 'bottom',
+    placement: 'left',
     emotion: 'guide_point',
     requireAction: 'next',
     standard: {
-      title: 'Пропуск Стража и Знаки',
-      text: 'Младшего и Старшего Стражей можно не сражать, а {C:attention}пропустить{}! За пропуск ты мгновенно получаешь ценный {C:attention}Знак{} с уникальным даром: бесплатный набор в Лавке, удвоение золота или мгновенное усиление. Но помни: при пропуске ты не попадаешь в Лавку Гильдии и остаёшься без боевой выплаты!',
+      title: 'Пропуск Заказа и Талоны',
+      text: 'Младший и Старший Заказы можно не выполнять, а {C:attention}пропустить{}! За пропуск ты мгновенно получаешь ценный {C:attention}Талон{} с уникальным эффектом: бесплатный сундук в Лавке, удвоение золота или мгновенное усиление. Но помни: при пропуске ты не попадаешь в Лавку Гильдии и остаёшься без боевой выплаты!',
     },
     devOriginal: {
       title: 'Пропуск и Теги',
@@ -173,11 +188,12 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'blind_select',
     targetSelector: '[data-blind-kind="boss"]',
     arrowPosition: 'bottom',
+    placement: 'left',
     emotion: 'worried',
     requireAction: 'next',
     standard: {
-      title: 'Опасность Главного Стража',
-      text: '{C:warning}Внимание! Главного Стража (Босса) пропустить нельзя!{} У каждого Босса есть коварная способность: блокировка мастей, скрытие карт рубашкой вверх или уполовинивание очков. Победа над Боссом завершает текущий Этап и делает всех следующих врагов сильнее. Одолей Босса 8-го Этапа, чтобы победить!',
+      title: 'Опасность Босса-монстра',
+      text: '{C:warning}Внимание! Босса-монстра пропустить нельзя!{} У каждого Босса есть коварная способность: блокировка мастей, скрытие карт рубашкой вверх или уполовинивание очков. Победа над Боссом завершает текущий Ранг и делает всех следующих монстров сильнее. Одолей Босса 8-го Ранга, чтобы победить!',
     },
     devOriginal: {
       title: 'Опасность Босс-блайнда',
@@ -189,11 +205,12 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'blind_select',
     targetSelector: '.blind-card--current .blind-card__battle-btn',
     arrowPosition: 'top',
+    placement: 'left',
     emotion: 'welcome',
     requireAction: 'select_blind',
     standard: {
-      title: 'В бой со Стражем!',
-      text: 'Начнём наш путь со сражения против Младшего Стража. Для победы нужно набрать всего 300 очков. Нажми кнопку {C:blue}«Сразиться»{}, чтобы начать первый раунд!',
+      title: 'Принять первый заказ!',
+      text: 'Начнём наш путь со сражения против первого монстра (Слизняка). Для победы нужно набрать всего 300 очков. Нажми кнопку {C:blue}«Принять заказ»{}, чтобы начать первый раунд!',
     },
     devOriginal: {
       title: 'Выбери Блайнд!',
@@ -209,11 +226,12 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'playing',
     targetSelector: '.score-calc-row',
     arrowPosition: 'top',
+    placement: 'left',
     emotion: 'guide_book',
     requireAction: 'next',
     standard: {
       title: 'Формула очков: Сила × Множитель',
-      text: 'Взгляни на верхнюю панель подсчёта! Очки любой комбинации вычисляются по базовой формуле: {C:blue}Сила (Синие очки){} × {C:red}Множитель (Красные очки){}. Чем больше оба числа, тем мощнее итоговый залп очков! Например: 40 Силы × 4 Множитель = {C:attention}160 итоговых очков{}.',
+      text: 'Взгляни на панель подсчёта очков! Результат любой комбинации вычисляется по формуле: {C:blue}Сила (Синие очки){} × {C:red}Множитель (Красные очки){}. Чем больше оба числа, тем мощнее итоговый залп очков! Например: 40 Силы × 4 Множитель = {C:attention}160 итоговых очков{}.',
     },
     devOriginal: {
       title: 'Формула: Фишки × Множ',
@@ -225,6 +243,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'playing',
     targetSelector: '.belt--hand .hand-fan',
     arrowPosition: 'bottom',
+    placement: 'top-left',
     emotion: 'guide_cards',
     requireAction: 'next',
     standard: {
@@ -241,11 +260,12 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'playing',
     targetSelector: '.hud-buttons-row button:first-child',
     arrowPosition: 'top',
+    placement: 'left',
     emotion: 'guide_cards',
     requireAction: 'next',
     standard: {
       title: 'Комбинации карт',
-      text: 'Ты можешь собирать комбинации до 5 карт: от {C:attention}Старшей карты{} и {C:attention}Пары{} до {C:attention}Стрита{} (5 карт по порядку), {C:attention}Флеша{} (5 карт одной масти), {C:attention}Фулл-Хауса{} и венца игры — {C:attention}Флеш-Рояля{}! Чем сложнее комбинация, тем выше её начальные Сила и Множитель. Нажми кнопку {C:attention}«Комбинации»{}, чтобы открыть полную памятку.',
+      text: 'Ты можешь собирать комбинации до 5 карт: от {C:attention}Старшей карты{} и {C:attention}Пары{} до {C:attention}Ряда{} (5 карт подряд по рангу), {C:attention}Масти{} (5 карт одной масти), {C:attention}Полного строя{} (3 одного ранга + 2 другого) и венца игры — {C:attention}Мастного ряда{}! Чем сложнее комбинация, тем выше её начальные Сила и Множитель. Нажми кнопку {C:attention}«Комбинации»{}, чтобы открыть полную памятку.',
     },
     devOriginal: {
       title: 'Покерные комбинации',
@@ -257,6 +277,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'playing',
     targetSelector: '.belt--hand .hand-card-slot:first-child',
     arrowPosition: 'bottom',
+    placement: 'top-left',
     emotion: 'guide_cards',
     requireAction: 'select_card',
     standard: {
@@ -273,6 +294,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'playing',
     targetSelector: '.hand-actions',
     arrowPosition: 'bottom',
+    placement: 'top-left',
     emotion: 'guide_point',
     requireAction: 'next',
     standard: {
@@ -289,11 +311,12 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'playing',
     targetSelector: '.hand-actions__play',
     arrowPosition: 'bottom',
+    placement: 'top-left',
     emotion: 'guide_cards',
     requireAction: 'play_hand',
     standard: {
       title: 'Розыгрыш комбинации',
-      text: 'Карты выбраны! Теперь нажми синюю кнопку {C:blue}«Сыграть комбинацию»{}. Карты отправятся в бой, принесут Силу и умножатся на Множитель. Если наберёшь 300 очков — раунд завершится досрочной победой!',
+      text: 'Карты выбраны! Теперь нажми зелёную кнопку {C:blue}«Сыграть»{}. Карты отправятся в бой, принесут Силу и умножатся на Множитель. Если наберёшь 300 очков — заказ выполнится досрочно!',
     },
     devOriginal: {
       title: 'Сыграй руку!',
@@ -309,11 +332,12 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'cashout',
     targetSelector: '.cashout-container',
     arrowPosition: 'left',
+    placement: 'left',
     emotion: 'happy',
     requireAction: 'next',
     standard: {
-      title: 'Выплата и проценты на золото',
-      text: 'Страж повержен! На экране выплаты виден расчёт награды: выплата за Стража + по $1 за каждую сэкономленную попытку + {C:money}Проценты с казны{}! {C:attention}Золотое правило: за каждые $5 в кошельке ты получаешь $1 процента (до максимума в $5 при наличии $25){}. Копить золото невероятно выгодно!',
+      title: 'Выплата и проценты казны',
+      text: 'Заказ выполнен! На экране выплаты виден расчёт награды: выплата за заказ + по 1 з. за каждую сэкономленную руку + {C:money}Проценты казны{}! {C:attention}Золотое правило: за каждые 5 з. в кошельке ты получаешь 1 з. процента (до максимума в 5 з. при наличии 25 з.){}. Копить золото невероятно выгодно!',
     },
     devOriginal: {
       title: 'Кэшаут и проценты',
@@ -325,6 +349,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'cashout',
     targetSelector: '.claim-cashout-btn',
     arrowPosition: 'bottom',
+    placement: 'left',
     emotion: 'happy',
     requireAction: 'next',
     standard: {
@@ -345,11 +370,12 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'shop',
     targetSelector: '.shop-row--offers',
     arrowPosition: 'top',
+    placement: 'left',
     emotion: 'idle',
     requireAction: 'next',
     standard: {
-      title: 'Лавка Гильдии и Реликвии',
-      text: 'Добро пожаловать в Лавку! Главное сокровище здесь — {C:attention}Реликвии{} (у тебя есть 5 слотов под них). Каждая Реликвия даёт уникальный пассивный бонус: добавление Силы, умножение очков или усиление карт. Реликвии делятся на ранги редкости: {C:blue}B (Обычные){}, {C:green}A (Необычные){} и {C:red}S (Редкие){}. Чем выше ранг, тем сокрушительнее мощь!',
+      title: 'Лавка Гильдии и Навыки',
+      text: 'Добро пожаловать в Лавку! Главное сокровище здесь — {C:attention}Навыки{} (у тебя есть 5 слотов под них). Каждый Навык даёт уникальный пассивный бонус: добавление Силы, умножение очков или усиление карт. Навыки делятся на ранги редкости: {C:blue}B (Обычные){}, {C:green}A (Необычные){} и {C:red}S (Редкие){}. Чем выше ранг, тем сокрушительнее мощь!',
     },
     devOriginal: {
       title: 'Магазин и Джокеры',
@@ -361,11 +387,12 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'shop',
     targetSelector: '.belt--inventory .inventory-strip:first-child',
     arrowPosition: 'top',
+    placement: 'left',
     emotion: 'guide_point',
     requireAction: 'next',
     standard: {
-      title: 'Секрет порядка: Слева направо!',
-      text: '{C:warning}САМЫЙ ВАЖНЫЙ ТАКТИЧЕСКИЙ СЕКРЕТ:{} Реликвии срабатывают строго {C:attention}слева направо{}! Располагай Реликвии с плоской Силой (+Сила) и плоским Множителем (+Множитель) {C:blue}СЛЕВА{}, а умножающие Реликвии (×Множитель) ставь {C:red}СПРАВА{}! Сравни: (10 + 10) × 3 = {C:attention}60{}, а (10 × 3) + 10 = всего лишь {C:red}40{}! Ты можешь перетаскивать Реликвии в любое время.',
+      title: 'Секрет порядка Навыков: Слева направо!',
+      text: '{C:warning}САМЫЙ ВАЖНЫЙ ТАКТИЧЕСКИЙ СЕКРЕТ:{} Навыки срабатывают строго {C:attention}слева направо{}! Располагай Навыки с плоской Силой (+Сила) и плоским Множителем (+Множитель) {C:blue}СЛЕВА{}, а умножающие Навыки (×Множитель) ставь {C:red}СПРАВА{}! Сравни: (10 + 10) × 3 = {C:attention}60{}, а (10 × 3) + 10 = всего лишь {C:red}40{}! Ты можешь перетаскивать Навыки в любое время.',
     },
     devOriginal: {
       title: 'Порядок Джокеров: Слева направо!',
@@ -377,11 +404,12 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'shop',
     targetSelector: '.belt--inventory .inventory-strip:nth-child(2)',
     arrowPosition: 'top',
+    placement: 'left',
     emotion: 'guide_book',
     requireAction: 'next',
     standard: {
       title: 'Расходники: Фолианты, Свитки, Пандора',
-      text: 'В поясе инвентаря есть 2 слота под одноразовые {C:attention}Расходники{}:\n• {C:planet}Фолианты{}: навсегда повышают базовые очки конкретной комбинации!\n• {C:tarot}Свитки Кузни{}: зачаровывают карты в руке (делают их стальными, золотыми или хрустальными).\n• {C:spectral}Свитки Пандоры{}: редчайшие рискованные заклинания, меняющие всю колоду или реликвии.',
+      text: 'В поясе инвентаря есть 2 слота под одноразовые {C:attention}Расходники{}:\n• {C:planet}Фолианты{}: навсегда повышают базовые очки конкретной комбинации!\n• {C:tarot}Свитки Кузни{}: зачаровывают карты в руке (делают их стальными, золотыми или хрустальными).\n• {C:spectral}Свитки Пандоры{}: редчайшие рискованные заклинания, меняющие всю колоду или Навыки.',
     },
     devOriginal: {
       title: 'Расходники: Таро, Планеты, Спектралки',
@@ -393,11 +421,12 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'shop',
     targetSelector: '.shop-bottom-grid .shop-row:first-child',
     arrowPosition: 'bottom',
+    placement: 'left',
     emotion: 'guide_point',
     requireAction: 'next',
     standard: {
-      title: 'Грамоты Гильдии (Привилегии)',
-      text: 'В нижней витрине продаётся {C:attention}Грамота (Привилегия){}. Это постоянное пассивное свойство на всю экспедицию: +1 карта в руке, дополнительные сбросы, скидки или повышенный лимит процентов! Новая Грамота появляется один раз за Этап — сразу после победы над Боссом.',
+      title: 'Привилегии гильдии',
+      text: 'В нижней витрине продаётся {C:attention}Привилегия гильдии{}. Это постоянное пассивное свойство на всю экспедицию: +1 карта в руке, дополнительные сбросы, скидки или повышенный лимит процентов! Новая Привилегия появляется один раз за Ранг — сразу после победы над Боссом.',
     },
     devOriginal: {
       title: 'Ваучеры',
@@ -409,11 +438,12 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'shop',
     targetSelector: '.shop-offers-grid .shop-slot-btn:first-child',
     arrowPosition: 'top',
+    placement: 'left',
     emotion: 'happy',
     requireAction: 'buy_relic',
     standard: {
       title: 'Покупка в Лавке',
-      text: 'Нажми на товар на витрине, чтобы открыть окно инспекции и нажать {C:gold}«Купить»{}. Если не хватает места или золота — любую ненужную Реликвию или Расходник из инвентаря можно продать за полцены!',
+      text: 'Нажми на товар на витрине, чтобы открыть окно описания и нажать {C:gold}«Купить»{}. Если не хватает места или золота — любой ненужный Навык или Расходник из инвентаря можно продать за полцены!',
     },
     devOriginal: {
       title: 'Купи карту!',
@@ -425,6 +455,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'shop',
     targetSelector: '.belt--inventory .inventory-strip:nth-child(2)',
     arrowPosition: 'top',
+    placement: 'left',
     emotion: 'guide',
     requireAction: 'next',
     standard: {
@@ -441,11 +472,12 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'shop',
     targetSelector: '.shop-next-btn',
     arrowPosition: 'top',
+    placement: 'left',
     emotion: 'idle',
     requireAction: 'leave_shop',
     standard: {
       title: 'Обновление и Следующий раунд',
-      text: 'Если на полке нет подходящих товаров, можно {C:attention}обновить ассортимент Лавки{} за золото (каждый повторный поиск в раунде дороже на $1). А когда закончишь подготовку, нажми зелёную кнопку {C:blue}«Следующий раунд»{}!',
+      text: 'Если на полке нет подходящих товаров, можно {C:attention}обновить ассортимент Лавки{} за золото (каждый повторный поиск в раунде дороже на 1 з.). А когда закончишь подготовку, нажми зелёную кнопку {C:blue}«Далее»{}!',
     },
     devOriginal: {
       title: 'Реролл и следующий раунд',
@@ -456,11 +488,12 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     id: 'tutorial_conclusion',
     phase: 'shop',
     arrowPosition: 'none',
+    placement: 'center',
     emotion: 'happy',
     requireAction: 'next',
     standard: {
       title: 'Ты готов к экспедиции!',
-      text: 'Превосходно! Теперь ты знаешь основы карточной математики, экономии золота и построения могущественных синергий. Исследуй подземелье, экспериментируй с Реликвиями и приведи Гильдию к триумфу на 8-м Этапе! Обучение всегда можно перечитать в Настройках. Удачи!',
+      text: 'Превосходно! Теперь ты знаешь основы карточной математики, экономии золота и построения могущественных синергий Навыков. Исследуй подземелье, экспериментируй с Навыками и приведи Гильдию к триумфу на 8-м Ранге! Обучение всегда можно перечитать в Настройках. Удачи!',
     },
     devOriginal: {
       title: 'Ты готов побеждать!',
@@ -483,6 +516,7 @@ function resolveStep(def: RawTutorialStepDefinition, devOriginal: boolean): Tuto
     phase: def.phase,
     ...(def.targetSelector ? { targetSelector: def.targetSelector } : {}),
     arrowPosition: def.arrowPosition,
+    ...(def.placement ? { placement: def.placement } : {}),
     speaker,
     emotion: def.emotion,
     requireAction: def.requireAction,

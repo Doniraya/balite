@@ -528,7 +528,10 @@ export function mountBaliteApp(
   const initialNow = Math.max(0, Math.floor(now()));
   const initialMeta = createInitialMetaSave(initialNow, { lang: initialLang });
   let saveData: PlayerSaveData = createPlayerSaveData(initialMeta, null, 0, initialNow);
-  let seedInput = createRandomSeed();
+  const isInitialTutorial =
+    saveData.meta.settings.tutorialCompleted !== true &&
+    saveData.meta.tutorialCompleted !== true;
+  let seedInput = isInitialTutorial ? 'TUTORIAL' : createRandomSeed();
   let selectedDeckId: DeckId = saveData.meta.unlockedDecks[0] ?? 'b_red';
   let runState: RunState = createDeckSelectState(selectedDeckId, seedInput);
   let savedRunSnapshot: RunSnapshot | null = null;
@@ -1212,6 +1215,7 @@ export function mountBaliteApp(
             audio.playButton();
             closeOverlays();
             currentTutorialIndex = 0;
+            seedInput = 'TUTORIAL';
             saveTutorialProgress(false, 0);
             syncTutorialStep();
           },
@@ -1895,7 +1899,11 @@ export function mountBaliteApp(
   function startNewRunInternal(): void {
     cancelActiveAnimation();
     showMainMenu = false;
-    const cleanSeed = seedInput.trim() || createRandomSeed();
+    const isTutorialRun =
+      saveData.meta.settings.tutorialCompleted !== true &&
+      saveData.meta.tutorialCompleted !== true;
+    const fallbackSeed = isTutorialRun ? 'TUTORIAL' : createRandomSeed();
+    const cleanSeed = seedInput.trim() || fallbackSeed;
     seedInput = cleanSeed;
     completionRecordedForCurrentRun = false;
     consumableTargetMode = null;

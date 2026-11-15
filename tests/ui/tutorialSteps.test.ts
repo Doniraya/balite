@@ -43,6 +43,10 @@ const FORBIDDEN_RU_PATTERNS: readonly RegExp[] = [
   /(?<![а-яё])анте(?![а-яё])/iu,
   /(?<![а-яё])балатро/iu,
   /(?<![а-яё])ваучер/iu,
+  /(?<![а-яё])стрит(?![а-яё])/iu,
+  /(?<![а-яё])флеш(?![а-яё])/iu,
+  /(?<![а-яё])фулл-?хаус/iu,
+  /(?<![а-яё])флеш-?роял/iu,
 ];
 
 describe('Интерактивный сценарий обучения (src/ui/tutorialSteps.ts)', () => {
@@ -144,11 +148,12 @@ describe('Интерактивный сценарий обучения (src/ui/t
     expect(rankStep.text).toContain('+10');
     expect(rankStep.text).toContain('+11');
 
-    // 3. Комбинации карт
+    // 3. Комбинации карт (канонические термины 6+/12+: Ряд, Масть, Полный строй)
     const combStep = TUTORIAL_STEPS.find((s) => s.id === 'hand_combinations_guide')!;
-    expect(combStep.text).toContain('Стрит');
-    expect(combStep.text).toContain('Флеш');
-    expect(combStep.text).toContain('Фулл-Хаус');
+    expect(combStep.text).toContain('Ряда');
+    expect(combStep.text).toContain('Масти');
+    expect(combStep.text).toContain('Полного строя');
+    expect(combStep.text).toContain('Мастного ряда');
 
     // 4. Сброс карт и предупреждение о невозврате
     const discardStep = TUTORIAL_STEPS.find((s) => s.id === 'discards_and_sorting')!;
@@ -158,16 +163,17 @@ describe('Интерактивный сценарий обучения (src/ui/t
 
     // 5. Кэшаут и проценты
     const cashoutStep = TUTORIAL_STEPS.find((s) => s.id === 'cashout_and_interest')!;
-    expect(cashoutStep.text).toContain('каждые $5');
-    expect(cashoutStep.text).toContain('максимума в $5');
+    expect(cashoutStep.text).toContain('каждые 5 з.');
+    expect(cashoutStep.text).toContain('максимума в 5 з.');
 
-    // 6. Лавка, Реликвии и редкость B/A/S
+    // 6. Лавка, Навыки и редкость B/A/S
     const shopStep = TUTORIAL_STEPS.find((s) => s.id === 'guild_shop_relics_rarity')!;
     expect(shopStep.text).toContain('B (Обычные)');
     expect(shopStep.text).toContain('A (Необычные)');
     expect(shopStep.text).toContain('S (Редкие)');
+    expect(shopStep.text).toContain('Навыки');
 
-    // 7. Порядок реликвий: слева направо (про-тип)
+    // 7. Порядок навыков: слева направо (про-тип)
     const orderStep = TUTORIAL_STEPS.find((s) => s.id === 'relic_order_pro_tip')!;
     expect(orderStep.text).toContain('слева направо');
     expect(orderStep.text).toContain('60');
@@ -179,15 +185,15 @@ describe('Интерактивный сценарий обучения (src/ui/t
     expect(consStep.text).toContain('Свитки Кузни');
     expect(consStep.text).toContain('Свитки Пандоры');
 
-    // 9. Грамоты (Привилегии)
+    // 9. Привилегии гильдии
     const voucherStep = TUTORIAL_STEPS.find((s) => s.id === 'vouchers_privileges')!;
-    expect(voucherStep.text).toContain('Грамота');
+    expect(voucherStep.text).toContain('Привилегия гильдии');
 
-    // 10. Пропуск и Босс-блайнд
+    // 10. Пропуск и Босс-монстр
     const skipStep = TUTORIAL_STEPS.find((s) => s.id === 'skip_blind_and_tags')!;
-    expect(skipStep.text).toContain('Знак');
+    expect(skipStep.text).toContain('Талон');
     const bossStep = TUTORIAL_STEPS.find((s) => s.id === 'boss_blind_warning')!;
-    expect(bossStep.text).toContain('пропустить нельзя');
+    expect(bossStep.text).toContain('Босса-монстра пропустить нельзя');
 
     // 11. Использование расходников в бою
     const useStep = TUTORIAL_STEPS.find((s) => s.id === 'combat_consumables_usage')!;
