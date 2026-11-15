@@ -179,11 +179,11 @@ describe('Интерактивный сценарий обучения (src/ui/t
     expect(orderStep.text).toContain('60');
     expect(orderStep.text).toContain('40');
 
-    // 8. Расходники (Фолианты, Свитки Кузни, Пандора)
+    // 8. Расходники (Фолианты, Свитки Кузни, Карты Пандоры)
     const consStep = TUTORIAL_STEPS.find((s) => s.id === 'consumables_overview')!;
     expect(consStep.text).toContain('Фолианты');
     expect(consStep.text).toContain('Свитки Кузни');
-    expect(consStep.text).toContain('Свитки Пандоры');
+    expect(consStep.text).toContain('Карты Пандоры');
 
     // 9. Привилегии гильдии
     const voucherStep = TUTORIAL_STEPS.find((s) => s.id === 'vouchers_privileges')!;
