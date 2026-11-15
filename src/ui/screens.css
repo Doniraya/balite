@@ -1173,23 +1173,66 @@
 }
 
 /* Выплата (cashout) */
+.arena-stage[data-phase='cashout'] {
+  justify-content: center;
+  align-items: center;
+  padding: clamp(10px, 1.6dvh, 20px) clamp(12px, 1.6vw, 24px);
+}
+
+.cashout-container {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 720px);
+  margin: 0 auto;
+  gap: clamp(12px, 1.6dvh, 20px);
+  box-sizing: border-box;
+}
+
+.arena-stage[data-phase='cashout'] .arena-header {
+  justify-content: center;
+  text-align: center;
+}
+
+.arena-stage[data-phase='cashout'] .arena-title {
+  font-size: clamp(22px, 2.6vw, 32px);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  margin-bottom: clamp(10px, 1.4dvh, 16px);
+  text-align: center;
+}
+
 .cashout-list {
   display: flex;
   flex-direction: column;
-  gap: clamp(4px, 0.6dvh, 6px);
+  gap: clamp(8px, 1.1dvh, 12px);
+  width: 100%;
 }
 
 .cashout-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: clamp(5px, 0.7dvh, 6px) 10px;
-  border-radius: 8px;
+  gap: 12px;
+  padding: clamp(10px, 1.3dvh, 16px) clamp(14px, 1.6vw, 20px);
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.05);
-  font-size: clamp(11.5px, min(2.5vw, 1.45dvh), 13px);
   transition:
     opacity calc(180ms / var(--anim-speed, 1)) ease,
     transform calc(180ms / var(--anim-speed, 1)) ease;
+}
+
+.cashout-row__label {
+  font-size: clamp(15px, 1.4vw, 20px);
+  font-weight: 700;
+  color: var(--screen-text);
+}
+
+.cashout-row__amount {
+  font-size: clamp(18px, 1.6vw, 24px);
+  font-weight: 800;
+  font-family: var(--font-ui);
+  color: #fde68a;
+  white-space: nowrap;
 }
 
 .cashout-row[data-cashout-revealed='false'] {
@@ -1211,10 +1254,50 @@
 }
 
 .cashout-row--total {
-  border: 1px solid var(--screen-gold);
-  background: rgba(244, 197, 82, 0.14);
-  font-weight: 800;
-  color: var(--screen-gold);
+  border: 2px solid var(--screen-gold);
+  background: linear-gradient(90deg, rgba(244, 197, 82, 0.18) 0%, rgba(244, 197, 82, 0.28) 100%);
+  box-shadow: 0 0 16px rgba(244, 197, 82, 0.2), inset 0 0 12px rgba(244, 197, 82, 0.1);
+}
+
+.cashout-row--total .cashout-row__label {
+  font-size: clamp(18px, 1.7vw, 24px);
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: 0.02em;
+}
+
+.cashout-row--total .cashout-row__amount {
+  font-size: clamp(22px, 2.2vw, 32px);
+  font-weight: 900;
+  color: #fde047;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+
+.claim-cashout-btn {
+  width: 100%;
+  min-height: clamp(52px, 6.2dvh, 66px);
+  font-size: clamp(18px, 1.7vw, 24px);
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  background: linear-gradient(180deg, #fde047 0%, #d97706 100%);
+  color: #1a1202;
+  border: 1px solid #fef08a;
+  border-radius: 12px;
+  box-shadow:
+    0 4px 0 #78350f,
+    0 8px 18px rgba(217, 119, 6, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  transition: transform 0.1s ease, filter 0.1s ease, box-shadow 0.1s ease;
+}
+
+.claim-cashout-btn:active {
+  transform: translateY(2px);
+  box-shadow:
+    0 2px 0 #78350f,
+    0 4px 8px rgba(217, 119, 6, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 /* Лавка (shop) */
@@ -1366,47 +1449,174 @@
 }
 
 /* Итог забега (victory / game_over) */
+.arena-stage[data-phase='victory'],
+.arena-stage[data-phase='game_over'] {
+  justify-content: center;
+  align-items: center;
+  padding: clamp(8px, 1.4dvh, 16px) clamp(10px, 1.4vw, 20px);
+}
+
 .run-end-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
+  gap: clamp(10px, 1.4dvh, 16px);
+  padding: clamp(12px, 1.8dvh, 22px);
   border-radius: 12px;
   border: 1px solid var(--screen-border);
   background: rgba(11, 24, 19, 0.94);
+  width: min(100%, 720px);
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .run-end-card--victory {
   border-color: var(--screen-gold);
+  box-shadow: 0 0 24px rgba(245, 185, 66, 0.2);
 }
 
 .run-end-card--defeat {
   border-color: rgba(217, 70, 62, 0.7);
+  box-shadow: 0 0 24px rgba(217, 70, 62, 0.2);
+}
+
+.run-end-card__header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: clamp(4px, 0.6dvh, 8px);
+}
+
+.run-end-card__title {
+  font-size: clamp(28px, 3.2vw, 42px);
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  margin: 0;
+}
+
+.run-end-card--victory .run-end-card__title {
+  color: var(--screen-gold);
+  text-shadow: 0 0 20px rgba(245, 185, 66, 0.45);
+}
+
+.run-end-card--defeat .run-end-card__title {
+  color: #f87171;
+  text-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+}
+
+.run-end-card__subtitle {
+  font-size: clamp(15px, 1.4vw, 20px);
+  color: var(--screen-muted);
+  margin: 0;
 }
 
 .run-end-stats {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
+  gap: clamp(6px, 1dvh, 10px);
 }
 
 .run-end-stat {
   display: flex;
   justify-content: space-between;
-  gap: 6px;
-  padding: 4px 8px;
-  border-radius: 6px;
+  align-items: center;
+  position: relative;
+  gap: clamp(6px, 1vw, 10px);
+  padding: clamp(8px, 1dvh, 12px) clamp(10px, 1.2vw, 16px);
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.05);
-  font-size: 12px;
+  font-size: clamp(14px, 1.3vw, 18px);
+  font-weight: 700;
+}
+
+.run-end-stat__value-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.run-end-record-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f5b942 0%, #ea580c 100%);
+  color: #1c1104;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.run-end-seed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: clamp(8px, 1dvh, 12px) clamp(10px, 1.2vw, 16px);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: clamp(13px, 1.2vw, 16px);
+}
+
+.run-end-seed-row__info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: clamp(13px, 1.2vw, 16px);
+}
+
+.run-end-seed-row__code {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-family: var(--font-ui);
+  font-weight: 800;
+  color: var(--screen-gold);
+}
+
+.run-end-victim-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: clamp(8px, 1.2dvh, 14px) clamp(10px, 1.2vw, 16px);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(8, 17, 13, 0.72);
+  font-size: clamp(13px, 1.2vw, 16px);
+}
+
+.run-end-victim-box__left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.run-end-victim-box__label {
+  font-size: clamp(12px, 1.1vw, 14px);
+  color: var(--screen-muted);
+}
+
+.run-end-victim-box__name {
+  font-size: clamp(14px, 1.3vw, 18px);
+  font-weight: 800;
+  color: var(--screen-text);
 }
 
 .run-end-actions {
   display: flex;
-  gap: 8px;
+  gap: clamp(8px, 1.2vw, 14px);
 }
 
 .run-end-actions .ui-btn {
   flex: 1;
+  min-height: 52px;
+  font-size: clamp(16px, 1.5vw, 22px);
+  font-weight: 800;
 }
 
 /* ==================== ПОЯС 4: РУКА И ДЕЙСТВИЯ ==================== */
@@ -1663,93 +1873,7 @@
   gap: 8px;
 }
 
-.run-end-card__header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 2px;
-}
 
-.run-end-stat {
-  position: relative;
-  align-items: center;
-}
-
-.run-end-stat__value-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.run-end-record-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #f5b942 0%, #ea580c 100%);
-  color: #1c1104;
-  font-size: 10px;
-  font-weight: 900;
-  white-space: nowrap;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-}
-
-.run-end-seed-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.run-end-seed-row__info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  font-size: 12px;
-}
-
-.run-end-seed-row__code {
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.42);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  font-family: var(--font-ui);
-  font-weight: 800;
-  color: var(--screen-gold);
-}
-
-.run-end-victim-box {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(8, 17, 13, 0.72);
-  font-size: 12px;
-}
-
-.run-end-victim-box__left {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.run-end-victim-box__label {
-  font-size: 11px;
-  color: var(--screen-muted);
-}
-
-.run-end-victim-box__name {
-  font-weight: 800;
-  color: var(--screen-text);
-}
 
 /* ==================== ШИРОКАЯ 2-КОЛОНОЧНАЯ ПК-ВЕРСИЯ (>= 960px landscape, масштаб ~1.5x) ==================== */
 
@@ -2407,5 +2531,13 @@
   .booster-choice:not(:disabled):hover {
     filter: brightness(0.86);
     cursor: pointer;
+  }
+
+  .claim-cashout-btn:not(:disabled):hover {
+    filter: brightness(1.08);
+    box-shadow:
+      0 5px 0 #78350f,
+      0 10px 22px rgba(217, 119, 6, 0.55),
+      inset 0 1px 0 rgba(255, 255, 255, 0.7);
   }
 }

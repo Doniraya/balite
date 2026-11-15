@@ -1606,11 +1606,12 @@ function renderCashoutArena(
   const { state, translator } = vm;
   const cashout = state.cashout;
 
+  if (!cashout) return undefined;
+
+  const container = createEl('div', 'cashout-container');
+
   const header = createEl('div', 'arena-header');
   header.append(createEl('h2', 'arena-title', translator.t('ui.cashout.title')));
-  arenaEl.append(header);
-
-  if (!cashout) return undefined;
 
   const rows: ReadonlyArray<{ label: string; amount: number; total?: boolean }> = [
     { label: translator.t('ui.cashout.guardianReward'), amount: cashout.blindReward },
@@ -1637,12 +1638,13 @@ function renderCashoutArena(
       'div',
       `cashout-row ${row.total ? 'cashout-row--total' : row.amount === 0 ? 'cashout-row--zero' : ''}`.trim(),
     );
+    const labelEl = createEl('span', 'cashout-row__label', row.label);
     const amountEl = createEl(
       'strong',
-      undefined,
+      'cashout-row__amount',
       translator.t('ui.hud.goldAmount', { dollars: row.amount }),
     );
-    rowEl.append(createEl('span', undefined, row.label), amountEl);
+    rowEl.append(labelEl, amountEl);
     list.append(rowEl);
     rowRefs.push({
       rowElement: rowEl,
@@ -1654,10 +1656,11 @@ function renderCashoutArena(
 
   const claimBtn = createButton(
     translator.t('ui.actions.claimCashout', { dollars: cashout.totalReward }),
-    'ui-btn--accent',
+    'ui-btn--accent claim-cashout-btn',
     () => handlers.onCommand({ type: 'CLAIM_CASHOUT' }),
   );
-  arenaEl.append(list, claimBtn);
+  container.append(header, list, claimBtn);
+  arenaEl.append(container);
 
   const key = [
     state.ante,
@@ -2031,12 +2034,12 @@ function renderRunEndArena(
   cardHeader.append(
     createEl(
       'h2',
-      'arena-title',
+      'arena-title run-end-card__title',
       translator.t(isVictory ? 'ui.runEnd.victoryTitle' : 'ui.runEnd.defeatTitle'),
     ),
     createEl(
       'p',
-      'hud-title-bar__sub',
+      'hud-title-bar__sub run-end-card__subtitle',
       translator.t(isVictory ? 'ui.runEnd.victorySubtitle' : 'ui.runEnd.defeatSubtitle'),
     ),
   );

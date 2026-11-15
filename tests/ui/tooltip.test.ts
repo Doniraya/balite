@@ -362,6 +362,36 @@ describe('Модуль мгновенных ховер-тултипов для �
     expect(leftPos + 220).toBeLessThanOrEqual(1000 - 12);
   });
 
+  it('выбирает сторону с максимальным свободным местом для крупного тултипа при дефиците экранного пространства', () => {
+    setViewportSize(400, 400);
+    controller = initHoverTooltip({
+      container: root,
+      offset: 10,
+      viewportPadding: 12,
+    });
+    const tooltipEl = controller.getElement();
+    // Крупный тултип: 350x250px при окне 400x400 не помещается целиком ни с одной стороны
+    mockElementRect(tooltipEl, { left: 0, top: 0, width: 350, height: 250 });
+
+    // Карта расположена на left: 100, top: 40, width: 100, height: 100:
+    // Сверху свободно: 40 - 10 - 12 = 18px
+    // Снизу свободно: 400 - 12 - 150 = 238px
+    // Слева свободно: 100 - 10 - 12 = 78px
+    // Справа свободно: 400 - 12 - 210 = 178px
+    const card = document.createElement('div');
+    setTooltipData(card, { title: 'Крупный свиток', placement: 'top' });
+    root.appendChild(card);
+    mockElementRect(card, { left: 100, top: 40, width: 100, height: 100 });
+
+    dispatchPointer(card, 'pointerover', { pointerType: 'mouse' });
+    // Поскольку снизу свободного места (238px) больше всех остальных сторон, выбирается bottom
+    expect(tooltipEl.dataset.placement).toBe('bottom');
+    const topPos = Number.parseFloat(tooltipEl.style.top);
+    // И позиция остаётся зажатой в пределах viewport
+    expect(topPos).toBeGreaterThanOrEqual(12);
+    expect(topPos).toBeLessThanOrEqual(400 - 12);
+  });
+
   it('корректно работает hide(), автоскрытие при удалении цели из DOM, clearTooltipData() и destroy()', async () => {
     controller = initHoverTooltip({ container: root });
 

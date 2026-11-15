@@ -38,6 +38,10 @@
   width: min(100%, 540px);
 }
 
+.inspector-card .modal-title {
+  font-size: clamp(20px, 2.2vw, 26px);
+}
+
 .modal-header {
   display: flex;
   align-items: center;
@@ -191,7 +195,7 @@
 
 .inspector-description {
   margin: 0;
-  font-size: 15px;
+  font-size: clamp(15px, 1.3vw, 18px);
   line-height: 1.45;
   color: var(--text-main, #f3f0e6);
 }
@@ -207,7 +211,7 @@
   align-items: center;
   padding: 4px 10px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: clamp(13px, 1.1vw, 15px);
   font-weight: 700;
   background: #1b342a;
   border: 1px solid var(--panel-border, #26483a);
@@ -236,6 +240,12 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.inspector-actions .modal-btn {
+  font-size: clamp(15px, 1.3vw, 18px);
+  min-height: clamp(48px, 5.2dvh, 52px);
+  font-weight: 800;
 }
 
 .inspector-actions-row {

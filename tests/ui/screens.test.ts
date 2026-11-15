@@ -828,6 +828,10 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       renderRunView(root, createViewModel(state), handlers);
 
       const arena = root.querySelector('[data-belt="arena"]') as HTMLElement;
+      expect(arena.querySelector('.cashout-container')).not.toBeNull();
+      expect(arena.querySelectorAll('.cashout-row__label')).toHaveLength(6);
+      expect(arena.querySelectorAll('.cashout-row__amount')).toHaveLength(6);
+      expect(arena.querySelector('.claim-cashout-btn')).not.toBeNull();
       expect(arena.textContent).toContain('Награда за заказ');
       expect(arena.textContent).toContain('Оставшиеся руки (2)');
       expect(arena.textContent).toContain('Проценты');
@@ -1058,6 +1062,8 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       renderRunView(root, createViewModel(victoryState, { meta }), handlers);
 
       const arena = root.querySelector('[data-belt="arena"]') as HTMLElement;
+      expect(arena.querySelector('.run-end-card__title')).not.toBeNull();
+      expect(arena.querySelector('.run-end-card__subtitle')).not.toBeNull();
       expect(arena.textContent).toContain('Победа');
       expect(arena.textContent).toContain('12345');
       expect(arena.textContent).toContain('52');

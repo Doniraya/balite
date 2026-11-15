@@ -111,9 +111,9 @@ interface ResolvedTooltipContent {
 type ConcretePlacement = 'top' | 'bottom' | 'left' | 'right';
 
 const DEFAULT_OFFSET_PX = 10;
-const DEFAULT_VIEWPORT_PADDING_PX = 10;
-const FALLBACK_TOOLTIP_WIDTH_PX = 220;
-const FALLBACK_TOOLTIP_HEIGHT_PX = 96;
+const DEFAULT_VIEWPORT_PADDING_PX = 12;
+const FALLBACK_TOOLTIP_WIDTH_PX = 260;
+const FALLBACK_TOOLTIP_HEIGHT_PX = 130;
 const DEFAULT_HIDDEN_TITLE = 'Перевёрнута';
 const DEFAULT_HIDDEN_DESCRIPTION = 'Скрыто способностью Босса';
 
@@ -400,6 +400,29 @@ function fitsPlacement(
 }
 
 /**
+ * Оценивает доступное свободное пространство для стороны размещения в пикселях.
+ */
+function getPlacementAvailableSpace(
+  placement: ConcretePlacement,
+  targetRect: DOMRect,
+  viewportWidth: number,
+  viewportHeight: number,
+  offset: number,
+  padding: number,
+): number {
+  switch (placement) {
+    case 'top':
+      return targetRect.top - offset - padding;
+    case 'bottom':
+      return viewportHeight - padding - (targetRect.bottom + offset);
+    case 'left':
+      return targetRect.left - offset - padding;
+    case 'right':
+      return viewportWidth - padding - (targetRect.right + offset);
+  }
+}
+
+/**
  * Вычисляет координаты (left, top) тултипа для заданной стороны с зажимом внутри viewport.
  */
 function computeCoordinatesForPlacement(
@@ -479,6 +502,7 @@ function calculateTooltipPosition(
 
   const order = getPlacementOrder(preferred);
   let chosen: ConcretePlacement = order[0];
+  let foundFitting = false;
 
   for (const candidate of order) {
     if (
@@ -494,7 +518,27 @@ function calculateTooltipPosition(
       )
     ) {
       chosen = candidate;
+      foundFitting = true;
       break;
+    }
+  }
+
+  // Если крупный тултип не помещается целиком ни на одной стороне, выбираем сторону с наибольшим запасом места
+  if (!foundFitting) {
+    let bestSpace = -Infinity;
+    for (const candidate of order) {
+      const space = getPlacementAvailableSpace(
+        candidate,
+        targetRect,
+        viewportWidth,
+        viewportHeight,
+        offset,
+        padding,
+      );
+      if (space > bestSpace) {
+        bestSpace = space;
+        chosen = candidate;
+      }
     }
   }
 
