@@ -1549,5 +1549,18 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       // Устаревшие кислотно-зеленые токены сукна не должны быть в :root
       expect(css).not.toContain('--screen-bg-top: #173429');
     });
+
+    it('screens.css стилизует доску заказов гильдии под пергамент и задаёт крупные жетоны мобов', async () => {
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      const cssPath = path.resolve(__dirname, '../../src/ui/screens.css');
+      const css = fs.readFileSync(cssPath, 'utf-8');
+
+      // Пергаментные карточки заказов гильдии
+      expect(css).toContain('var(--parchment-card-bg)');
+      // Крупные жетоны на мобильных и десктопе
+      expect(css).toMatch(/\.blind-card__token\s+\.blind-card__emblem\s*\{[^}]*clamp\(96px/);
+      expect(css).toMatch(/\.blind-card__token\s+\.blind-card__emblem\s*\{[^}]*clamp\(140px/);
+    });
   });
 });
