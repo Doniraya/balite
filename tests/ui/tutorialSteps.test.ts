@@ -14,7 +14,9 @@ import {
   getTutorialSteps,
   getTutorialStepsByPhase,
   getTutorialTotalSteps,
+  normalizeTutorialEmotion,
   TUTORIAL_STEPS,
+  type CanonicalTutorialEmotion,
   type TutorialPhase,
 } from '../../src/ui/tutorialSteps';
 
@@ -53,7 +55,19 @@ describe('Интерактивный сценарий обучения (src/ui/t
     const ids = new Set<string>();
     const validPhases: readonly TutorialPhase[] = ['blind_select', 'playing', 'cashout', 'shop'];
     const validArrows = ['top', 'bottom', 'left', 'right', 'none'];
-    const validEmotions = ['neutral', 'happy', 'thinking', 'warning'];
+    const validEmotions = [
+      'welcome',
+      'guide_cards',
+      'guide_book',
+      'guide_point',
+      'guide',
+      'happy',
+      'worried',
+      'idle',
+      'neutral',
+      'thinking',
+      'warning',
+    ];
     const validActions = [
       'next',
       'select_blind',
@@ -197,6 +211,34 @@ describe('Интерактивный сценарий обучения (src/ui/t
     for (const step of shopSteps) {
       expect(step.phase).toBe('shop');
     }
+  });
+
+  it('задействует полный спектр из 8 канонических эмоций маскота Миры', () => {
+    const canonicalSet = new Set<CanonicalTutorialEmotion>([
+      'welcome',
+      'guide_cards',
+      'guide_book',
+      'guide_point',
+      'guide',
+      'happy',
+      'worried',
+      'idle',
+    ]);
+
+    const usedEmotions = new Set(TUTORIAL_STEPS.map((s) => s.emotion));
+    for (const canonical of canonicalSet) {
+      expect(
+        usedEmotions.has(canonical),
+        `Эмоция ${canonical} не задействована ни в одном шаге обучения`,
+      ).toBe(true);
+    }
+
+    // Проверяем работу нормализации legacy-эмоций
+    expect(normalizeTutorialEmotion('neutral')).toBe('idle');
+    expect(normalizeTutorialEmotion('thinking')).toBe('guide_point');
+    expect(normalizeTutorialEmotion('warning')).toBe('worried');
+    expect(normalizeTutorialEmotion('happy')).toBe('happy');
+    expect(normalizeTutorialEmotion('welcome')).toBe('welcome');
   });
 
   it('все целевые селекторы targetSelector являются валидными CSS-селекторами', () => {

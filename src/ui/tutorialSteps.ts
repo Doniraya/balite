@@ -18,9 +18,51 @@ export type TutorialArrowPosition = 'top' | 'bottom' | 'left' | 'right' | 'none'
 export type TutorialSpeaker = 'Мира' | 'Джимбо';
 
 /**
- * Эмоциональное состояние персонажа для подбора аватара.
+ * Канонический набор из 8 эмоциональных состояний и поз чиби-маскота Миры:
+ * - welcome: приветствие с планшеткой гильдии
+ * - guide_cards: веер карт в руке и указка пальцем
+ * - guide_book: открытый гримуар с рунами
+ * - guide_point: подмигивание и поднятый палец «Важное правило»
+ * - guide: свиток и указка
+ * - happy: радость, победа и мешочек золота
+ * - worried: тревога, капелька пота и руки у щёк
+ * - idle: базовое спокойное парение
  */
-export type TutorialEmotion = 'neutral' | 'happy' | 'thinking' | 'warning';
+export type CanonicalTutorialEmotion =
+  | 'welcome'
+  | 'guide_cards'
+  | 'guide_book'
+  | 'guide_point'
+  | 'guide'
+  | 'happy'
+  | 'worried'
+  | 'idle';
+
+/**
+ * Устаревшие псевдонимы эмоций для обратной совместимости.
+ */
+export type LegacyTutorialEmotion = 'neutral' | 'thinking' | 'warning';
+
+/**
+ * Полный тип эмоции персонажа обучения (канонические 8 эмоций + legacy-алиасы).
+ */
+export type TutorialEmotion = CanonicalTutorialEmotion | LegacyTutorialEmotion;
+
+/**
+ * Нормализует любую эмоцию обучения к одному из 8 канонических состояний спрайта.
+ */
+export function normalizeTutorialEmotion(emotion: TutorialEmotion): CanonicalTutorialEmotion {
+  switch (emotion) {
+    case 'neutral':
+      return 'idle';
+    case 'thinking':
+      return 'guide_point';
+    case 'warning':
+      return 'worried';
+    default:
+      return emotion;
+  }
+}
 
 /**
  * Требуемое действие игрока для перехода к следующему шагу или разблокировки кнопки «Дальше».
@@ -83,7 +125,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     id: 'welcome_guild',
     phase: 'blind_select',
     arrowPosition: 'none',
-    emotion: 'happy',
+    emotion: 'welcome',
     requireAction: 'next',
     standard: {
       title: 'Добро пожаловать в Гильдию!',
@@ -99,7 +141,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'blind_select',
     targetSelector: '.blind-card--current',
     arrowPosition: 'bottom',
-    emotion: 'neutral',
+    emotion: 'welcome',
     requireAction: 'next',
     standard: {
       title: 'Выбор Стража',
@@ -115,7 +157,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'blind_select',
     targetSelector: '.blind-card--upcoming .blind-card__skip-row',
     arrowPosition: 'bottom',
-    emotion: 'thinking',
+    emotion: 'guide_point',
     requireAction: 'next',
     standard: {
       title: 'Пропуск Стража и Знаки',
@@ -131,7 +173,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'blind_select',
     targetSelector: '[data-blind-kind="boss"]',
     arrowPosition: 'bottom',
-    emotion: 'warning',
+    emotion: 'worried',
     requireAction: 'next',
     standard: {
       title: 'Опасность Главного Стража',
@@ -147,7 +189,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'blind_select',
     targetSelector: '.blind-card--current .blind-card__battle-btn',
     arrowPosition: 'top',
-    emotion: 'happy',
+    emotion: 'welcome',
     requireAction: 'select_blind',
     standard: {
       title: 'В бой со Стражем!',
@@ -167,7 +209,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'playing',
     targetSelector: '.score-calc-row',
     arrowPosition: 'top',
-    emotion: 'neutral',
+    emotion: 'guide_book',
     requireAction: 'next',
     standard: {
       title: 'Формула очков: Сила × Множитель',
@@ -183,7 +225,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'playing',
     targetSelector: '.belt--hand .hand-fan',
     arrowPosition: 'bottom',
-    emotion: 'thinking',
+    emotion: 'guide_cards',
     requireAction: 'next',
     standard: {
       title: 'Сила игральных карт',
@@ -199,7 +241,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'playing',
     targetSelector: '.hud-buttons-row button:first-child',
     arrowPosition: 'top',
-    emotion: 'neutral',
+    emotion: 'guide_cards',
     requireAction: 'next',
     standard: {
       title: 'Комбинации карт',
@@ -215,7 +257,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'playing',
     targetSelector: '.belt--hand .hand-card-slot:first-child',
     arrowPosition: 'bottom',
-    emotion: 'neutral',
+    emotion: 'guide_cards',
     requireAction: 'select_card',
     standard: {
       title: 'Выбор карт в руке',
@@ -231,7 +273,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'playing',
     targetSelector: '.hand-actions',
     arrowPosition: 'bottom',
-    emotion: 'thinking',
+    emotion: 'guide_point',
     requireAction: 'next',
     standard: {
       title: 'Сброс и сортировка руки',
@@ -247,7 +289,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'playing',
     targetSelector: '.hand-actions__play',
     arrowPosition: 'bottom',
-    emotion: 'happy',
+    emotion: 'guide_cards',
     requireAction: 'play_hand',
     standard: {
       title: 'Розыгрыш комбинации',
@@ -283,7 +325,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'cashout',
     targetSelector: '.claim-cashout-btn',
     arrowPosition: 'bottom',
-    emotion: 'neutral',
+    emotion: 'happy',
     requireAction: 'next',
     standard: {
       title: 'Забрать награду',
@@ -303,7 +345,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'shop',
     targetSelector: '.shop-row--offers',
     arrowPosition: 'top',
-    emotion: 'neutral',
+    emotion: 'idle',
     requireAction: 'next',
     standard: {
       title: 'Лавка Гильдии и Реликвии',
@@ -319,7 +361,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'shop',
     targetSelector: '.belt--inventory .inventory-strip:first-child',
     arrowPosition: 'top',
-    emotion: 'warning',
+    emotion: 'guide_point',
     requireAction: 'next',
     standard: {
       title: 'Секрет порядка: Слева направо!',
@@ -335,7 +377,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'shop',
     targetSelector: '.belt--inventory .inventory-strip:nth-child(2)',
     arrowPosition: 'top',
-    emotion: 'thinking',
+    emotion: 'guide_book',
     requireAction: 'next',
     standard: {
       title: 'Расходники: Фолианты, Свитки, Пандора',
@@ -351,7 +393,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'shop',
     targetSelector: '.shop-bottom-grid .shop-row:first-child',
     arrowPosition: 'bottom',
-    emotion: 'neutral',
+    emotion: 'guide_point',
     requireAction: 'next',
     standard: {
       title: 'Грамоты Гильдии (Привилегии)',
@@ -367,7 +409,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'shop',
     targetSelector: '.shop-offers-grid .shop-slot-btn:first-child',
     arrowPosition: 'top',
-    emotion: 'neutral',
+    emotion: 'happy',
     requireAction: 'buy_relic',
     standard: {
       title: 'Покупка в Лавке',
@@ -383,7 +425,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'shop',
     targetSelector: '.belt--inventory .inventory-strip:nth-child(2)',
     arrowPosition: 'top',
-    emotion: 'happy',
+    emotion: 'guide',
     requireAction: 'next',
     standard: {
       title: 'Использование расходников в бою',
@@ -399,7 +441,7 @@ const RAW_TUTORIAL_DEFINITIONS: readonly RawTutorialStepDefinition[] = [
     phase: 'shop',
     targetSelector: '.shop-next-btn',
     arrowPosition: 'top',
-    emotion: 'neutral',
+    emotion: 'idle',
     requireAction: 'leave_shop',
     standard: {
       title: 'Обновление и Следующий раунд',
