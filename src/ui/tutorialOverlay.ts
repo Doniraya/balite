@@ -1,19 +1,13 @@
 import './tutorialOverlay.css';
+import {
+  type CanonicalTutorialEmotion,
+  normalizeTutorialEmotion,
+  type TutorialArrowPosition,
+  type TutorialEmotion,
+  type TutorialPhase,
+} from './tutorialSteps';
 
-/**
- * Фаза игрового процесса, к которой привязан шаг обучения.
- */
-export type TutorialPhase = 'blind_select' | 'playing' | 'cashout' | 'shop' | 'any';
-
-/**
- * Направление стрелки-указателя на целевой элемент интерфейса.
- */
-export type TutorialArrowPosition = 'top' | 'bottom' | 'left' | 'right' | 'none';
-
-/**
- * Эмоциональное состояние персонажа-спикера (Миры).
- */
-export type TutorialEmotion = 'neutral' | 'happy' | 'thinking' | 'warning';
+export type { CanonicalTutorialEmotion, TutorialArrowPosition, TutorialEmotion, TutorialPhase };
 
 /**
  * Ожидаемое от игрока действие для перехода к следующему шагу.
@@ -189,202 +183,34 @@ function renderJimboAvatar(): string {
 }
 
 /**
- * Генерирует пиксель-арт SVG портрета Миры (администратора Гильдии) с поддержкой эмоций.
- * Эмоции: 'neutral' | 'happy' | 'thinking' | 'warning'.
+ * Возвращает имя файла спрайта Миры в соответствии с переданной эмоцией.
+ * Поддерживает как 8 новых эмоций (welcome, guide_cards, guide_book, guide_point, guide, happy, worried, idle),
+ * так и обратную совместимость со старыми ключами (neutral, thinking, warning).
  */
-export function renderMiraAvatar(emotion: TutorialEmotion = 'neutral', speaker: string = 'Мира'): string {
+export function resolveMiraSprite(emotion: TutorialEmotion = 'idle'): string {
+  const normalized = normalizeTutorialEmotion(emotion);
+  return `mira_${normalized}`;
+}
+
+/**
+ * Отрисовывает аватар персонажа обучения:
+ * - Для Миры возвращает <img> спрайт чиби-маскота (webp с fallback на png по onerror).
+ * - Для Джимбо (пасхалка DEV-режима) возвращает векторный SVG.
+ */
+export function renderMiraAvatar(
+  emotion: TutorialEmotion = 'idle',
+  speaker: string = 'Мира',
+): string {
   if (speaker === 'Джимбо') {
     return renderJimboAvatar();
   }
 
-  // Специфичные элементы лица в зависимости от эмоции
-  let eyesAndBrowsSvg = '';
-  let mouthSvg = '';
-  let emotionExtraSvg = '';
+  const spriteName = resolveMiraSprite(emotion);
+  const webpSrc = `./sprites/mira/${spriteName}.webp`;
+  const pngSrc = `./sprites/mira/${spriteName}.png`;
+  const altText = `${speaker} (${emotion})`;
 
-  switch (emotion) {
-    case 'happy':
-      // Веселые прищуренные глазки-дуги
-      eyesAndBrowsSvg = `
-        <!-- Брови приподнятые от радости -->
-        <rect x="23" y="22" width="6" height="1.5" fill="#962d00" rx="0.5"/>
-        <rect x="35" y="22" width="6" height="1.5" fill="#962d00" rx="0.5"/>
-        <!-- Глаза-дуги ^ ^ -->
-        <path d="M 23 28 Q 26 23 29 28" stroke="#165b32" stroke-width="2" fill="none" stroke-linecap="round"/>
-        <path d="M 35 28 Q 38 23 41 28" stroke="#165b32" stroke-width="2" fill="none" stroke-linecap="round"/>
-        <!-- Яркий румянец -->
-        <rect x="21" y="29" width="6" height="3" fill="#f1948a" rx="1" opacity="0.85"/>
-        <rect x="37" y="29" width="6" height="3" fill="#f1948a" rx="1" opacity="0.85"/>
-      `;
-      // Широкая открытая улыбка
-      mouthSvg = `
-        <path d="M 28 34 Q 32 40 36 34 Z" fill="#c0392b"/>
-        <rect x="30" y="34" width="4" height="1.2" fill="#ffffff" rx="0.5"/>
-      `;
-      // Летающие золотые искры радости
-      emotionExtraSvg = `
-        <rect x="8" y="14" width="3" height="3" fill="#ffd700"/>
-        <rect x="54" y="18" width="3" height="3" fill="#ffd700"/>
-        <polygon points="12,32 14,35 17,35 15,38 16,41 13,39 10,41 11,38 9,35 12,35" fill="#f5b942" opacity="0.9"/>
-      `;
-      break;
-
-    case 'thinking':
-      // Задумчивый взгляд: одна бровь приподнята, взгляд вверх-вправо
-      eyesAndBrowsSvg = `
-        <!-- Левая бровь поднята высоко -->
-        <rect x="23" y="20" width="6" height="1.5" fill="#962d00" rx="0.5"/>
-        <!-- Правая бровь нахмурена -->
-        <rect x="35" y="23" width="6" height="1.5" fill="#962d00" rx="0.5"/>
-        <!-- Глаза смотрят вверх и вправо -->
-        <rect x="24" y="24" width="5" height="4.5" fill="#ffffff" rx="1"/>
-        <rect x="26" y="24" width="3" height="4.5" fill="#1e824c" rx="0.5"/>
-        <rect x="27" y="24" width="2" height="2" fill="#ffffff"/>
-        <rect x="35" y="24" width="5" height="4.5" fill="#ffffff" rx="1"/>
-        <rect x="37" y="24" width="3" height="4.5" fill="#1e824c" rx="0.5"/>
-        <rect x="38" y="24" width="2" height="2" fill="#ffffff"/>
-        <!-- Мягкий румянец -->
-        <rect x="22" y="30" width="4" height="2" fill="#f5b7b1" opacity="0.6"/>
-        <rect x="38" y="30" width="4" height="2" fill="#f5b7b1" opacity="0.6"/>
-      `;
-      // Задумчивая волнистая линия губ
-      mouthSvg = `
-        <path d="M 29 35 Q 31 34 33 36 Q 35 34 36 35" stroke="#962d00" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-      `;
-      // Облачко мыслей с вопросительным знаком
-      emotionExtraSvg = `
-        <circle cx="52" cy="14" r="5.5" fill="#f5b942" opacity="0.95"/>
-        <text x="52" y="17.5" font-family="'Pixellari', monospace" font-size="10" font-weight="900" fill="#0d1d1b" text-anchor="middle">?</text>
-        <circle cx="46" cy="22" r="1.5" fill="#f5b942" opacity="0.75"/>
-      `;
-      break;
-
-    case 'warning':
-      // Встревоженный / настороженный взгляд
-      eyesAndBrowsSvg = `
-        <!-- Брови сдвинуты в тревоге -->
-        <path d="M 23 21 L 28 23.5" stroke="#962d00" stroke-width="1.8" stroke-linecap="round"/>
-        <path d="M 41 21 L 36 23.5" stroke="#962d00" stroke-width="1.8" stroke-linecap="round"/>
-        <!-- Широко распахнутые глаза -->
-        <rect x="23" y="23" width="6" height="5.5" fill="#ffffff" rx="1"/>
-        <rect x="25" y="24" width="2.5" height="3.5" fill="#1e824c"/>
-        <rect x="25" y="25" width="2" height="2" fill="#0d381e"/>
-        <rect x="35" y="23" width="6" height="5.5" fill="#ffffff" rx="1"/>
-        <rect x="37" y="24" width="2.5" height="3.5" fill="#1e824c"/>
-        <rect x="37" y="25" width="2" height="2" fill="#0d381e"/>
-      `;
-      // Приоткрытый от удивления/предостережения рот
-      mouthSvg = `
-        <rect x="30" y="34" width="4" height="2.5" fill="#962d00" rx="1"/>
-      `;
-      // Капелька пота на виске и янтарный знак предупреждения
-      emotionExtraSvg = `
-        <!-- Капля пота -->
-        <path d="M 46 19 C 46 19 48 22 48 24 C 48 25.5 47 26 46 26 C 45 26 44 25.5 44 24 C 44 22 46 19 46 19 Z" fill="#3a86ff"/>
-        <!-- Алмаз предупреждения с восклицательным знаком -->
-        <polygon points="12,10 16,14 12,18 8,14" fill="#e84a5f"/>
-        <text x="12" y="16.5" font-family="'Pixellari', monospace" font-size="9" font-weight="900" fill="#ffffff" text-anchor="middle">!</text>
-      `;
-      break;
-
-    case 'neutral':
-    default:
-      // Спокойный, дружелюбный, уверенный взгляд администратора
-      eyesAndBrowsSvg = `
-        <!-- Спокойные ровные брови -->
-        <rect x="23" y="22" width="6" height="1.5" fill="#962d00" rx="0.5"/>
-        <rect x="35" y="22" width="6" height="1.5" fill="#962d00" rx="0.5"/>
-        <!-- Выразительные изумрудные глаза -->
-        <rect x="24" y="24" width="5" height="5" fill="#ffffff" rx="1"/>
-        <rect x="25" y="25" width="3" height="4" fill="#1e824c" rx="0.5"/>
-        <rect x="26" y="26" width="2" height="2" fill="#0d381e"/>
-        <rect x="25" y="24.5" width="1.5" height="1.5" fill="#ffffff"/>
-        <rect x="35" y="24" width="5" height="5" fill="#ffffff" rx="1"/>
-        <rect x="36" y="25" width="3" height="4" fill="#1e824c" rx="0.5"/>
-        <rect x="37" y="26" width="2" height="2" fill="#0d381e"/>
-        <rect x="36" y="24.5" width="1.5" height="1.5" fill="#ffffff"/>
-        <!-- Нежный румянец -->
-        <rect x="22" y="30" width="4" height="2" fill="#f5b7b1" opacity="0.65"/>
-        <rect x="38" y="30" width="4" height="2" fill="#f5b7b1" opacity="0.65"/>
-      `;
-      // Мягкая приветливая улыбка
-      mouthSvg = `
-        <path d="M 29 35 Q 32 37.5 35 35" stroke="#962d00" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-      `;
-      // Золотая искорка на фоне
-      emotionExtraSvg = `
-        <polygon points="56,8 57,11 60,12 57,13 56,16 55,13 52,12 55,11" fill="#f5b942" opacity="0.8"/>
-      `;
-      break;
-  }
-
-  return `
-    <svg viewBox="0 0 64 64" width="100%" height="100%" shape-rendering="crispEdges" aria-label="Мира (${emotion})">
-      <defs>
-        <radialGradient id="mira-cameo-bg" cx="50%" cy="38%" r="65%">
-          <stop offset="0%" stop-color="#1e3e34"/>
-          <stop offset="100%" stop-color="#0b1a15"/>
-        </radialGradient>
-      </defs>
-
-      <!-- Фон камеи -->
-      <rect x="0" y="0" width="64" height="64" fill="url(#mira-cameo-bg)" rx="8"/>
-
-      <!-- Задняя масса огненно-рыжих волос -->
-      <rect x="18" y="10" width="28" height="28" fill="#a03000"/>
-      <rect x="14" y="14" width="36" height="26" fill="#bf3e00"/>
-      <!-- Администраторский аккуратный пучок с золотой заколкой -->
-      <rect x="44" y="10" width="9" height="9" fill="#d35400" rx="2"/>
-      <rect x="42" y="12" width="4" height="4" fill="#f5b942"/>
-
-      <!-- Плечи и одежда -->
-      <!-- Белый строгий воротник рубашки -->
-      <polygon points="26,43 32,52 38,43 32,46" fill="#ffffff"/>
-      <polygon points="28,43 32,50 30,43" fill="#d5dbdb"/>
-      <polygon points="36,43 32,50 34,43" fill="#d5dbdb"/>
-
-      <!-- Зелёный жилет Гильдии -->
-      <path d="M 15 48 L 26 43 L 28 64 L 12 64 Z" fill="#1e824c"/>
-      <path d="M 26 43 L 28 64 L 30 64 L 28 46 Z" fill="#145a32"/>
-      <path d="M 49 48 L 38 43 L 36 64 L 52 64 Z" fill="#1e824c"/>
-      <path d="M 38 43 L 36 64 L 34 64 L 36 46 Z" fill="#145a32"/>
-      <!-- Золотые пуговицы жилета -->
-      <rect x="31" y="52" width="2" height="2" fill="#ffd700"/>
-      <rect x="31" y="58" width="2" height="2" fill="#ffd700"/>
-
-      <!-- Золотой значок Гильдии (Guild badge) со щитом и рубином -->
-      <polygon points="19,49 24,49 25,54 21.5,57 18,54" fill="#f1c40f" stroke="#b7950b" stroke-width="0.5"/>
-      <rect x="20.5" y="51.5" width="2" height="2" fill="#e74c3c"/>
-
-      <!-- Шея -->
-      <rect x="28" y="38" width="8" height="7" fill="#f3bfa0"/>
-      <rect x="29" y="41" width="6" height="3" fill="#e2a785"/>
-
-      <!-- Лицо -->
-      <rect x="20" y="18" width="24" height="22" fill="#fde2cd" rx="4"/>
-      <rect x="22" y="36" width="20" height="4" fill="#fde2cd"/>
-      <!-- Тень под подбородком -->
-      <rect x="25" y="39" width="14" height="1.5" fill="#f3bfa0"/>
-
-      <!-- Волосы спереди: рыжие пряди и чёлка -->
-      <path d="M 16 16 L 48 16 L 48 24 L 44 26 L 42 20 L 32 23 L 22 19 L 18 28 L 16 26 Z" fill="#e67e22"/>
-      <path d="M 18 14 L 46 14 L 44 18 L 34 16 L 24 18 Z" fill="#f39c12"/>
-      <!-- Локоны по бокам лица -->
-      <rect x="16" y="24" width="4" height="12" fill="#d35400"/>
-      <rect x="18" y="26" width="2" height="12" fill="#e67e22"/>
-      <rect x="44" y="24" width="4" height="11" fill="#d35400"/>
-      <rect x="44" y="26" width="2" height="11" fill="#e67e22"/>
-
-      <!-- Глаза и брови -->
-      ${eyesAndBrowsSvg}
-
-      <!-- Рот -->
-      ${mouthSvg}
-
-      <!-- Спецэффекты эмоции -->
-      ${emotionExtraSvg}
-    </svg>
-  `;
+  return `<img src="${webpSrc}" alt="${altText}" class="tut-avatar-img" draggable="false" onerror="this.onerror=null;this.src='${pngSrc}';" />`;
 }
 
 /**

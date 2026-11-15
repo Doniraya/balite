@@ -3,6 +3,8 @@ import {
   createTutorialOverlay,
   formatTutorialText,
   renderMiraAvatar,
+  resolveMiraSprite,
+  type TutorialEmotion,
   type TutorialOverlayController,
   type TutorialStep,
 } from '../../src/ui/tutorialOverlay';
@@ -73,19 +75,49 @@ describe('formatTutorialText', () => {
   });
 });
 
-describe('renderMiraAvatar', () => {
-  it('генерирует корректный SVG для всех 4 эмоций Миры', () => {
-    const emotions = ['neutral', 'happy', 'thinking', 'warning'] as const;
+describe('renderMiraAvatar & resolveMiraSprite', () => {
+  it('корректно сопоставляет эмоции со спрайтами чиби-маскота Миры', () => {
+    expect(resolveMiraSprite('welcome')).toBe('mira_welcome');
+    expect(resolveMiraSprite('guide_cards')).toBe('mira_guide_cards');
+    expect(resolveMiraSprite('guide_book')).toBe('mira_guide_book');
+    expect(resolveMiraSprite('guide_point')).toBe('mira_guide_point');
+    expect(resolveMiraSprite('guide')).toBe('mira_guide');
+    expect(resolveMiraSprite('happy')).toBe('mira_happy');
+    expect(resolveMiraSprite('worried')).toBe('mira_worried');
+    expect(resolveMiraSprite('idle')).toBe('mira_idle');
+
+    // Обратная совместимость со старыми эмоциями
+    expect(resolveMiraSprite('neutral')).toBe('mira_idle');
+    expect(resolveMiraSprite('thinking')).toBe('mira_guide_point');
+    expect(resolveMiraSprite('warning')).toBe('mira_worried');
+  });
+
+  it('генерирует корректный тег <img> для всех эмоций Миры с fallback на .png', () => {
+    const emotions: TutorialEmotion[] = [
+      'welcome',
+      'guide_cards',
+      'guide_book',
+      'guide_point',
+      'guide',
+      'happy',
+      'worried',
+      'idle',
+      'neutral',
+      'thinking',
+      'warning',
+    ];
     for (const emotion of emotions) {
-      const svg = renderMiraAvatar(emotion, 'Мира');
-      expect(svg).toContain('<svg');
-      expect(svg).toContain('</svg>');
-      expect(svg).toContain(`Мира (${emotion})`);
-      expect(svg).toContain('mira-cameo-bg');
+      const html = renderMiraAvatar(emotion, 'Мира');
+      expect(html).toContain('<img');
+      expect(html).toContain('class="tut-avatar-img"');
+      expect(html).toContain(`alt="Мира (${emotion})"`);
+      expect(html).toContain('.webp');
+      expect(html).toContain('.png');
+      expect(html).toContain('onerror=');
     }
   });
 
-  it('генерирует аватар Джимбо при указании спикера "Джимбо"', () => {
+  it('генерирует векторный аватар Джимбо при указании спикера "Джимбо"', () => {
     const svg = renderMiraAvatar('neutral', 'Джимбо');
     expect(svg).toContain('<svg');
     expect(svg).toContain('aria-label="Джимбо"');

@@ -226,8 +226,8 @@
 
 .tut-avatar-frame {
   position: relative;
-  width: 68px;
-  height: 68px;
+  width: 72px;
+  height: 88px;
   border-radius: 10px;
   border: 2px solid var(--accent-gold, #f5b942);
   background: radial-gradient(circle at 50% 35%, #1d3d33 0%, #0c1815 100%);
@@ -238,12 +238,43 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  padding: 2px;
 }
 
 .tut-avatar-frame svg {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+/* Спрайт Миры (чиби-маскот full-body) */
+.tut-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  display: block;
+  animation: tut-float-bobbing 2.6s ease-in-out infinite;
+  transform-origin: center bottom;
+  pointer-events: none;
+  user-select: none;
+}
+
+@keyframes tut-float-bobbing {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tut-avatar-img {
+    animation: none;
+  }
 }
 
 .tut-avatar-name {
@@ -515,8 +546,8 @@
   }
 
   .tut-avatar-frame {
-    width: 58px;
-    height: 58px;
+    width: 62px;
+    height: 76px;
   }
 
   .tut-card-footer {
