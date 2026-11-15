@@ -398,8 +398,8 @@ describe('Локализация Balite (i18n)', () => {
   });
 
   it('корректно подставляет параметры в formatMessage и шаблоны Реликвий', () => {
-    expect(formatMessage('ru', 'ui.hud.stageWithMax', { ante: 3, maxAnte: 8 })).toBe('Ранг гильдии 3/8');
-    expect(formatMessage('en', 'ui.hud.stageWithMax', { ante: 3, maxAnte: 8 })).toBe('Guild Tier 3/8');
+    expect(formatMessage('ru', 'ui.hud.stageWithMax', { ante: 3, maxAnte: 8 })).toBe('Этаж 3/8');
+    expect(formatMessage('en', 'ui.hud.stageWithMax', { ante: 3, maxAnte: 8 })).toBe('Floor 3/8');
 
     // Подстановка нуля не должна восприниматься как отсутствующий параметр
     expect(formatMessage('ru', 'relics.j_mystic_summit.description', { mult: 15, discards: 0 })).toContain(
@@ -424,7 +424,7 @@ describe('Локализация Balite (i18n)', () => {
     expect(formatMessage('en', 'boss_hook_discard', { count: 2 })).toBe('Monster discarded 2 cards');
 
     // Недостающий параметр сохраняется в виде шаблона, неизвестный ключ возвращается как есть
-    expect(formatMessage('en', 'ui.hud.stage', {})).toBe('Guild Tier {ante}');
+    expect(formatMessage('en', 'ui.hud.stage', {})).toBe('Floor {ante}');
     expect(formatMessage('ru', 'trace.custom.unknown')).toBe('trace.custom.unknown');
   });
 

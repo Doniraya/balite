@@ -1419,7 +1419,10 @@ function renderBlindSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void 
 
   const boardTitle = isDevOriginalTermsEnabled()
     ? translator.t('ui.blindSelect.title', { ante: state.ante })
-    : translator.t('ui.blindSelect.rankTitle', { rank: getGuildRank(state.ante) });
+    : translator.t('ui.blindSelect.rankTitle', {
+        ante: state.ante,
+        rank: getGuildRank(state.ante),
+      });
   const header = createEl('div', 'arena-header');
   header.append(createEl('h2', 'arena-title', boardTitle));
 

@@ -1174,7 +1174,7 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
         findButtonByText(root, 'Принять заказ')!.click();
         expect(root.textContent).toContain('Сил.');
         expect(root.textContent).toContain('Навыки');
-        expect(root.textContent).toContain('Ранг F');
+        expect(root.textContent).toContain('Этаж 1');
 
         // Открываем Настройки и включаем DEV-словарь
         findButtonByText(root, 'Настройки')!.click();

@@ -254,7 +254,7 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       const handlers = createMockHandlers();
       renderRunView(root, createViewModel(state), handlers);
       const hud = root.querySelector('[data-belt="hud"]') as HTMLElement;
-      expect(hud.textContent).toContain('Ранг F (1/8)');
+      expect(hud.textContent).toContain('Этаж 1 (1/8)');
       expect(hud.textContent).toContain('Бой 1');
 
       const endlessState: RunState = {
@@ -264,7 +264,7 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       };
       renderRunView(root, createViewModel(endlessState), handlers);
       const hudEndless = root.querySelector('[data-belt="hud"]') as HTMLElement;
-      expect(hudEndless.textContent).toContain('Ранг SS+ (10)');
+      expect(hudEndless.textContent).toContain('Этаж 10 (Бесконечный)');
     });
 
     it('вызывает onOpenHandReference, onOpenSettings и onInspectBoss по тапу в HUD', () => {
