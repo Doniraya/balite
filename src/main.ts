@@ -12,7 +12,10 @@ function bootstrap(): void {
   if (!root) {
     throw new Error('Не найден корневой элемент #app для монтирования Balite');
   }
-  mountBaliteApp(root);
+  const app = mountBaliteApp(root);
+  if (typeof window !== 'undefined') {
+    (window as unknown as { __baliteApp?: unknown }).__baliteApp = app;
+  }
 }
 
 bootstrap();

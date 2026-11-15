@@ -2179,6 +2179,7 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
         playReroll: vi.fn(),
         playWin: vi.fn(),
         playLose: vi.fn(),
+        playDialogue: vi.fn(),
         playForTraceEvent: vi.fn((event, comboIndex) => {
           dispatchTraceAudioEvent(controller, event, comboIndex);
         }),

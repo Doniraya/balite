@@ -19,6 +19,7 @@ export const AUDIO_SAMPLE_KEYS = [
   'flame_surge',
   'win',
   'lose',
+  'dialogue',
 ] as const;
 
 /** Тип ключа аудиосэмпла. */

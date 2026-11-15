@@ -549,4 +549,43 @@ describe('createTutorialOverlay', () => {
       combinationsBtn.remove();
     }
   });
+
+  it('воспроизводит мягкий звуковой щелчок диалога audio.playDialogue() при смене реплики', () => {
+    const playDialogueSpy = vi.fn();
+    const mockAudio = {
+      playDialogue: playDialogueSpy,
+    } as unknown as import('../../src/audio/synth').BaliteAudioController;
+
+    const testController = createTutorialOverlay({
+      onNext: vi.fn(),
+      onSkip: vi.fn(),
+      audio: mockAudio,
+    });
+
+    const step1: TutorialStep = {
+      id: 'step-1',
+      title: 'Первая реплика',
+      text: 'Приветствую в Гильдии!',
+    };
+
+    const step2: TutorialStep = {
+      id: 'step-2',
+      title: 'Вторая реплика',
+      text: 'Взгляни на карты.',
+    };
+
+    // При показе первого шага играет диалоговый звук
+    testController.showStep(step1);
+    expect(playDialogueSpy).toHaveBeenCalledTimes(1);
+
+    // При повторном вызове showStep с тем же шагом звук повторно не воспроизводится
+    testController.showStep(step1);
+    expect(playDialogueSpy).toHaveBeenCalledTimes(1);
+
+    // При переключении на новый шаг звук снова воспроизводится
+    testController.showStep(step2);
+    expect(playDialogueSpy).toHaveBeenCalledTimes(2);
+
+    testController.destroy();
+  });
 });

@@ -1,4 +1,5 @@
 import './tutorialOverlay.css';
+import type { BaliteAudioController } from '../audio/synth';
 import { getTooltipData } from './tooltip';
 import {
   type CanonicalTutorialEmotion,
@@ -58,6 +59,7 @@ export interface TutorialOverlayOptions {
   readonly onSkip: () => void;
   readonly onAction?: (action: string) => void;
   readonly container?: HTMLElement;
+  readonly audio?: BaliteAudioController;
 }
 
 /**
@@ -791,6 +793,9 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
     },
 
     showStep(step: TutorialStep): void {
+      if (step.id !== currentStep?.id || step.text !== currentStep?.text) {
+        options.audio?.playDialogue();
+      }
       currentStep = step;
 
       // 1. Обновляем спикера и эмоцию

@@ -185,6 +185,7 @@ describe('sampleRegistry и createHybridBaliteAudio', () => {
 
   it('автоматически регистрирует подключённый bgm.mp3 из src/assets/audio/', () => {
     expect(AUDIO_SAMPLE_REGISTRY.bgm).toMatch(/bgm.*\.mp3$/);
+    expect(AUDIO_SAMPLE_KEYS).toContain('dialogue');
     const allowedKeys = new Set<string>(AUDIO_SAMPLE_KEYS);
     for (const key of Object.keys(AUDIO_SAMPLE_REGISTRY)) {
       expect(allowedKeys.has(key)).toBe(true);
@@ -339,6 +340,7 @@ describe('sampleRegistry и createHybridBaliteAudio', () => {
         1,
       );
       audio.playFlameThreshold();
+      audio.playDialogue();
     }).not.toThrow();
 
     audio.dispose();

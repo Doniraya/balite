@@ -592,6 +592,7 @@ export function mountBaliteApp(
     options.tutorialOverlay ??
     createTutorialOverlay({
       container: root,
+      audio,
       onNext: () => {
         advanceTutorialStep();
       },
@@ -1039,7 +1040,7 @@ export function mountBaliteApp(
       updatedAt,
     });
     saveData = createPlayerSaveData(nextMeta, saveData.activeRun, revision, updatedAt);
-    void persistBaliteSave(bridge, saveData).catch(() => false);
+    void persistBaliteSave(bridge, saveData, { flush: true }).catch(() => false);
   }
 
   function handleTutorialAction(action: string): void {

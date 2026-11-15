@@ -340,6 +340,9 @@ export function createHybridBaliteAudio(
     playLose: () => {
       if (!playSample('lose', 1)) synth.playLose();
     },
+    playDialogue: () => {
+      if (!playSample('dialogue', microVariationRate())) synth.playDialogue();
+    },
     playForTraceEvent: (event: TraceEvent, comboIndex: number) =>
       dispatchTraceAudioEvent(controller, event, comboIndex),
     dispose: () => synth.dispose(),

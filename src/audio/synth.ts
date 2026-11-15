@@ -44,6 +44,7 @@ export interface BaliteAudioController {
   playReroll(): void;
   playWin(): void;
   playLose(): void;
+  playDialogue(): void;
   playForTraceEvent(event: TraceEvent, comboIndex: number): void;
   dispose(): void;
 }
@@ -1291,6 +1292,29 @@ export function createBaliteAudio(
     });
   };
 
+  const playDialogue = (): void => {
+    const out = prepareSfx();
+    if (!out) return;
+    // Мягкий диалоговый щелчок/чириканье реплики Миры
+    scheduleTone(out.ctx, out.dest, {
+      type: 'sine',
+      startFreq: 580,
+      endFreq: 740,
+      duration: 0.045,
+      attack: 0.003,
+      gain: 0.09,
+    });
+    scheduleTone(out.ctx, out.dest, {
+      type: 'triangle',
+      startFreq: 880,
+      endFreq: 960,
+      delay: 0.015,
+      duration: 0.035,
+      attack: 0.002,
+      gain: 0.06,
+    });
+  };
+
   const dispose = (): void => {
     if (disposed) return;
     disposed = true;
@@ -1352,6 +1376,7 @@ export function createBaliteAudio(
     playReroll,
     playWin,
     playLose,
+    playDialogue,
     playForTraceEvent: (event, comboIndex) =>
       dispatchTraceAudioEvent(controller, event, comboIndex),
     dispose,
