@@ -1,0 +1,530 @@
+/* Стили оверлея интерактивного обучения (Tutorial Overlay) Balite
+ * Поддержка мобильного портрета 720×1280 (touch-first >= 44px) и десктопа.
+ * Тактильный пиксель-арт стиль в гармонии с темой игры.
+ */
+
+.tut-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.24s ease, visibility 0.24s ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.tut-overlay.is-visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Полноэкранная полупрозрачная вуаль затемнения */
+.tut-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 12, 9, 0.76);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  pointer-events: none;
+  transition: opacity 0.24s ease;
+}
+
+/* Блокировщик кликов с динамическим вырезом (clip-path) для целевого элемента */
+.tut-click-blocker {
+  position: fixed;
+  inset: 0;
+  z-index: 910;
+  pointer-events: auto;
+  background: transparent;
+}
+
+/* Спотлайт-вырез вокруг подсвечиваемого элемента (box-shadow вырез) */
+.tut-spotlight {
+  position: fixed;
+  z-index: 915;
+  border-radius: 8px;
+  box-shadow: 0 0 0 9999px rgba(5, 12, 9, 0.78);
+  border: 2px solid var(--accent-gold, #f5b942);
+  box-sizing: border-box;
+  pointer-events: none;
+  display: none;
+  transition:
+    top 0.26s cubic-bezier(0.2, 0, 0.2, 1),
+    left 0.26s cubic-bezier(0.2, 0, 0.2, 1),
+    width 0.26s cubic-bezier(0.2, 0, 0.2, 1),
+    height 0.26s cubic-bezier(0.2, 0, 0.2, 1),
+    opacity 0.2s ease;
+  animation: tut-spotlight-pulse 2s infinite ease-in-out;
+}
+
+@keyframes tut-spotlight-pulse {
+  0%, 100% {
+    border-color: rgba(245, 185, 66, 0.95);
+    box-shadow:
+      0 0 0 9999px rgba(5, 12, 9, 0.78),
+      0 0 14px rgba(245, 185, 66, 0.55),
+      inset 0 0 8px rgba(245, 185, 66, 0.25);
+  }
+  50% {
+    border-color: rgba(255, 222, 133, 0.7);
+    box-shadow:
+      0 0 0 9999px rgba(5, 12, 9, 0.78),
+      0 0 24px rgba(245, 185, 66, 0.8),
+      inset 0 0 14px rgba(245, 185, 66, 0.4);
+  }
+}
+
+/* Анимированная прыгающая стрелка */
+.tut-arrow {
+  position: fixed;
+  z-index: 920;
+  pointer-events: none;
+  display: none;
+  width: 36px;
+  height: 36px;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.75));
+  transition:
+    top 0.26s cubic-bezier(0.2, 0, 0.2, 1),
+    left 0.26s cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+.tut-arrow svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Направления стрелки и анимация подпрыгивания */
+.tut-arrow--top {
+  transform: rotate(0deg);
+  animation: tut-bounce-updown 1.1s infinite ease-in-out;
+}
+
+.tut-arrow--bottom {
+  transform: rotate(180deg);
+  animation: tut-bounce-downup 1.1s infinite ease-in-out;
+}
+
+.tut-arrow--left {
+  transform: rotate(-90deg);
+  animation: tut-bounce-leftright 1.1s infinite ease-in-out;
+}
+
+.tut-arrow--right {
+  transform: rotate(90deg);
+  animation: tut-bounce-rightleft 1.1s infinite ease-in-out;
+}
+
+@keyframes tut-bounce-updown {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  50% { transform: rotate(0deg) translateY(-8px); }
+}
+
+@keyframes tut-bounce-downup {
+  0%, 100% { transform: rotate(180deg) translateY(0); }
+  50% { transform: rotate(180deg) translateY(-8px); }
+}
+
+@keyframes tut-bounce-leftright {
+  0%, 100% { transform: rotate(-90deg) translateY(0); }
+  50% { transform: rotate(-90deg) translateY(-8px); }
+}
+
+@keyframes tut-bounce-rightleft {
+  0%, 100% { transform: rotate(90deg) translateY(0); }
+  50% { transform: rotate(90deg) translateY(-8px); }
+}
+
+/* Кнопка быстрого пропуска в верхнем правом углу (всегда под рукой) */
+.tut-skip-top-btn {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 930;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 8px 14px;
+  background: rgba(14, 28, 23, 0.94);
+  border: 2px solid rgba(235, 200, 118, 0.4);
+  border-radius: 8px;
+  color: #d1dfd7;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.tut-skip-top-btn:hover {
+  background: rgba(22, 44, 36, 0.98);
+  border-color: var(--accent-gold, #f5b942);
+  color: #ffffff;
+}
+
+.tut-skip-top-btn:active {
+  transform: translateY(2px);
+}
+
+.tut-skip-icon {
+  font-size: 16px;
+  color: var(--accent-gold, #f5b942);
+}
+
+/* Диалоговая карточка Миры */
+.tut-card {
+  position: fixed;
+  z-index: 925;
+  width: min(calc(100vw - 28px), 540px);
+  max-height: min(85vh, 760px);
+  background: var(--panel-bg, #11231f);
+  border: 2px solid var(--accent-gold, #f5b942);
+  border-radius: 12px;
+  box-shadow:
+    0 6px 0 rgba(4, 9, 7, 0.95),
+    0 20px 48px rgba(0, 0, 0, 0.78),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--text-main, #f3efe6);
+  box-sizing: border-box;
+  transition:
+    top 0.28s cubic-bezier(0.2, 0, 0.2, 1),
+    bottom 0.28s cubic-bezier(0.2, 0, 0.2, 1),
+    left 0.28s cubic-bezier(0.2, 0, 0.2, 1),
+    transform 0.28s cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+/* Шапка карточки: аватар и заголовок шага */
+.tut-card-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(235, 200, 118, 0.25);
+}
+
+/* Контейнер аватара Миры */
+.tut-avatar-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.tut-avatar-frame {
+  position: relative;
+  width: 68px;
+  height: 68px;
+  border-radius: 10px;
+  border: 2px solid var(--accent-gold, #f5b942);
+  background: radial-gradient(circle at 50% 35%, #1d3d33 0%, #0c1815 100%);
+  box-shadow:
+    0 4px 10px rgba(0, 0, 0, 0.5),
+    inset 0 0 10px rgba(245, 185, 66, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.tut-avatar-frame svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.tut-avatar-name {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--accent-gold, #f5b942);
+  background: rgba(12, 25, 21, 0.85);
+  padding: 1px 7px;
+  border-radius: 4px;
+  border: 1px solid rgba(245, 185, 66, 0.35);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Мета-информация шапки */
+.tut-header-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tut-step-counter {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted, #a6b7ad);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.tut-step-title {
+  margin: 0;
+  font-size: clamp(17px, 2.5vw, 22px);
+  font-weight: 800;
+  color: var(--accent-gold, #f5b942);
+  line-height: 1.25;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  word-wrap: break-word;
+}
+
+/* Текстовая область карточки */
+.tut-card-body {
+  font-size: clamp(14px, 2vw, 16px);
+  line-height: 1.55;
+  color: var(--text-main, #f3efe6);
+  max-height: min(46vh, 420px);
+  overflow-y: auto;
+  padding-right: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tut-text {
+  margin: 0;
+}
+
+/* Стили подсветки ключевых терминов в стиле Balatro */
+.tut-hl {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 800;
+  line-height: 1.25;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.tut-hl--blue {
+  color: #ffffff;
+  background: #20639b;
+  border: 1px solid #3a86ff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.tut-hl--red {
+  color: #ffffff;
+  background: #b83b4b;
+  border: 1px solid #e84a5f;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.tut-hl--gold {
+  color: #ffffff;
+  background: #c27d00;
+  border: 1px solid #f5b942;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.tut-hl--green {
+  color: #ffffff;
+  background: #27ae60;
+  border: 1px solid #2ecc71;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.tut-hl--attention {
+  color: #ffffff;
+  background: #d35400;
+  border: 1px solid #e67e22;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.tut-hl--tarot {
+  color: #ffffff;
+  background: #8e44ad;
+  border: 1px solid #9b59b6;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.tut-hl--planet {
+  color: #ffffff;
+  background: #16a085;
+  border: 1px solid #1abc9c;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.tut-hl--spectral {
+  color: #ffffff;
+  background: #2c3e50;
+  border: 1px solid #4a69bd;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.tut-hl--white {
+  color: #192a24;
+  background: #f4f6f7;
+  border: 1px solid #bdc3c7;
+}
+
+.tut-hl--inactive {
+  color: #a6b7ad;
+  background: #1b342a;
+  border: 1px solid #26483a;
+}
+
+/* Бейджи множителей и фишек */
+.tut-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-weight: 900;
+  font-size: 0.95em;
+  margin: 0 2px;
+}
+
+.tut-badge--mult {
+  background: #e84a5f;
+  color: #ffffff;
+  border: 1px solid #ff7675;
+  box-shadow: 0 2px 0 #801d1d;
+}
+
+.tut-badge--chips {
+  background: #3a86ff;
+  color: #ffffff;
+  border: 1px solid #70a1ff;
+  box-shadow: 0 2px 0 #1b4fb3;
+}
+
+/* Подвал карточки с кнопками действий */
+.tut-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(235, 200, 118, 0.25);
+}
+
+/* Кнопки диалога (touch-first >= 44px) */
+.tut-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: clamp(14px, 2vw, 17px);
+  font-weight: 800;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.15s ease;
+}
+
+/* Вторичная кнопка «Пропустить» */
+.tut-btn--skip {
+  background: #193328;
+  border: 2px solid rgba(235, 200, 118, 0.35);
+  color: var(--text-muted, #a6b7ad);
+  box-shadow: 0 3px 0 rgba(4, 9, 7, 0.8);
+}
+
+.tut-btn--skip:hover {
+  background: #234537;
+  border-color: rgba(235, 200, 118, 0.6);
+  color: var(--text-main, #f3efe6);
+}
+
+.tut-btn--skip:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 rgba(4, 9, 7, 0.8);
+}
+
+/* Главная кнопка «Дальше» */
+.tut-btn--next {
+  background: linear-gradient(180deg, #e84a5f 0%, #c0392b 100%);
+  border: 2px solid #ff7675;
+  color: #ffffff;
+  box-shadow: 0 4px 0 #801d1d, 0 6px 14px rgba(0, 0, 0, 0.4);
+  margin-left: auto;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.tut-btn--next:hover {
+  background: linear-gradient(180deg, #ff576c 0%, #d63031 100%);
+  border-color: #ff9f9f;
+}
+
+.tut-btn--next:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #801d1d;
+}
+
+/* Режим ожидания действия пользователя (пульсирующая подсказка) */
+.tut-btn--action-hint {
+  background: linear-gradient(180deg, #f5b942 0%, #d48800 100%);
+  border: 2px solid #ffeaa7;
+  color: #1a1608;
+  box-shadow: 0 4px 0 #8a5800, 0 6px 16px rgba(245, 185, 66, 0.35);
+  animation: tut-action-pulse 1.6s infinite ease-in-out;
+}
+
+@keyframes tut-action-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 4px 0 #8a5800, 0 6px 16px rgba(245, 185, 66, 0.35);
+  }
+  50% {
+    transform: scale(1.03);
+    box-shadow: 0 4px 0 #8a5800, 0 8px 22px rgba(245, 185, 66, 0.6);
+  }
+}
+
+.tut-action-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.9);
+  display: inline-block;
+  animation: tut-dot-blink 1s infinite alternate;
+}
+
+@keyframes tut-dot-blink {
+  from { opacity: 0.4; }
+  to { opacity: 1; }
+}
+
+/* Мобильная адаптация */
+@media (max-width: 600px) {
+  .tut-card {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .tut-avatar-frame {
+    width: 58px;
+    height: 58px;
+  }
+
+  .tut-card-footer {
+    gap: 8px;
+  }
+
+  .tut-btn {
+    padding: 8px 14px;
+    min-height: 44px;
+  }
+}
