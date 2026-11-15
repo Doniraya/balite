@@ -244,13 +244,13 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
   overlayEl.setAttribute('aria-modal', 'true');
   overlayEl.setAttribute('aria-labelledby', 'tut-step-title');
 
-  // Полупрозрачный фон
+  // Полупрозрачная вуаль затемнения (БЕЗ размытия/blur)
   const backdropEl = document.createElement('div');
   backdropEl.className = 'tut-backdrop';
   backdropEl.setAttribute('aria-hidden', 'true');
   overlayEl.appendChild(backdropEl);
 
-  // Спотлайт-вырез вокруг элемента
+  // Спотлайт-вырез вокруг элемента (чистый вырез без размытия, 100% резкий и яркий)
   const spotlightEl = document.createElement('div');
   spotlightEl.className = 'tut-spotlight';
   spotlightEl.setAttribute('aria-hidden', 'true');
@@ -268,78 +268,113 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
   arrowEl.innerHTML = renderArrowSvg();
   overlayEl.appendChild(arrowEl);
 
-  // Кнопка быстрого пропуска в верхнем правом углу
+  // Кнопка быстрого пропуска в верхнем правом углу (в стиле Balatro)
   const topSkipBtn = document.createElement('button');
   topSkipBtn.type = 'button';
   topSkipBtn.className = 'tut-skip-top-btn';
   topSkipBtn.setAttribute('aria-label', 'Пропустить обучение');
-  topSkipBtn.innerHTML = `<span>Пропустить</span><span class="tut-skip-icon">›</span>`;
+  topSkipBtn.innerHTML = `<span>Пропуск</span><span class="tut-skip-icon">&gt;</span>`;
   overlayEl.appendChild(topSkipBtn);
 
-  // Диалоговая карточка
+  // Плавающий кластер обучения (Речевое облачко Balatro + свободная Мира + кнопка «Дальше»)
   const cardEl = document.createElement('div');
-  cardEl.className = 'tut-card';
+  cardEl.className = 'tut-card tut-floating-cluster';
 
-  // Шапка карточки
-  const cardHeaderEl = document.createElement('div');
-  cardHeaderEl.className = 'tut-card-header';
+  // 1. ВВЕРХУ: Белое речевое облачко в стиле Balatro
+  const speechBubbleEl = document.createElement('div');
+  speechBubbleEl.className = 'tut-speech-bubble';
+  speechBubbleEl.setAttribute('role', 'region');
+  speechBubbleEl.setAttribute('aria-live', 'polite');
 
-  // Аватар
-  const avatarWrapperEl = document.createElement('div');
-  avatarWrapperEl.className = 'tut-avatar-wrapper';
+  // Мета-строка шапки: счётчик и спикер
+  const bubbleMetaEl = document.createElement('div');
+  bubbleMetaEl.className = 'tut-bubble-meta tut-header-meta';
 
-  const avatarFrameEl = document.createElement('div');
-  avatarFrameEl.className = 'tut-avatar-frame';
-  avatarFrameEl.innerHTML = renderMiraAvatar('neutral');
-  avatarWrapperEl.appendChild(avatarFrameEl);
+  const stepCounterEl = document.createElement('div');
+  stepCounterEl.className = 'tut-step-counter';
+  bubbleMetaEl.appendChild(stepCounterEl);
 
   const avatarNameEl = document.createElement('div');
   avatarNameEl.className = 'tut-avatar-name';
   avatarNameEl.textContent = 'Мира';
-  avatarWrapperEl.appendChild(avatarNameEl);
+  bubbleMetaEl.appendChild(avatarNameEl);
 
-  cardHeaderEl.appendChild(avatarWrapperEl);
+  speechBubbleEl.appendChild(bubbleMetaEl);
 
-  // Мета шапки (счётчик и заголовок)
-  const headerMetaEl = document.createElement('div');
-  headerMetaEl.className = 'tut-header-meta';
-
-  const stepCounterEl = document.createElement('div');
-  stepCounterEl.className = 'tut-step-counter';
-  headerMetaEl.appendChild(stepCounterEl);
-
+  // Заголовок шага
   const stepTitleEl = document.createElement('h3');
   stepTitleEl.id = 'tut-step-title';
   stepTitleEl.className = 'tut-step-title';
-  headerMetaEl.appendChild(stepTitleEl);
+  speechBubbleEl.appendChild(stepTitleEl);
 
-  cardHeaderEl.appendChild(headerMetaEl);
-  cardEl.appendChild(cardHeaderEl);
-
-  // Текстовая область
+  // Текстовое тело подсказки
   const cardBodyEl = document.createElement('div');
   cardBodyEl.className = 'tut-card-body';
 
   const textEl = document.createElement('div');
   textEl.className = 'tut-text';
   cardBodyEl.appendChild(textEl);
-  cardEl.appendChild(cardBodyEl);
+  speechBubbleEl.appendChild(cardBodyEl);
 
-  // Подвал с кнопками
+  // Указательный хвостик облачка речи вниз к Мире
+  const bubbleTailEl = document.createElement('div');
+  bubbleTailEl.className = 'tut-speech-tail';
+  bubbleTailEl.setAttribute('aria-hidden', 'true');
+  speechBubbleEl.appendChild(bubbleTailEl);
+
+  cardEl.appendChild(speechBubbleEl);
+
+  // 2. В СЕРЕДИНЕ: Свободно парящая Мира с летающими частицами конфетти
+  const mascotStageEl = document.createElement('div');
+  mascotStageEl.className = 'tut-mascot-stage';
+
+  // Разноцветные частицы конфетти вокруг маскота
+  const confettiContainerEl = document.createElement('div');
+  confettiContainerEl.className = 'tut-confetti-container';
+  confettiContainerEl.setAttribute('aria-hidden', 'true');
+
+  const confettiFlakeClasses = [
+    'cyan tut-flake--1',
+    'orange tut-flake--2',
+    'gold tut-flake--3',
+    'red tut-flake--4',
+    'cyan tut-flake--5',
+    'orange tut-flake--6',
+    'gold tut-flake--7',
+    'red tut-flake--8',
+    'gold tut-flake--9',
+    'cyan tut-flake--10',
+  ];
+  for (const flakeCls of confettiFlakeClasses) {
+    const flakeEl = document.createElement('span');
+    flakeEl.className = `tut-flake tut-flake--${flakeCls}`;
+    confettiContainerEl.appendChild(flakeEl);
+  }
+  mascotStageEl.appendChild(confettiContainerEl);
+
+  // Контейнер маскота без рамок и заточения в коробку
+  const avatarFrameEl = document.createElement('div');
+  avatarFrameEl.className = 'tut-avatar-frame tut-mascot-figure';
+  avatarFrameEl.innerHTML = renderMiraAvatar('neutral');
+  mascotStageEl.appendChild(avatarFrameEl);
+
+  cardEl.appendChild(mascotStageEl);
+
+  // 3. СНИЗУ: Заметная обособленная красная кнопка «Дальше» в стиле Balatro
   const cardFooterEl = document.createElement('div');
-  cardFooterEl.className = 'tut-card-footer';
-
-  const skipBtn = document.createElement('button');
-  skipBtn.type = 'button';
-  skipBtn.className = 'tut-btn tut-btn--skip';
-  skipBtn.textContent = 'Пропустить';
-  cardFooterEl.appendChild(skipBtn);
+  cardFooterEl.className = 'tut-card-footer tut-actions';
 
   const nextBtn = document.createElement('button');
   nextBtn.type = 'button';
   nextBtn.className = 'tut-btn tut-btn--next';
   nextBtn.textContent = 'Дальше';
   cardFooterEl.appendChild(nextBtn);
+
+  const skipBtn = document.createElement('button');
+  skipBtn.type = 'button';
+  skipBtn.className = 'tut-btn tut-btn--skip';
+  skipBtn.textContent = 'Пропустить';
+  cardFooterEl.appendChild(skipBtn);
 
   cardEl.appendChild(cardFooterEl);
   overlayEl.appendChild(cardEl);
@@ -349,13 +384,14 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
   targetContainer.appendChild(overlayEl);
 
   /**
-   * Обновляет координаты спотлайта, стрелки и карточки диалога.
+   * Обновляет координаты спотлайта, стрелки и плавающего кластера Миры.
    */
   function updatePositions(): void {
     if (!currentTargetElement || !currentTargetElement.isConnected) {
       spotlightEl.style.display = 'none';
       arrowEl.style.display = 'none';
       blockerEl.style.clipPath = 'none';
+      backdropEl.style.opacity = '1';
 
       // Центрируем диалог по экрану
       cardEl.style.top = '50%';
@@ -374,6 +410,7 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
     const spotlightHeight = rect.height + padding * 2;
 
     spotlightEl.style.display = 'block';
+    backdropEl.style.opacity = '0'; // Спотлайт сам формирует темную вуаль без двойного затемнения
     spotlightEl.style.top = `${spotlightTop}px`;
     spotlightEl.style.left = `${spotlightLeft}px`;
     spotlightEl.style.width = `${spotlightWidth}px`;
@@ -434,8 +471,8 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
       arrowEl.style.left = `${arrowLeft}px`;
     }
 
-    // Умное позиционирование карточки диалога:
-    // Карточка размещается так, чтобы ни при каких обстоятельствах не закрывать целевой элемент.
+    // Умное динамическое позиционирование кластера Миры:
+    // Кластер размещается рядом с целевым элементом, ни в коем случае не закрывая его.
     const vh = window.innerHeight;
     const vw = window.innerWidth;
     const targetCenterY = rect.top + rect.height / 2;
@@ -450,13 +487,13 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
       cardEl.style.bottom = 'auto';
       cardEl.style.transform = 'translateY(-50%)';
     } else if (targetCenterY > vh * 0.48) {
-      // Элемент находится в нижней половине экрана -> карточка размещается вверху
+      // Элемент находится в нижней половине экрана -> кластер размещается вверху
       cardEl.style.top = 'clamp(14px, 3vh, 36px)';
       cardEl.style.bottom = 'auto';
       cardEl.style.left = '50%';
       cardEl.style.transform = 'translateX(-50%)';
     } else {
-      // Элемент в верхней половине экрана -> карточка размещается внизу
+      // Элемент в верхней половине экрана -> кластер размещается внизу
       cardEl.style.top = 'auto';
       cardEl.style.bottom = 'clamp(14px, 3vh, 36px)';
       cardEl.style.left = '50%';
@@ -602,6 +639,7 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
       spotlightEl.style.display = 'none';
       arrowEl.style.display = 'none';
       blockerEl.style.clipPath = 'none';
+      backdropEl.style.opacity = '0';
     },
 
     setTarget(element: HTMLElement | null, arrowPosition?: string): void {

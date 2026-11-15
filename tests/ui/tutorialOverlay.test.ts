@@ -403,6 +403,42 @@ describe('createTutorialOverlay', () => {
     expect(onNext).not.toHaveBeenCalled();
   });
 
+  it('формирует правильную структуру плавающего кластера в стиле Balatro (облачко, маскот с конфетти, кнопка)', () => {
+    controller.showStep({
+      id: 'step-layout-balatro',
+      title: 'Маскот Balatro',
+      text: 'Тест структуры кластера',
+    });
+
+    const cluster = document.querySelector<HTMLElement>('.tut-floating-cluster');
+    expect(cluster).not.toBeNull();
+
+    // 1. Вверху: белое речевое облачко с хвостиком
+    const speechBubble = cluster?.querySelector<HTMLElement>('.tut-speech-bubble');
+    expect(speechBubble).not.toBeNull();
+    const tail = speechBubble?.querySelector('.tut-speech-tail');
+    expect(tail).not.toBeNull();
+
+    // 2. В середине: сцена маскота с конфетти и несжатым аватаром
+    const mascotStage = cluster?.querySelector<HTMLElement>('.tut-mascot-stage');
+    expect(mascotStage).not.toBeNull();
+    const confetti = mascotStage?.querySelector('.tut-confetti-container');
+    expect(confetti).not.toBeNull();
+    const flakes = confetti?.querySelectorAll('.tut-flake');
+    expect(flakes?.length).toBe(10);
+
+    const avatarFrame = mascotStage?.querySelector('.tut-avatar-frame');
+    expect(avatarFrame).not.toBeNull();
+
+    // 3. Снизу: обособленные кнопки управления
+    const actions = cluster?.querySelector<HTMLElement>('.tut-actions');
+    expect(actions).not.toBeNull();
+    const nextBtn = actions?.querySelector<HTMLButtonElement>('.tut-btn--next');
+    expect(nextBtn).not.toBeNull();
+    const skipBtn = actions?.querySelector<HTMLButtonElement>('.tut-btn--skip');
+    expect(skipBtn).not.toBeNull();
+  });
+
   it('полностью очищает DOM и слушатели при вызове destroy()', () => {
     expect(document.querySelector('.tut-overlay')).not.toBeNull();
 
