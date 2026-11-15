@@ -171,6 +171,7 @@ export const EN_DICTIONARY: LocaleDictionary = {
       crtOff: 'Off',
       crtLight: 'Light',
       crtOriginal: 'Original',
+      resetTutorial: 'Restart Tutorial',
     },
     stats: {
       title: 'Stats',

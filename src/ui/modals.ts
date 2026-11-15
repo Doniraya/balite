@@ -56,6 +56,7 @@ export interface SettingsModalOptions {
   readonly onClose: () => void;
   readonly onReturnToMainMenu?: () => void;
   readonly onTabChange?: (tab: SettingsModalTab) => void;
+  readonly onResetTutorial?: () => void;
   readonly onOpenDebugPanel?: () => void;
   readonly onDebugAction?: (
     action: 'interstitial' | 'rewarded' | 'flush' | 'resetRun',
@@ -1006,6 +1007,22 @@ function renderSettingsControlsBody(body: HTMLElement, options: SettingsModalOpt
       onSelect: (lang) => onChangeSettings({ lang }),
     }),
   );
+
+  // Кнопка сброса / повторного прохождения интерактивного обучения
+  const resetTutorialBtn = createHubButton(
+    translator.t('ui.settings.resetTutorial'),
+    'reset-tutorial',
+    'modal-btn--secondary modal-btn--full',
+    () => {
+      if (options.onResetTutorial) {
+        options.onResetTutorial();
+      } else {
+        onChangeSettings({ tutorialCompleted: false, tutorialStep: 0 });
+      }
+    },
+  );
+  resetTutorialBtn.dataset.action = 'reset-tutorial';
+  body.appendChild(resetTutorialBtn);
 
   // Отладочные инструменты и DEV-переключатель словаря доступны строго по флагу ?debug
   if (options.isDebug === true) {

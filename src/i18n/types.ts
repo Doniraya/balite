@@ -302,6 +302,7 @@ export interface UiDictionary {
     readonly crtOff: string;
     readonly crtLight: string;
     readonly crtOriginal: string;
+    readonly resetTutorial: string;
   };
   readonly stats: {
     readonly title: string;

@@ -171,6 +171,7 @@ export const RU_DICTIONARY: LocaleDictionary = {
       crtOff: 'Выкл',
       crtLight: 'Лёгкий',
       crtOriginal: 'Оригинал',
+      resetTutorial: 'Пройти обучение заново',
     },
     stats: {
       title: 'Статистика',
