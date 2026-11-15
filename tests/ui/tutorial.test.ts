@@ -10,12 +10,16 @@ import { createTranslator } from '../../src/i18n';
 import { renderSettingsModal, type SettingsModalOptions } from '../../src/ui/modals';
 import {
   createTutorialOverlay,
+  renderMiraAvatar,
+  resolveMiraSprite,
   type TutorialOverlayController,
   type TutorialStep,
 } from '../../src/ui/tutorialOverlay';
 import {
+  CanonicalTutorialEmotion,
   getTutorialStepByIndex,
   getTutorialSteps,
+  normalizeTutorialEmotion,
   TUTORIAL_STEPS,
 } from '../../src/ui/tutorialSteps';
 
@@ -716,6 +720,60 @@ describe('Интерактивное обучение (tests/ui/tutorial.test.ts
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
       expect(onNext).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('8. Чиби-спрайты Миры и палитра 8 эмоций', () => {
+    const CANONICAL_EMOTIONS: readonly CanonicalTutorialEmotion[] = [
+      'welcome',
+      'guide_cards',
+      'guide_book',
+      'guide_point',
+      'guide',
+      'happy',
+      'worried',
+      'idle',
+    ];
+
+    it('поддерживает все 8 канонических эмоций Миры и корректно формирует пути к спрайтам', () => {
+      for (const emotion of CANONICAL_EMOTIONS) {
+        expect(normalizeTutorialEmotion(emotion)).toBe(emotion);
+        expect(resolveMiraSprite(emotion)).toBe(`mira_${emotion}`);
+
+        const html = renderMiraAvatar(emotion, 'Мира');
+        expect(html).toContain('<img');
+        expect(html).toContain(`src="./sprites/mira/mira_${emotion}.webp"`);
+        expect(html).toContain(`onerror="this.onerror=null;this.src='./sprites/mira/mira_${emotion}.png';"`);
+        expect(html).toContain(`alt="Мира (${emotion})"`);
+        expect(html).toContain('class="tut-avatar-img"');
+      }
+    });
+
+    it('обеспечивает обратную совместимость для устаревших алиасов эмоций', () => {
+      expect(normalizeTutorialEmotion('neutral')).toBe('idle');
+      expect(normalizeTutorialEmotion('thinking')).toBe('guide_point');
+      expect(normalizeTutorialEmotion('warning')).toBe('worried');
+
+      expect(resolveMiraSprite('neutral')).toBe('mira_idle');
+      expect(resolveMiraSprite('thinking')).toBe('mira_guide_point');
+      expect(resolveMiraSprite('warning')).toBe('mira_worried');
+    });
+
+    it('монтирует <img> спрайт чиби-маскота при отображении шага обучения', () => {
+      controller = createTutorialOverlay({ onNext: vi.fn(), onSkip: vi.fn() });
+      controller.showStep({
+        id: 'sprite_step_test',
+        title: 'Тест спрайта',
+        text: 'Проверка рендера чиби-маскота Миры',
+        emotion: 'guide_cards',
+        requireAction: 'next',
+      });
+
+      const imgEl = document.querySelector<HTMLImageElement>('.tut-avatar-frame img.tut-avatar-img');
+      expect(imgEl).not.toBeNull();
+      expect(imgEl?.src).toContain('sprites/mira/mira_guide_cards.webp');
+      expect(imgEl?.getAttribute('onerror')).toContain('mira_guide_cards.png');
+      expect(imgEl?.alt).toBe('Мира (guide_cards)');
     });
   });
 });
