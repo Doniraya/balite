@@ -1534,10 +1534,11 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
     });
 
     it('screens.css содержит дизайн-токены средневековой таверны (мореный дуб, латунь, пергамент)', async () => {
-      const fs = await import('node:fs');
-      const path = await import('node:path');
-      const cssPath = path.resolve(__dirname, '../../src/ui/screens.css');
-      const css = fs.readFileSync(cssPath, 'utf-8');
+      const fsModule = 'fs';
+      const { readFileSync } = (await import(/* @vite-ignore */ fsModule)) as {
+        readFileSync: (file: string, encoding: 'utf8') => string;
+      };
+      const css = readFileSync('src/ui/screens.css', 'utf8');
 
       // Проверяем наличие токенов дубовой палитры в :root
       expect(css).toContain('--screen-bg-top: #2a160c');
@@ -1551,10 +1552,11 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
     });
 
     it('screens.css стилизует доску заказов гильдии под пергамент и задаёт крупные жетоны мобов', async () => {
-      const fs = await import('node:fs');
-      const path = await import('node:path');
-      const cssPath = path.resolve(__dirname, '../../src/ui/screens.css');
-      const css = fs.readFileSync(cssPath, 'utf-8');
+      const fsModule = 'fs';
+      const { readFileSync } = (await import(/* @vite-ignore */ fsModule)) as {
+        readFileSync: (file: string, encoding: 'utf8') => string;
+      };
+      const css = readFileSync('src/ui/screens.css', 'utf8');
 
       // Пергаментные карточки заказов гильдии
       expect(css).toContain('var(--parchment-card-bg)');
@@ -1564,10 +1566,11 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
     });
 
     it('screens.css оформляет Силу/Множ как самоцветы маны, а слоты инвентаря как резные лотки', async () => {
-      const fs = await import('node:fs');
-      const path = await import('node:path');
-      const cssPath = path.resolve(__dirname, '../../src/ui/screens.css');
-      const css = fs.readFileSync(cssPath, 'utf-8');
+      const fsModule = 'fs';
+      const { readFileSync } = (await import(/* @vite-ignore */ fsModule)) as {
+        readFileSync: (file: string, encoding: 'utf8') => string;
+      };
+      const css = readFileSync('src/ui/screens.css', 'utf8');
 
       // Самоцветы маны с радиальным градиентом и безелем
       expect(css).toMatch(/\.hud-pill--chips\s*\{[^}]*radial-gradient/);

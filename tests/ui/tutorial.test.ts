@@ -780,4 +780,82 @@ describe('Интерактивное обучение (tests/ui/tutorial.test.ts
       expect(imgEl?.alt).toBe('Мира (guide_cards)');
     });
   });
+
+  describe('9. Финализация Эпика 4: сохранение флага завершения обучения', () => {
+    it('сохраняет tutorialCompleted: true при слиянии и санитизации данных сохранения', () => {
+      const initialMeta = createInitialMetaSave(Date.now(), {
+        tutorialCompleted: true,
+        tutorialStep: 21,
+      });
+
+      expect(initialMeta.tutorialCompleted).toBe(true);
+      expect(initialMeta.tutorialStep).toBe(21);
+      expect(initialMeta.settings.tutorialCompleted).toBe(true);
+
+      const localSave = createPlayerSaveData(initialMeta, null, 1, Date.now());
+      const cloudSave = createPlayerSaveData(
+        createInitialMetaSave(Date.now(), {
+          tutorialCompleted: false,
+          tutorialStep: 5,
+        }),
+        null,
+        0,
+        Date.now() - 1000,
+      );
+
+      // При объединении завершённый туториал всегда сохраняет статус true
+      const merged = mergePlayerSaveData(localSave, cloudSave);
+      expect(merged.meta?.tutorialCompleted).toBe(true);
+      expect(merged.meta?.settings.tutorialCompleted).toBe(true);
+
+      // Санитизация не сбрасывает флаг
+      const sanitized = sanitizePlayerSaveData(merged);
+      expect(sanitized.meta?.tutorialCompleted).toBe(true);
+      expect(sanitized.meta?.settings.tutorialCompleted).toBe(true);
+    });
+
+    it('интеграция в app.ts: нажатие "Пропустить" и завершение последнего шага сохраняют tutorialCompleted: true с немедленным сбросом flush', async () => {
+      const { mountBaliteApp } = await import('../../src/ui/app');
+      const { createPlatformBridge } = await import('../../src/platform/bridge');
+      const root = document.createElement('div');
+      document.body.appendChild(root);
+
+      const bridge = createPlatformBridge<import('../../src/engine').PlayerSaveData>({
+        storageKey: 'test_balite_save_tut_finish',
+        localBackupKey: 'test_balite_platform_save_tut_finish',
+      });
+
+      const saveSpy = vi.spyOn(bridge, 'savePlayerData');
+      const flushSpy = vi.spyOn(bridge, 'flushCloudSave');
+
+      const app = await mountBaliteApp(root, {
+        bridge,
+      });
+
+      // Нажимаем «Начать забег»
+      const startBtn = root.querySelector<HTMLButtonElement>('.menu-btn--primary');
+      startBtn?.click();
+
+      // Оверлей туториала отображается
+      const skipBtn = root.querySelector<HTMLButtonElement>('.tut-btn--skip');
+      expect(skipBtn).not.toBeNull();
+
+      // Нажимаем «Пропустить»
+      skipBtn?.click();
+
+      // Проверяем, что в bridge.savePlayerData ушло сохранение с tutorialCompleted: true
+      expect(saveSpy).toHaveBeenCalled();
+      const lastSaveCall = saveSpy.mock.calls[saveSpy.mock.calls.length - 1]![0] as import('../../src/engine').PlayerSaveData;
+      expect(lastSaveCall.meta.tutorialCompleted).toBe(true);
+      expect(lastSaveCall.meta.settings.tutorialCompleted).toBe(true);
+      expect(lastSaveCall.meta.tutorialStep).toBe(21);
+
+      // Проверяем, что был вызван flushCloudSave для немедленного сброса в облако
+      expect(flushSpy).toHaveBeenCalled();
+
+      app.destroy();
+      root.remove();
+      localStorage.clear();
+    });
+  });
 });
