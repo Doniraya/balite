@@ -864,13 +864,13 @@
   min-height: 44px;
   padding: 6px 8px;
   font-size: clamp(11px, min(2.4vw, 1.4dvh), 14px);
-  background: linear-gradient(180deg, #f59e0b 0%, #b45309 100%);
+  background: linear-gradient(180deg, #d97706 0%, #a14304 100%);
   border: 2px solid #ffd584;
   color: #fffdf7;
   text-shadow: 0 2px 0 rgba(74, 32, 0, 0.85);
   box-shadow:
     0 4px 0 #78350f,
-    0 6px 14px rgba(245, 158, 11, 0.35),
+    0 6px 14px rgba(217, 119, 6, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
