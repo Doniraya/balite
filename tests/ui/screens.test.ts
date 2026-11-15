@@ -18,6 +18,7 @@ import { createTranslator } from '../../src/i18n';
 import {
   type ScreenActionHandlers,
   type ScreenViewModel,
+  getBlindSpriteUrl,
   renderRunView,
 } from '../../src/ui/screens';
 import { getTooltipData } from '../../src/ui/tooltip';
@@ -1507,6 +1508,29 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       expect(rankSuitModeBtn?.getAttribute('aria-pressed')).toBe('false');
       expect(suitSuitModeBtn?.classList.contains('is-active')).toBe(true);
       expect(suitSuitModeBtn?.getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('корректно формирует пути к спрайтам жетонов для всех 10 боссов и 8 этапов мобов', () => {
+      const bossIds = [
+        'bl_hook',
+        'bl_wall',
+        'bl_psychic',
+        'bl_flint',
+        'bl_water',
+        'bl_pillar',
+        'bl_manacle',
+        'bl_club',
+        'bl_final_vessel',
+        'bl_final_bell',
+      ];
+      for (const bossId of bossIds) {
+        expect(getBlindSpriteUrl('boss', bossId)).toBe(`./sprites/blinds/${bossId}.webp`);
+      }
+
+      for (let ante = 1; ante <= 8; ante++) {
+        expect(getBlindSpriteUrl('small', null, ante)).toBe(`./sprites/blinds/ante_${ante}_small.webp`);
+        expect(getBlindSpriteUrl('big', null, ante)).toBe(`./sprites/blinds/ante_${ante}_big.webp`);
+      }
     });
   });
 });

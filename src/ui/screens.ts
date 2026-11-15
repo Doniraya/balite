@@ -272,6 +272,51 @@ function getBlindEmblemLabel(kind: BlindKind): string {
 }
 
 /**
+ * Возвращает относительный путь к спрайту жетона Стража (моба или босса).
+ */
+export function getBlindSpriteUrl(kind: BlindKind, bossId?: string | null, ante: number = 1): string | null {
+  if (kind === 'boss') {
+    if (bossId) {
+      return `./sprites/blinds/${bossId}.webp`;
+    }
+    return null;
+  }
+  const safeAnte = Math.min(8, Math.max(1, ante));
+  return `./sprites/blinds/ante_${safeAnte}_${kind}.webp`;
+}
+
+/**
+ * Создаёт DOM-элемент жетона-эмблемы Стража со спрайтом или текстовым фоллбеком.
+ */
+export function createBlindEmblem(
+  kind: BlindKind,
+  bossId?: string | null,
+  ante: number = 1,
+  extraClass: string = '',
+): HTMLElement {
+  const emblem = createEl(
+    'div',
+    `blind-card__emblem blind-card__emblem--${kind} ${extraClass}`.trim(),
+  );
+  const spriteUrl = getBlindSpriteUrl(kind, bossId, ante);
+  if (spriteUrl) {
+    const img = createEl('img', 'blind-card__emblem-img') as HTMLImageElement;
+    img.src = spriteUrl;
+    img.alt = '';
+    img.loading = 'eager';
+    img.draggable = false;
+    img.onerror = () => {
+      img.remove();
+      emblem.textContent = getBlindEmblemLabel(kind);
+    };
+    emblem.append(img);
+  } else {
+    emblem.textContent = getBlindEmblemLabel(kind);
+  }
+  return emblem;
+}
+
+/**
  * Добавляет бейдж Издания (Фольга, Голография, Призма, Теневой) в список бейджей тултипа.
  */
 function appendEditionBadge(
@@ -941,11 +986,7 @@ function renderHudBelt(
   }
   const bossHeader = createEl('div', 'hud-boss-btn__header');
   bossHeader.append(
-    createEl(
-      'span',
-      `hud-boss-btn__emblem blind-card__emblem--${activeSlot.kind}`,
-      getBlindEmblemLabel(activeSlot.kind),
-    ),
+    createBlindEmblem(activeSlot.kind, activeSlot.bossId, state.ante, 'hud-boss-btn__emblem'),
     createEl('span', 'hud-boss-btn__title', blindText.name),
   );
   bossBtn.append(
@@ -1424,11 +1465,7 @@ function renderBlindSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void 
 
     // Крупный круглый жетон-эмблема по центру
     const tokenWrap = createEl('div', 'blind-card__token');
-    const emblem = createEl(
-      'span',
-      `blind-card__emblem blind-card__emblem--${slot.kind}`,
-      getBlindEmblemLabel(slot.kind),
-    );
+    const emblem = createBlindEmblem(slot.kind, slot.bossId, state.ante);
     tokenWrap.append(emblem);
     const blindTooltip = buildBlindTooltip(
       slot.kind,
@@ -2131,10 +2168,10 @@ function renderRunEndArena(
   );
   victimBox.append(
     victimLeft,
-    createEl(
-      'span',
-      `blind-card__emblem blind-card__emblem--${summary.defeatedBy.kind}`,
-      getBlindEmblemLabel(summary.defeatedBy.kind),
+    createBlindEmblem(
+      summary.defeatedBy.kind,
+      summary.defeatedBy.bossId,
+      summary.ante,
     ),
   );
 
