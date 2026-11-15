@@ -154,6 +154,8 @@ export interface CreateInitialMetaSaveOptions {
   readonly sfxVolume?: number;
   readonly revision?: number;
   readonly unlockedDecks?: readonly DeckId[];
+  readonly tutorialCompleted?: boolean;
+  readonly tutorialStep?: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -248,6 +250,13 @@ function sanitizeSettings(
       ? clampUnit(rec.sfxVolume)
       : undefined;
 
+  const tutorialCompleted =
+    typeof rec.tutorialCompleted === 'boolean' ? rec.tutorialCompleted : undefined;
+  const tutorialStep =
+    typeof rec.tutorialStep === 'number' && Number.isFinite(rec.tutorialStep) && rec.tutorialStep >= 0
+      ? Math.floor(rec.tutorialStep)
+      : undefined;
+
   return {
     animationSpeed,
     lang,
@@ -255,6 +264,8 @@ function sanitizeSettings(
     crtMode,
     ...(musicVolume !== undefined ? { musicVolume } : {}),
     ...(sfxVolume !== undefined ? { sfxVolume } : {}),
+    ...(tutorialCompleted !== undefined ? { tutorialCompleted } : {}),
+    ...(tutorialStep !== undefined ? { tutorialStep } : {}),
     settingsVersion: SETTINGS_SCHEMA_VERSION,
   };
 }
@@ -569,11 +580,33 @@ function cloneMetaSave(meta: MetaSave): MetaSave {
   const activeRunTracker = meta.activeRunTracker
     ? sanitizeActiveRunTracker(meta.activeRunTracker)
     : undefined;
+  const tutorialCompleted =
+    typeof meta.tutorialCompleted === 'boolean'
+      ? meta.tutorialCompleted
+      : typeof meta.settings?.tutorialCompleted === 'boolean'
+        ? meta.settings.tutorialCompleted
+        : undefined;
+  const tutorialStep =
+    typeof meta.tutorialStep === 'number' && Number.isFinite(meta.tutorialStep) && meta.tutorialStep >= 0
+      ? Math.floor(meta.tutorialStep)
+      : typeof meta.settings?.tutorialStep === 'number' &&
+          Number.isFinite(meta.settings.tutorialStep) &&
+          meta.settings.tutorialStep >= 0
+        ? Math.floor(meta.settings.tutorialStep)
+        : undefined;
+
   return {
     version: meta.version,
     revision: meta.revision,
     updatedAt: meta.updatedAt,
-    settings: sanitizeSettings(meta.settings, { preserveLegacyDoubleSpeed: true }),
+    settings: sanitizeSettings(
+      {
+        ...meta.settings,
+        ...(tutorialCompleted !== undefined ? { tutorialCompleted } : {}),
+        ...(tutorialStep !== undefined ? { tutorialStep } : {}),
+      },
+      { preserveLegacyDoubleSpeed: true },
+    ),
     unlockedDecks: [...meta.unlockedDecks],
     discoveredRelics: [...meta.discoveredRelics],
     discoveredConsumables: [...meta.discoveredConsumables],
@@ -581,6 +614,8 @@ function cloneMetaSave(meta: MetaSave): MetaSave {
     discoveredBosses: [...meta.discoveredBosses],
     stats: sanitizeMetaStats(meta.stats),
     ...(activeRunTracker !== undefined ? { activeRunTracker } : {}),
+    ...(tutorialCompleted !== undefined ? { tutorialCompleted } : {}),
+    ...(tutorialStep !== undefined ? { tutorialStep } : {}),
   };
 }
 
@@ -722,6 +757,13 @@ export function createInitialMetaSave(
   const rawDecks = sanitizeIdList(options.unlockedDecks, DECK_SET);
   const unlockedDecks: DeckId[] = rawDecks.length > 0 ? rawDecks : ['b_red'];
 
+  const tutorialCompleted =
+    typeof options.tutorialCompleted === 'boolean' ? options.tutorialCompleted : undefined;
+  const tutorialStep =
+    typeof options.tutorialStep === 'number' && Number.isFinite(options.tutorialStep) && options.tutorialStep >= 0
+      ? Math.floor(options.tutorialStep)
+      : undefined;
+
   return {
     version: SAVE_SCHEMA_VERSION,
     revision: safeRevision,
@@ -734,6 +776,8 @@ export function createInitialMetaSave(
         crtMode: options.crtMode,
         musicVolume: options.musicVolume,
         sfxVolume: options.sfxVolume,
+        tutorialCompleted: options.tutorialCompleted,
+        tutorialStep: options.tutorialStep,
         settingsVersion: SETTINGS_SCHEMA_VERSION,
       },
       { preserveLegacyDoubleSpeed: true },
@@ -755,6 +799,8 @@ export function createInitialMetaSave(
       totalHandsPlayed: 0,
       handPlayCounts: {},
     },
+    ...(tutorialCompleted !== undefined ? { tutorialCompleted } : {}),
+    ...(tutorialStep !== undefined ? { tutorialStep } : {}),
   };
 }
 
@@ -1106,7 +1152,9 @@ function sanitizeMetaSave(
     'discoveredConsumables' in raw ||
     'discoveredCharters' in raw ||
     'discoveredBosses' in raw ||
-    'stats' in raw;
+    'stats' in raw ||
+    'tutorialCompleted' in raw ||
+    'tutorialStep' in raw;
 
   if (!hasRecognizedField) return undefined;
 
@@ -1123,11 +1171,35 @@ function sanitizeMetaSave(
       ? sanitizeActiveRunTracker(raw.activeRunTracker)
       : undefined;
 
+  const rawTutorialCompleted =
+    typeof raw.tutorialCompleted === 'boolean'
+      ? raw.tutorialCompleted
+      : isRecord(raw.settings) && typeof raw.settings.tutorialCompleted === 'boolean'
+        ? raw.settings.tutorialCompleted
+        : undefined;
+
+  const rawTutorialStep =
+    typeof raw.tutorialStep === 'number' && Number.isFinite(raw.tutorialStep) && raw.tutorialStep >= 0
+      ? Math.floor(raw.tutorialStep)
+      : isRecord(raw.settings) &&
+          typeof raw.settings.tutorialStep === 'number' &&
+          Number.isFinite(raw.settings.tutorialStep) &&
+          raw.settings.tutorialStep >= 0
+        ? Math.floor(raw.settings.tutorialStep)
+        : undefined;
+
+  const settings = sanitizeSettings(raw.settings);
+  const effectiveSettings = {
+    ...settings,
+    ...(rawTutorialCompleted !== undefined ? { tutorialCompleted: rawTutorialCompleted } : {}),
+    ...(rawTutorialStep !== undefined ? { tutorialStep: rawTutorialStep } : {}),
+  };
+
   return {
     version: SAVE_SCHEMA_VERSION,
     revision: sanitizeNonNegInt(raw.revision, fallbackRevision),
     updatedAt: sanitizeNonNegInt(raw.updatedAt, fallbackUpdatedAt),
-    settings: sanitizeSettings(raw.settings),
+    settings: effectiveSettings,
     unlockedDecks: unlocked.length > 0 ? unlocked : ['b_red'],
     discoveredRelics: sanitizeIdList(raw.discoveredRelics, RELIC_SET),
     discoveredConsumables,
@@ -1135,6 +1207,8 @@ function sanitizeMetaSave(
     discoveredBosses: sanitizeIdList(raw.discoveredBosses, BOSS_SET),
     stats: sanitizeMetaStats(raw.stats),
     ...(activeRunTracker !== undefined ? { activeRunTracker } : {}),
+    ...(rawTutorialCompleted !== undefined ? { tutorialCompleted: rawTutorialCompleted } : {}),
+    ...(rawTutorialStep !== undefined ? { tutorialStep: rawTutorialStep } : {}),
   };
 }
 
@@ -1951,11 +2025,36 @@ function mergeMetaSaves(
     ? sanitizeActiveRunTracker(base.activeRunTracker)
     : undefined;
 
+  const tutorialCompleted =
+    primary?.tutorialCompleted === true ||
+    secondary?.tutorialCompleted === true ||
+    primary?.settings?.tutorialCompleted === true ||
+    secondary?.settings?.tutorialCompleted === true
+      ? true
+      : (primary?.tutorialCompleted ??
+          secondary?.tutorialCompleted ??
+          primary?.settings?.tutorialCompleted ??
+          secondary?.settings?.tutorialCompleted);
+
+  const stepCandidates = [
+    primary?.tutorialStep,
+    secondary?.tutorialStep,
+    primary?.settings?.tutorialStep,
+    secondary?.settings?.tutorialStep,
+  ].filter((s): s is number => typeof s === 'number' && Number.isFinite(s) && s >= 0);
+  const tutorialStep = stepCandidates.length > 0 ? Math.max(...stepCandidates) : undefined;
+
+  const mergedSettings = {
+    ...sanitizeSettings(base.settings),
+    ...(tutorialCompleted !== undefined ? { tutorialCompleted } : {}),
+    ...(tutorialStep !== undefined ? { tutorialStep } : {}),
+  };
+
   return {
     version: SAVE_SCHEMA_VERSION,
     revision: finalRevision,
     updatedAt: finalUpdatedAt,
-    settings: sanitizeSettings(base.settings),
+    settings: mergedSettings,
     unlockedDecks: mergeUniqueIds(base.unlockedDecks, other.unlockedDecks),
     discoveredRelics: mergeUniqueIds(base.discoveredRelics, other.discoveredRelics),
     discoveredConsumables: mergeUniqueIds(base.discoveredConsumables, other.discoveredConsumables),
@@ -1979,6 +2078,8 @@ function mergeMetaSaves(
       handPlayCounts: mergeHandPlayCounts(base.stats.handPlayCounts, other.stats.handPlayCounts),
     },
     ...(activeRunTracker !== undefined ? { activeRunTracker } : {}),
+    ...(tutorialCompleted !== undefined ? { tutorialCompleted } : {}),
+    ...(tutorialStep !== undefined ? { tutorialStep } : {}),
   };
 }
 

@@ -1034,6 +1034,8 @@ export interface GameSettings {
   readonly musicVolume?: number;
   readonly sfxVolume?: number;
   readonly settingsVersion?: number;
+  readonly tutorialCompleted?: boolean;
+  readonly tutorialStep?: number;
 }
 
 /**
@@ -1077,6 +1079,8 @@ export interface MetaSave {
   readonly discoveredBosses: readonly BossId[];
   readonly stats: MetaStats;
   readonly activeRunTracker?: ActiveRunTracker;
+  readonly tutorialCompleted?: boolean;
+  readonly tutorialStep?: number;
 }
 
 /**
