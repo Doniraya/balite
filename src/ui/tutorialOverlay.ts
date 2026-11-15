@@ -54,6 +54,7 @@ export interface TutorialOverlayOptions {
   readonly onNext: () => void;
   readonly onSkip: () => void;
   readonly onAction?: (action: string) => void;
+  readonly container?: HTMLElement;
 }
 
 /**
@@ -66,6 +67,7 @@ export interface TutorialOverlayController {
   destroy(): void;
   readonly isVisible: boolean;
   readonly currentStep: TutorialStep | null;
+  readonly element: HTMLElement;
 }
 
 /**
@@ -390,7 +392,7 @@ export function renderMiraAvatar(emotion: TutorialEmotion = 'neutral', speaker: 
  */
 function renderArrowSvg(): string {
   return `
-    <svg viewBox="0 0 24 24" width="36" height="36" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg viewBox="0 0 24 24" width="36" height="36" fill="none">
       <path d="M12 2L12 16" stroke="#f5b942" stroke-width="4.5" stroke-linecap="round"/>
       <path d="M5 11L12 18L19 11" stroke="#f5b942" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
       <path d="M12 4L12 16" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
@@ -516,8 +518,9 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
   cardEl.appendChild(cardFooterEl);
   overlayEl.appendChild(cardEl);
 
-  // Монтируем в body
-  document.body.appendChild(overlayEl);
+  // Монтируем в контейнер или body
+  const targetContainer = options.container ?? document.body;
+  targetContainer.appendChild(overlayEl);
 
   /**
    * Обновляет координаты спотлайта, стрелки и карточки диалога.
@@ -703,6 +706,10 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
 
     get currentStep(): TutorialStep | null {
       return currentStep;
+    },
+
+    get element(): HTMLElement {
+      return overlayEl;
     },
 
     showStep(step: TutorialStep): void {

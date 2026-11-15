@@ -105,6 +105,13 @@ import {
   type ScoreFlameOptions,
 } from './scoreFlame';
 import {
+  createTutorialOverlay,
+  type TutorialOverlayController,
+} from './tutorialOverlay';
+import {
+  getTutorialSteps,
+} from './tutorialSteps';
+import {
   playTraceEvents,
   type TraceJuiceTarget,
   type TracePlayerHandle,
@@ -139,6 +146,7 @@ export interface BaliteAppHandle {
   readonly readyPromise: Promise<void>;
   getState(): RunState;
   getSaveData(): PlayerSaveData;
+  getTutorialController?(): TutorialOverlayController;
   destroy(): void;
 }
 
@@ -159,6 +167,7 @@ export interface MountBaliteAppOptions {
     Pick<NumberRollerOptions, 'now' | 'requestFrame' | 'cancelFrame' | 'reducedMotion' | 'durationMs'>
   >;
   particleCanvasOptions?: Partial<Omit<ParticleCanvasOptions, 'container' | 'speed'>>;
+  tutorialOverlay?: TutorialOverlayController;
 }
 
 /**
@@ -349,6 +358,12 @@ function updateMetaFromRunState(
       runWon: flags.runWon,
       runLost: flags.runLost,
     }),
+    ...(flags.settingsPatch?.tutorialCompleted !== undefined
+      ? { tutorialCompleted: flags.settingsPatch.tutorialCompleted }
+      : {}),
+    ...(flags.settingsPatch?.tutorialStep !== undefined
+      ? { tutorialStep: flags.settingsPatch.tutorialStep }
+      : {}),
   };
 
   return {
@@ -564,6 +579,26 @@ export function mountBaliteApp(
 
   let selectedCardIds: string[] = [];
   let consumableTargetMode: ConsumableTargetModeState | null = null;
+
+  let currentTutorialIndex: number =
+    saveData.meta.settings.tutorialCompleted === true || saveData.meta.tutorialCompleted === true
+      ? 21
+      : (saveData.meta.settings.tutorialStep ?? saveData.meta.tutorialStep ?? 0);
+
+  const tutorialOverlay: TutorialOverlayController =
+    options.tutorialOverlay ??
+    createTutorialOverlay({
+      container: root,
+      onNext: () => {
+        advanceTutorialStep();
+      },
+      onSkip: () => {
+        completeTutorial();
+      },
+      onAction: (_action) => {
+        // Клик вне целевого элемента при ожидании действия
+      },
+    });
   let activeInspectTarget: InspectTarget | null = null;
   let activeModal: ActiveModalKind | null = null;
   let activeSettingsTab: SettingsModalTab = 'hub';
@@ -890,7 +925,129 @@ export function mountBaliteApp(
     activeSettingsTab = 'hub';
     overlayHostEl.replaceChildren();
     syncGameplayState();
+    syncTutorialStep();
   };
+
+  function isTutorialActive(): boolean {
+    if (destroyed || isAnimating || isTransitioningAd || platformPaused || adShowing) {
+      return false;
+    }
+    if (showMainMenu) return false;
+    if (activeModal !== null) return false;
+    if (runState.phase === 'deck_select' || isTerminalRunPhase(runState.phase)) return false;
+    if (saveData.meta.settings.tutorialCompleted === true) return false;
+    if (saveData.meta.tutorialCompleted === true) return false;
+    return true;
+  }
+
+  function syncTutorialStep(): void {
+    if (!isTutorialActive()) {
+      tutorialOverlay.hide();
+      return;
+    }
+
+    const devOriginal = isDevOriginalTermsEnabled();
+    const steps = getTutorialSteps(devOriginal);
+    const totalSteps = steps.length;
+
+    if (currentTutorialIndex >= totalSteps) {
+      completeTutorial();
+      return;
+    }
+
+    let step = steps[currentTutorialIndex];
+    if (!step) {
+      completeTutorial();
+      return;
+    }
+
+    // Если фаза текущего шага не совпадает с фазой забега, ищем следующий подходящий шаг
+    if (step.phase !== runState.phase) {
+      const candidateIndex = steps.findIndex(
+        (s, idx) => idx >= currentTutorialIndex && s.phase === runState.phase,
+      );
+      if (candidateIndex !== -1) {
+        currentTutorialIndex = candidateIndex;
+        step = steps[currentTutorialIndex];
+        saveData = {
+          ...saveData,
+          meta: {
+            ...saveData.meta,
+            tutorialStep: currentTutorialIndex,
+            settings: {
+              ...saveData.meta.settings,
+              tutorialStep: currentTutorialIndex,
+            },
+          },
+        };
+      } else {
+        tutorialOverlay.hide();
+        return;
+      }
+    }
+
+    tutorialOverlay.showStep({
+      ...step,
+      stepIndex: currentTutorialIndex + 1,
+      totalSteps,
+    });
+  }
+
+  function advanceTutorialStep(): void {
+    const devOriginal = isDevOriginalTermsEnabled();
+    const steps = getTutorialSteps(devOriginal);
+    currentTutorialIndex++;
+
+    if (currentTutorialIndex >= steps.length) {
+      completeTutorial();
+      return;
+    }
+
+    // В памяти фиксируем текущий шаг без преждевременного инкремента ревизии на диск
+    saveData = {
+      ...saveData,
+      meta: {
+        ...saveData.meta,
+        tutorialStep: currentTutorialIndex,
+        settings: {
+          ...saveData.meta.settings,
+          tutorialStep: currentTutorialIndex,
+        },
+      },
+    };
+    syncTutorialStep();
+  }
+
+  function completeTutorial(): void {
+    tutorialOverlay.hide();
+    const steps = getTutorialSteps(isDevOriginalTermsEnabled());
+    currentTutorialIndex = steps.length;
+    saveTutorialProgress(true, steps.length);
+  }
+
+  function saveTutorialProgress(completed: boolean, stepIndex: number): void {
+    const { revision, updatedAt } = nextMonotonicRevisionAndTime();
+    const nextMeta = updateMetaFromRunState(saveData.meta, runState, {
+      settingsPatch: {
+        tutorialCompleted: completed,
+        tutorialStep: stepIndex,
+      },
+      revision,
+      updatedAt,
+    });
+    saveData = createPlayerSaveData(nextMeta, saveData.activeRun, revision, updatedAt);
+    void persistBaliteSave(bridge, saveData).catch(() => false);
+  }
+
+  function handleTutorialAction(action: string): void {
+    if (!isTutorialActive()) return;
+    const devOriginal = isDevOriginalTermsEnabled();
+    const steps = getTutorialSteps(devOriginal);
+    const step = steps[currentTutorialIndex];
+    if (step && step.requireAction === action) {
+      advanceTutorialStep();
+    }
+  }
 
   const persistSnapshotAndMeta = (
     nextState: RunState,
@@ -1008,6 +1165,9 @@ export function mountBaliteApp(
     hoverTooltip?.hide();
     overlayHostEl.replaceChildren();
     if (destroyed) return;
+    if (activeModal !== null || activeInspectTarget !== null) {
+      tutorialOverlay.hide();
+    }
 
     if (activeModal === 'hand_reference') {
       overlayHostEl.append(renderHandReferenceModal(runState, translator, closeOverlays));
@@ -1048,6 +1208,13 @@ export function mountBaliteApp(
               }
             : {}),
           onChangeSettings: handleSettingsPatch,
+          onResetTutorial: () => {
+            audio.playButton();
+            closeOverlays();
+            currentTutorialIndex = 0;
+            saveTutorialProgress(false, 0);
+            syncTutorialStep();
+          },
           onClose: closeOverlays,
           onTabChange: (tab) => {
             activeSettingsTab = tab;
@@ -1181,6 +1348,7 @@ export function mountBaliteApp(
       );
       cardTiltController.refresh();
       syncGameplayState();
+      tutorialOverlay.hide();
       return;
     }
 
@@ -1305,6 +1473,7 @@ export function mountBaliteApp(
       );
       cardTiltController.refresh();
       syncGameplayState();
+      tutorialOverlay.hide();
       return;
     }
 
@@ -1357,6 +1526,7 @@ export function mountBaliteApp(
     }
     cardTiltController.refresh();
     syncGameplayState();
+    syncTutorialStep();
   };
 
   const runWithLogicalPauseAd = (action: () => void): void => {
@@ -1403,6 +1573,7 @@ export function mountBaliteApp(
     const currentToken = animationRunToken;
 
     isAnimating = true;
+    tutorialOverlay.hide();
     playedCardIds = [...playedIds];
     shatteredCardIds = [];
 
@@ -1620,6 +1791,20 @@ export function mountBaliteApp(
       completionRecordedForCurrentRun = false;
     }
 
+    if (command.type === 'SELECT_BLIND' || command.type === 'SKIP_BLIND') {
+      handleTutorialAction('select_blind');
+    } else if (command.type === 'PLAY_HAND') {
+      handleTutorialAction('play_hand');
+    } else if (command.type === 'DISCARD_CARDS') {
+      handleTutorialAction('discard');
+    } else if (command.type === 'BUY_SHOP_OFFER' || command.type === 'BUY_CHARTER') {
+      handleTutorialAction('buy_relic');
+    } else if (command.type === 'USE_CONSUMABLE') {
+      handleTutorialAction('use_consumable');
+    } else if (command.type === 'NEXT_ROUND') {
+      handleTutorialAction('leave_shop');
+    }
+
     const handPlayed = command.type === 'PLAY_HAND';
     persistSnapshotAndMeta(runState, {
       runStarted: command.type === 'START_RUN',
@@ -1767,6 +1952,18 @@ export function mountBaliteApp(
     }
 
     audio.setSettings(nextSettings);
+
+    if (patch.tutorialCompleted !== undefined || patch.tutorialStep !== undefined) {
+      if (patch.tutorialStep !== undefined) {
+        currentTutorialIndex = patch.tutorialStep;
+      }
+      if (patch.tutorialCompleted === false) {
+        currentTutorialIndex = patch.tutorialStep ?? 0;
+        syncTutorialStep();
+      } else if (patch.tutorialCompleted === true) {
+        tutorialOverlay.hide();
+      }
+    }
 
     const { revision, updatedAt } = nextMonotonicRevisionAndTime();
     const nextMeta = updateMetaFromRunState(saveData.meta, runState, {
@@ -1939,6 +2136,7 @@ export function mountBaliteApp(
       } else if (selectedCardIds.length < 5) {
         audio.playCardSelect();
         selectedCardIds = [...selectedCardIds, cardId];
+        handleTutorialAction('select_card');
       }
       render();
     },
@@ -2220,6 +2418,10 @@ export function mountBaliteApp(
     if (destroyed) return;
 
     saveData = loaded;
+    currentTutorialIndex =
+      saveData.meta.settings.tutorialCompleted === true || saveData.meta.tutorialCompleted === true
+        ? 21
+        : (saveData.meta.settings.tutorialStep ?? saveData.meta.tutorialStep ?? 0);
     if (import.meta.env.DEV && readStoredDevOriginalTermsFlag()) {
       await setDevOriginalTermsEnabled(true, false);
       if (destroyed) return;
@@ -2287,6 +2489,7 @@ export function mountBaliteApp(
 
     hoverTooltip?.destroy();
     hoverTooltip = null;
+    tutorialOverlay.destroy();
     audio.dispose();
     backdrop.destroy();
     delete root.dataset.crt;
@@ -2301,6 +2504,7 @@ export function mountBaliteApp(
     readyPromise,
     getState: () => runState,
     getSaveData: () => saveData,
+    getTutorialController: () => tutorialOverlay,
     destroy,
   };
 }
