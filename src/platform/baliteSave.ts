@@ -35,6 +35,10 @@ export interface LoadBaliteSaveOptions {
   readonly nowMs?: number;
   /** Язык по умолчанию при первом запуске, если не передан платформой. */
   readonly defaultLang?: EngineLang;
+  /** Завершено ли обучение по умолчанию при первом старте. */
+  readonly tutorialCompleted?: boolean;
+  /** Начальный шаг обучения при первом старте. */
+  readonly tutorialStep?: number;
 }
 
 /**
@@ -90,12 +94,29 @@ export async function loadBaliteSave(
   const rawLoaded = await bridge.loadPlayerData();
   const sanitized = sanitizePlayerSaveData(rawLoaded);
 
-  const meta =
+  const rawMeta =
     sanitized.meta ??
     createInitialMetaSave(nowMs, {
       lang: options.defaultLang ?? bridge.getLanguage(),
       revision: sanitized.revision ?? 0,
+      tutorialCompleted: options.tutorialCompleted,
+      tutorialStep: options.tutorialStep,
     });
+
+  const tutorialCompleted =
+    rawMeta.tutorialCompleted ?? rawMeta.settings.tutorialCompleted;
+  const tutorialStep = rawMeta.tutorialStep ?? rawMeta.settings.tutorialStep;
+
+  const meta = {
+    ...rawMeta,
+    ...(tutorialCompleted !== undefined ? { tutorialCompleted } : {}),
+    ...(tutorialStep !== undefined ? { tutorialStep } : {}),
+    settings: {
+      ...rawMeta.settings,
+      ...(tutorialCompleted !== undefined ? { tutorialCompleted } : {}),
+      ...(tutorialStep !== undefined ? { tutorialStep } : {}),
+    },
+  };
 
   const revision = sanitized.revision ?? meta.revision;
   const updatedAt = sanitized.updatedAt ?? meta.updatedAt;
