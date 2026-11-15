@@ -1562,5 +1562,20 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       expect(css).toMatch(/\.blind-card__token\s+\.blind-card__emblem\s*\{[^}]*clamp\(96px/);
       expect(css).toMatch(/\.blind-card__token\s+\.blind-card__emblem\s*\{[^}]*clamp\(140px/);
     });
+
+    it('screens.css оформляет Силу/Множ как самоцветы маны, а слоты инвентаря как резные лотки', async () => {
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      const cssPath = path.resolve(__dirname, '../../src/ui/screens.css');
+      const css = fs.readFileSync(cssPath, 'utf-8');
+
+      // Самоцветы маны с радиальным градиентом и безелем
+      expect(css).toMatch(/\.hud-pill--chips\s*\{[^}]*radial-gradient/);
+      expect(css).toMatch(/\.hud-pill--mult\s*\{[^}]*radial-gradient/);
+
+      // Резные деревянные лотки для слотов в дубовой балке
+      expect(css).toMatch(/\.inventory-slot-placeholder\s*\{[^}]*inset\s+0\s+3px/);
+      expect(css).not.toContain('background: rgba(6, 14, 11, 0.55);');
+    });
   });
 });
