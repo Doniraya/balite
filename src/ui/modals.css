@@ -880,10 +880,6 @@
     transform: scale(1.006);
   }
 
-  .run-info-tag-card:hover {
-    background: #2563eb;
-  }
-
   .run-info-back-btn:hover {
     filter: brightness(1.08);
   }
@@ -894,19 +890,19 @@
    ========================================================================== */
 
 .modal-sheet--run-info {
-  width: min(96vw, 680px);
-  max-height: min(92vh, 880px);
+  width: min(96vw, 840px);
+  max-height: min(95vh, 940px);
   background: #2b3843;
   border: 2px solid #5a6e7c;
   border-radius: 14px;
-  padding: 16px;
+  padding: 18px 20px;
   box-shadow:
     0 10px 0 #192128,
     0 24px 60px rgba(0, 0, 0, 0.75),
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   position: relative;
   overflow: hidden;
 }
@@ -916,7 +912,7 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 6px 0 10px;
+  padding: 4px 0 12px;
   border-bottom: 2px solid #3d4f5c;
 }
 
@@ -924,21 +920,21 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 12px;
   position: relative;
 }
 
 .run-info-tab {
   position: relative;
-  min-width: 105px;
-  min-height: 44px;
-  padding: 8px 16px;
-  border-radius: 8px;
+  min-width: 135px;
+  min-height: 48px;
+  padding: 10px 22px;
+  border-radius: 9px;
   background: #a33b30;
   border: 2px solid #571e18;
   color: #ffffff;
   font-family: inherit;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 800;
   letter-spacing: 0.02em;
   cursor: pointer;
@@ -993,19 +989,20 @@
 
 .run-info-hand-row {
   display: grid;
-  grid-template-columns: 58px 1fr auto 56px;
+  grid-template-columns: 64px 1fr auto 60px;
   align-items: center;
-  gap: 10px;
-  padding: 7px 12px;
+  gap: 12px;
+  padding: 8px 14px;
   border-radius: 10px;
   background: #374754;
   border: 1.5px solid #4a5d6e;
   color: #ffffff;
   cursor: pointer;
-  min-height: 44px;
+  min-height: 46px;
   transition: transform 0.12s ease, background 0.15s ease, border-color 0.15s ease;
   user-select: none;
   touch-action: manipulation;
+  position: relative;
 }
 
 .sr-only {
@@ -1031,16 +1028,16 @@
   background: #ffffff;
   color: #2e3b44;
   font-weight: 800;
-  font-size: 12px;
-  border-radius: 12px;
-  padding: 2px 8px;
+  font-size: 13px;
+  border-radius: 14px;
+  padding: 3px 9px;
   border: 1px solid #c7d2da;
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.2);
   white-space: nowrap;
 }
 
 .run-info-hand-name {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 800;
   color: #ffffff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -1052,19 +1049,19 @@
 .run-info-formula {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
 }
 
 .run-info-chip-pill {
   background: #0077ff;
   color: #ffffff;
   font-weight: 900;
-  font-size: 14px;
+  font-size: 15px;
   border-radius: 12px;
-  padding: 3px 10px;
+  padding: 3px 12px;
   border: 1.5px solid #0050b3;
   box-shadow: 0 2px 0 #00408f;
-  min-width: 32px;
+  min-width: 34px;
   text-align: center;
   display: inline-flex;
   align-items: center;
@@ -1074,7 +1071,7 @@
 .run-info-mult-times {
   color: #ffffff;
   font-weight: 900;
-  font-size: 13px;
+  font-size: 14px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   padding: 0 1px;
 }
@@ -1083,12 +1080,12 @@
   background: #e84e38;
   color: #ffffff;
   font-weight: 900;
-  font-size: 14px;
+  font-size: 15px;
   border-radius: 12px;
-  padding: 3px 10px;
+  padding: 3px 12px;
   border: 1.5px solid #a82e1d;
   box-shadow: 0 2px 0 #7e2215;
-  min-width: 22px;
+  min-width: 24px;
   text-align: center;
   display: inline-flex;
   align-items: center;
@@ -1101,54 +1098,51 @@
   justify-content: flex-end;
   gap: 4px;
   font-weight: 800;
-  font-size: 14px;
+  font-size: 15px;
   color: #f59e0b;
   text-align: right;
 }
 
 .run-info-hash {
   color: #8c9fae;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 /* Всплывающая белая плашка с правилом и 5 мини-картами */
 .hand-preview-popup {
   position: absolute;
-  top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   z-index: 30;
-  width: min(94%, 500px);
+  width: min(94%, 540px);
   background: #ffffff;
   color: #222c34;
   border: 3px solid #d94232;
   border-radius: 12px;
-  padding: 16px 18px 20px;
-  box-shadow:
-    0 12px 36px rgba(0, 0, 0, 0.8),
-    0 0 0 100vmax rgba(0, 0, 0, 0.32);
+  padding: 14px 18px 16px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
-  pointer-events: auto;
+  gap: 12px;
+  pointer-events: none;
   box-sizing: border-box;
-  animation: handPopupIn 0.15s ease-out;
+  animation: handPopupFade 0.12s ease-out;
 }
 
-@keyframes handPopupIn {
+@keyframes handPopupFade {
   from {
     opacity: 0;
-    transform: translate(-50%, -46%) scale(0.96);
+    transform: translateX(-50%) scale(0.97);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: translateX(-50%) scale(1);
   }
 }
 
 .hand-preview-popup__desc {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   line-height: 1.4;
   color: #222c34;
@@ -1159,15 +1153,15 @@
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  gap: 8px;
-  height: 74px;
+  gap: 10px;
+  height: 78px;
   padding-top: 14px;
   box-sizing: border-box;
 }
 
 .run-info-mini-card {
-  width: 44px;
-  height: 60px;
+  width: 46px;
+  height: 64px;
   background: #ffffff;
   border: 1.5px solid #cbd5e1;
   border-radius: 6px;
@@ -1191,16 +1185,16 @@
 }
 
 .run-info-mini-card__rank {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 900;
   line-height: 1;
   align-self: flex-start;
-  padding-left: 1px;
+  padding-left: 2px;
 }
 
 .run-info-mini-card__suit-svg {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   align-self: center;
 }
 
@@ -1219,7 +1213,7 @@
 .run-info-blinds-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px;
   width: 100%;
   box-sizing: border-box;
 }
@@ -1227,22 +1221,24 @@
 .run-info-blind-card {
   background: #232f38;
   border: 2px solid #3d4f5c;
-  border-radius: 10px;
-  padding: 10px 8px;
+  border-radius: 12px;
+  padding: 12px 10px 14px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
   text-align: center;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
   box-sizing: border-box;
+  min-height: 350px;
+  justify-content: flex-start;
 }
 
 .run-info-blind-status-pill {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 800;
   border-radius: 6px;
-  padding: 3px 10px;
+  padding: 4px 12px;
   letter-spacing: 0.02em;
 }
 
@@ -1266,9 +1262,9 @@
   background: #182229;
   color: #ffffff;
   font-weight: 800;
-  font-size: 13px;
+  font-size: 14px;
   border-radius: 6px;
-  padding: 4px 6px;
+  padding: 5px 8px;
   width: 100%;
   box-sizing: border-box;
   text-overflow: ellipsis;
@@ -1276,30 +1272,41 @@
   white-space: nowrap;
 }
 
+/* Изолированный контейнер жетона в модалке */
 .run-info-blind-token {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 64px;
-  height: 64px;
-  margin: 2px 0;
+  width: 78px;
+  height: 78px;
+  margin: 4px auto 8px;
+  flex-shrink: 0;
+  position: relative;
 }
 
-.run-info-blind-emblem {
-  width: 64px;
-  height: 64px;
+/* Строго изолируем размер эмблемы модалки от screens.css */
+.run-info-blind-token .blind-card__emblem,
+.run-info-blind-card .run-info-blind-emblem {
+  width: 74px !important;
+  height: 74px !important;
+  min-width: 74px !important;
+  min-height: 74px !important;
+  max-width: 74px !important;
+  max-height: 74px !important;
+  border-width: 2.5px;
+  font-size: 24px;
 }
 
 .run-info-blind-boss-desc {
   background: #2b3944;
   border: 1px solid #485c6d;
   border-radius: 6px;
-  padding: 6px;
-  font-size: 11px;
+  padding: 8px;
+  font-size: 12px;
   font-weight: 700;
   color: #e2e8f0;
-  line-height: 1.3;
-  margin: 2px 0;
+  line-height: 1.35;
+  margin: 4px 0;
   width: 100%;
   box-sizing: border-box;
 }
@@ -1308,18 +1315,19 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   width: 100%;
   margin-top: auto;
+  padding-top: 10px;
 }
 
 .run-info-blind-target-caption {
-  font-size: 11px;
+  font-size: 12px;
   color: #8fa3b3;
 }
 
 .run-info-blind-target-value {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 900;
   color: #ffffff;
   display: flex;
@@ -1329,11 +1337,11 @@
 
 .run-info-blind-gem {
   color: #ef4444;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .run-info-blind-reward {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 800;
   color: #f59e0b;
   margin-top: 2px;
@@ -1344,29 +1352,30 @@
   font-weight: 800;
   color: #8fa3b3;
   text-transform: uppercase;
-  margin: 2px 0;
+  margin: 4px 0;
 }
 
+/* Спокойная карточка талона пропуска — чисто информационная */
 .run-info-tag-card {
-  background: #1e3a5f;
-  border: 1.5px solid #3b82f6;
+  background: #192733;
+  border: 1.5px solid #2f4354;
   border-radius: 6px;
   padding: 6px 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  color: #ffffff;
+  color: #9cb3c4;
   font-weight: 700;
-  font-size: 11px;
-  cursor: pointer;
+  font-size: 12px;
+  cursor: help;
   width: 100%;
   box-sizing: border-box;
-  transition: background 0.15s ease;
+  user-select: none;
 }
 
 .run-info-tag-icon {
-  color: #60a5fa;
+  color: #5aa5e6;
   font-size: 13px;
 }
 
@@ -1376,28 +1385,28 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 240px;
-  padding: 16px 8px;
-  gap: 16px;
+  min-height: 280px;
+  padding: 20px 10px;
+  gap: 18px;
   box-sizing: border-box;
 }
 
 .run-info-vouchers-empty {
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 800;
   color: #ffffff;
   text-align: center;
-  max-width: 440px;
-  line-height: 1.4;
+  max-width: 480px;
+  line-height: 1.45;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
 .run-info-vouchers-title {
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 800;
   color: #ffffff;
   text-align: center;
-  margin: 0 0 12px;
+  margin: 0 0 14px;
 }
 
 .run-info-vouchers-grid {
@@ -1415,18 +1424,18 @@
 
 /* Кнопка «Назад» внизу модального окна */
 .run-info-footer {
-  padding-top: 10px;
+  padding-top: 12px;
   border-top: 2px solid #3d4f5c;
 }
 
 .run-info-back-btn {
   width: 100%;
-  min-height: 48px;
+  min-height: 52px;
   border-radius: 10px;
   background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
   border: 2px solid #b45309;
   color: #ffffff;
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 900;
   letter-spacing: 0.03em;
   box-shadow:

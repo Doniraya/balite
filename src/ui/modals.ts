@@ -15,6 +15,7 @@ import {
   type CrtMode,
   type DeckViewMode,
   type GameSettings,
+  type HandType,
   type MetaSave,
   type MetaStats,
   type PlayingCard,
@@ -309,6 +310,13 @@ export function renderRunInfoModal(
 /**
  * Отрисовывает содержимое вкладки «Комбинации» с овалами формул и интерактивным поп-апом с 5 картами.
  */
+const TOP_HAND_TYPES = new Set<HandType>([
+  'Three of a Kind',
+  'Two Pair',
+  'Pair',
+  'High Card',
+]);
+
 function renderHandsTab(
   container: HTMLElement,
   state: RunState,
@@ -418,6 +426,22 @@ function renderHandsTab(
             : translator.getHandText(handType).description,
           translator,
         );
+
+        const isTop = TOP_HAND_TYPES.has(handType);
+        if (isTop) {
+          popup.classList.add('hand-preview-popup--top');
+          // Позиционируем плашку строго над строкой
+          const bottomDist = Math.max(0, list.offsetHeight - row.offsetTop + 4);
+          popup.style.bottom = `${bottomDist}px`;
+          popup.style.top = 'auto';
+        } else {
+          popup.classList.add('hand-preview-popup--bottom');
+          // Позиционируем плашку строго под строкой
+          const topDist = row.offsetTop + row.offsetHeight + 4;
+          popup.style.top = `${topDist}px`;
+          popup.style.bottom = 'auto';
+        }
+
         popup.addEventListener('click', (e) => {
           e.stopPropagation();
           closePopup();
@@ -446,6 +470,12 @@ function renderHandsTab(
 
     list.appendChild(row);
   }
+
+  list.addEventListener('click', (e) => {
+    if (!(e.target as HTMLElement).closest('.run-info-hand-row')) {
+      closePopup();
+    }
+  });
 
   container.appendChild(list);
 }
@@ -547,7 +577,7 @@ function renderBlindsTab(
       orDiv.textContent = translator.t('ui.blindSelect.orSeparator');
 
       const tagCard = document.createElement('div');
-      tagCard.className = 'run-info-tag-card interactive-slot';
+      tagCard.className = 'run-info-tag-card';
       tagCard.dataset.tagId = slot.skipTagId;
 
       const tagIcon = document.createElement('div');

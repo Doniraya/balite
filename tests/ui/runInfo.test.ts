@@ -3,9 +3,8 @@ import { createInitialRunState, HAND_TYPES, type RunState } from '../../src/engi
 import {
   createTranslator,
   setDevOriginalTermsEnabled,
-  type Translator,
 } from '../../src/i18n';
-import { renderRunInfoModal, type RunInfoTab } from '../../src/ui/modals';
+import { renderRunInfoModal } from '../../src/ui/modals';
 
 function createTestState(overrides: Partial<RunState> = {}): RunState {
   const base = createInitialRunState('b_red', 'RUN_INFO_TEST_SEED');
@@ -100,7 +99,10 @@ describe('Модальное окно Run Info («Детали партии»)',
     expect(firstCard.dataset.blindKind).toBe('small');
     expect(firstCard.querySelector('.run-info-blind-token')).not.toBeNull();
     expect(firstCard.querySelector('.run-info-blind-target')).not.toBeNull();
-    expect(firstCard.querySelector('.run-info-tag-card')).not.toBeNull();
+    const tagCard = firstCard.querySelector<HTMLElement>('.run-info-tag-card');
+    expect(tagCard).not.toBeNull();
+    // Талон пропуска является чисто информационным и не имеет класса кликабельной кнопки
+    expect(tagCard?.classList.contains('interactive-slot')).toBe(false);
 
     // Босс имеет описание свойства
     const bossCard = blindCards[2];
@@ -150,6 +152,8 @@ describe('Модальное окно Run Info («Детали партии»)',
     const popup = modal.querySelector<HTMLElement>('.hand-preview-popup');
     expect(popup).not.toBeNull();
     expect(popup?.textContent).toContain('2 карты одного ранга');
+    // Для нижних комбинаций (Пара, Старшая карта, Две пары, Тройка) плашка всплывает сверху над строкой
+    expect(popup?.classList.contains('hand-preview-popup--top')).toBe(true);
 
     const miniCards = popup?.querySelectorAll<HTMLElement>('.run-info-mini-card');
     expect(miniCards).toHaveLength(5);
@@ -163,6 +167,16 @@ describe('Модальное окно Run Info («Детали партии»)',
 
     // Увод мыши закрывает плашку
     pairRow?.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+    expect(modal.querySelector('.hand-preview-popup')).toBeNull();
+
+    // Для верхних комбинаций (Каре, Стрит-флеш, Фулл-хаус и т.д.) плашка всплывает снизу под строкой
+    const fourRow = modal.querySelector<HTMLElement>('[data-hand-type="Four of a Kind"]');
+    expect(fourRow).not.toBeNull();
+    fourRow?.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+    const fourPopup = modal.querySelector<HTMLElement>('.hand-preview-popup');
+    expect(fourPopup).not.toBeNull();
+    expect(fourPopup?.classList.contains('hand-preview-popup--bottom')).toBe(true);
+    fourRow?.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
     expect(modal.querySelector('.hand-preview-popup')).toBeNull();
   });
 
