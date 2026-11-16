@@ -2155,6 +2155,53 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
       mounted.destroy();
       localStorage.clear();
     });
+
+    it('открывает окно «Коллекция» из Главного меню и поддерживает управление через дебаг-панель', async () => {
+      const mock = createMockBridge({ isDebug: true });
+      const mounted = mountBaliteApp(root, { bridge: mock.bridge });
+      await flushMicrotasks();
+
+      // Нажимаем кнопку Коллекция в главном меню
+      const collectionMenuBtn = root.querySelector<HTMLButtonElement>('[data-menu-action="collection"]');
+      expect(collectionMenuBtn).not.toBeNull();
+      expect(collectionMenuBtn?.disabled).toBe(false);
+      collectionMenuBtn?.click();
+
+      // Модальное окно коллекции открыто
+      const collectionModal = root.querySelector<HTMLElement>('[data-modal="collection"]');
+      expect(collectionModal).not.toBeNull();
+      expect(collectionModal?.querySelector('.collection-hub')).not.toBeNull();
+
+      // Закрываем окно коллекции через кнопку Назад
+      collectionModal?.querySelector<HTMLButtonElement>('.collection-back-btn')?.click();
+      expect(root.querySelector('[data-modal="collection"]')).toBeNull();
+
+      // Открываем панель дебага по F9
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F9', bubbles: true }));
+      expect(root.querySelector('[data-modal="debug"]')).not.toBeNull();
+
+      // Переходим на вкладку Система / SDK
+      findButtonByText(root.querySelector('[data-modal="debug"]')!, 'Система / SDK')?.click();
+
+      // Нажимаем «Открыть всю коллекцию»
+      const unlockBtn = root.querySelector<HTMLButtonElement>('[data-debug-action="unlockCollection"]');
+      expect(unlockBtn).not.toBeNull();
+      unlockBtn?.click();
+      await flushMicrotasks();
+
+      expect(mounted.getSaveData().meta.discoveredRelics.length).toBe(40);
+
+      // Нажимаем «Сбросить коллекцию»
+      const resetBtn = root.querySelector<HTMLButtonElement>('[data-debug-action="resetCollection"]');
+      expect(resetBtn).not.toBeNull();
+      resetBtn?.click();
+      await flushMicrotasks();
+
+      expect(mounted.getSaveData().meta.discoveredRelics.length).toBe(0);
+
+      mounted.destroy();
+      localStorage.clear();
+    });
   });
 
   describe('Story 5.1: Интеграция гибридного аудиодвижка в app.ts', () => {

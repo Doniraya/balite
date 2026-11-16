@@ -187,6 +187,19 @@ function sanitizeIdList<T extends string>(raw: unknown, allowed: ReadonlySet<T>)
   return result;
 }
 
+function sanitizeStringList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of raw) {
+    if (typeof item === 'string' && item.length > 0 && !seen.has(item)) {
+      seen.add(item);
+      result.push(item);
+    }
+  }
+  return result;
+}
+
 function mergeUniqueIds<T extends string>(primary: readonly T[], secondary: readonly T[]): T[] {
   const seen = new Set<T>();
   const result: T[] = [];
@@ -612,6 +625,11 @@ function cloneMetaSave(meta: MetaSave): MetaSave {
     discoveredConsumables: [...meta.discoveredConsumables],
     discoveredCharters: [...meta.discoveredCharters],
     discoveredBosses: [...meta.discoveredBosses],
+    ...(meta.discoveredTags ? { discoveredTags: [...meta.discoveredTags] } : {}),
+    ...(meta.discoveredMonsters ? { discoveredMonsters: [...meta.discoveredMonsters] } : {}),
+    ...(meta.discoveredPacks ? { discoveredPacks: [...meta.discoveredPacks] } : {}),
+    ...(meta.discoveredEditions ? { discoveredEditions: [...meta.discoveredEditions] } : {}),
+    ...(meta.seenCollectionItems ? { seenCollectionItems: [...meta.seenCollectionItems] } : {}),
     stats: sanitizeMetaStats(meta.stats),
     ...(activeRunTracker !== undefined ? { activeRunTracker } : {}),
     ...(tutorialCompleted !== undefined ? { tutorialCompleted } : {}),
@@ -1205,6 +1223,11 @@ function sanitizeMetaSave(
     discoveredConsumables,
     discoveredCharters: sanitizeIdList(raw.discoveredCharters, CHARTER_SET),
     discoveredBosses: sanitizeIdList(raw.discoveredBosses, BOSS_SET),
+    ...(raw.discoveredTags ? { discoveredTags: sanitizeIdList(raw.discoveredTags, TAG_SET) } : {}),
+    ...(raw.discoveredMonsters ? { discoveredMonsters: sanitizeStringList(raw.discoveredMonsters) } : {}),
+    ...(raw.discoveredPacks ? { discoveredPacks: sanitizeStringList(raw.discoveredPacks) } : {}),
+    ...(raw.discoveredEditions ? { discoveredEditions: sanitizeIdList(raw.discoveredEditions, EDITION_SET) } : {}),
+    ...(raw.seenCollectionItems ? { seenCollectionItems: sanitizeStringList(raw.seenCollectionItems) } : {}),
     stats: sanitizeMetaStats(raw.stats),
     ...(activeRunTracker !== undefined ? { activeRunTracker } : {}),
     ...(rawTutorialCompleted !== undefined ? { tutorialCompleted: rawTutorialCompleted } : {}),
@@ -2060,6 +2083,21 @@ function mergeMetaSaves(
     discoveredConsumables: mergeUniqueIds(base.discoveredConsumables, other.discoveredConsumables),
     discoveredCharters: mergeUniqueIds(base.discoveredCharters, other.discoveredCharters),
     discoveredBosses: mergeUniqueIds(base.discoveredBosses, other.discoveredBosses),
+    ...(base.discoveredTags || other.discoveredTags
+      ? { discoveredTags: mergeUniqueIds(base.discoveredTags ?? [], other.discoveredTags ?? []) }
+      : {}),
+    ...(base.discoveredMonsters || other.discoveredMonsters
+      ? { discoveredMonsters: mergeUniqueIds(base.discoveredMonsters ?? [], other.discoveredMonsters ?? []) }
+      : {}),
+    ...(base.discoveredPacks || other.discoveredPacks
+      ? { discoveredPacks: mergeUniqueIds(base.discoveredPacks ?? [], other.discoveredPacks ?? []) }
+      : {}),
+    ...(base.discoveredEditions || other.discoveredEditions
+      ? { discoveredEditions: mergeUniqueIds(base.discoveredEditions ?? [], other.discoveredEditions ?? []) }
+      : {}),
+    ...(base.seenCollectionItems || other.seenCollectionItems
+      ? { seenCollectionItems: mergeUniqueIds(base.seenCollectionItems ?? [], other.seenCollectionItems ?? []) }
+      : {}),
     stats: {
       runsStarted: Math.max(base.stats.runsStarted, other.stats.runsStarted),
       runsWon: Math.max(base.stats.runsWon, other.stats.runsWon),

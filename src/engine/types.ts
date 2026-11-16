@@ -1077,6 +1077,11 @@ export interface MetaSave {
   readonly discoveredConsumables: readonly ConsumableId[];
   readonly discoveredCharters: readonly CharterId[];
   readonly discoveredBosses: readonly BossId[];
+  readonly discoveredTags?: readonly TagId[];
+  readonly discoveredMonsters?: readonly string[];
+  readonly discoveredPacks?: readonly string[];
+  readonly discoveredEditions?: readonly Edition[];
+  readonly seenCollectionItems?: readonly string[];
   readonly stats: MetaStats;
   readonly activeRunTracker?: ActiveRunTracker;
   readonly tutorialCompleted?: boolean;

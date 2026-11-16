@@ -148,6 +148,38 @@ export interface UiDictionary {
     readonly comingSoon: string;
     readonly version: string;
   };
+  readonly collection: {
+    readonly title: string;
+    readonly relics: string;
+    readonly decks: string;
+    readonly vouchers: string;
+    readonly consumablesGroup: string;
+    readonly scrolls: string;
+    readonly celestials: string;
+    readonly runes: string;
+    readonly enhancements: string;
+    readonly seals: string;
+    readonly editions: string;
+    readonly packs: string;
+    readonly tags: string;
+    readonly blinds: string;
+    readonly back: string;
+    readonly pageInfo: string;
+    readonly notDiscoveredTitle: string;
+    readonly notDiscoveredDesc: string;
+    readonly lockedTitle: string;
+    readonly enhancementRuleNotice: string;
+    readonly anteBaseTitle: string;
+    readonly baseScoreTitle: string;
+    readonly voucherConditions: {
+      readonly spend2500: string;
+      readonly reroll50: string;
+      readonly use50Celestials: string;
+      readonly play250Hands: string;
+      readonly earn400Dollars: string;
+      readonly defeat10Bosses: string;
+    };
+  };
   readonly hud: {
     readonly stage: string;
     readonly stageWithMax: string;

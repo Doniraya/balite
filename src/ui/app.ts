@@ -21,6 +21,10 @@ import {
   serializeRunStateToSnapshot,
   setDebugResources,
   updateMetaStatsFromRunState,
+  hasAnyUnseenCollectionItems,
+  resetCollection,
+  unlockAllCollection,
+  type CollectionCategory,
 } from '../engine';
 import type {
   AnimationSpeed,
@@ -71,6 +75,7 @@ import {
   renderDebugPanel,
   type DebugPanelTab,
   type DebugSpawnFilter,
+  type DebugSystemAction,
 } from './debugPanel';
 import {
   renderDeckModal,
@@ -78,6 +83,7 @@ import {
   renderSettingsModal,
   type SettingsModalTab,
 } from './modals';
+import { renderCollectionModal } from './collection';
 import { APP_VERSION, renderMainMenu } from './mainMenu';
 import {
   createCashoutTimeline,
@@ -184,7 +190,7 @@ interface ConsumableTargetModeState {
 /**
  * Тип открытого полноэкранного модального окна поверх сцены.
  */
-type ActiveModalKind = 'hand_reference' | 'deck' | 'settings' | 'debug';
+type ActiveModalKind = 'hand_reference' | 'deck' | 'settings' | 'debug' | 'collection';
 
 /**
  * Цветовая карта импульсов фона по типам всплывающих событий TracePlayer.
@@ -605,6 +611,7 @@ export function mountBaliteApp(
     });
   let activeInspectTarget: InspectTarget | null = null;
   let activeModal: ActiveModalKind | null = null;
+  let activeCollectionCategory: CollectionCategory | null = null;
   let activeSettingsTab: SettingsModalTab = 'hub';
   let activeDebugTab: DebugPanelTab = 'combat';
   let activeDebugSpawnFilter: DebugSpawnFilter = 'relics';
@@ -926,6 +933,7 @@ export function mountBaliteApp(
   const closeOverlays = (): void => {
     activeInspectTarget = null;
     activeModal = null;
+    activeCollectionCategory = null;
     activeSettingsTab = 'hub';
     overlayHostEl.replaceChildren();
     syncGameplayState();
@@ -1357,6 +1365,32 @@ export function mountBaliteApp(
       return;
     }
 
+    if (activeModal === 'collection') {
+      overlayHostEl.append(
+        renderCollectionModal({
+          meta: saveData.meta,
+          translator,
+          initialCategory: activeCollectionCategory,
+          onClose: closeOverlays,
+          onUpdateMeta: (nextMeta) => {
+            const { revision, updatedAt } = nextMonotonicRevisionAndTime();
+            saveData = createPlayerSaveData(nextMeta, saveData.activeRun, revision, updatedAt);
+            void persistBaliteSave(bridge, saveData).catch(() => false);
+            if (showMainMenu) {
+              render();
+            }
+          },
+          audio: {
+            playButton: () => audio.playButton(),
+          },
+        }),
+      );
+      cardTiltController.refresh();
+      syncGameplayState();
+      tutorialOverlay.hide();
+      return;
+    }
+
     if (activeInspectTarget) {
       overlayHostEl.append(
         renderInspectorOverlay(activeInspectTarget, runState, translator, {
@@ -1454,6 +1488,7 @@ export function mountBaliteApp(
           lang: saveData.meta.settings.lang,
           version: APP_VERSION,
           hasSavedRun: savedRunSnapshot !== null,
+          hasUnseenCollection: hasAnyUnseenCollectionItems(saveData.meta),
         },
         {
           onPlay: () => {
@@ -1473,6 +1508,14 @@ export function mountBaliteApp(
             audio.playButton();
             const nextLang = saveData.meta.settings.lang === 'ru' ? 'en' : 'ru';
             handleSettingsPatch({ lang: nextLang });
+          },
+          onOpenCollection: () => {
+            audio.playButton();
+            activeInspectTarget = null;
+            activeModal = 'collection';
+            activeCollectionCategory = null;
+            syncGameplayState();
+            renderOverlay();
           },
         },
       );
@@ -2020,9 +2063,7 @@ export function mountBaliteApp(
     }
   }
 
-  async function handleDebugAction(
-    action: 'interstitial' | 'rewarded' | 'flush' | 'resetRun',
-  ): Promise<string> {
+  async function handleDebugAction(action: DebugSystemAction): Promise<string> {
     switch (action) {
       case 'interstitial': {
         const res = await bridge.showInterstitial();
@@ -2049,6 +2090,24 @@ export function mountBaliteApp(
         closeOverlays();
         render();
         return 'resetRun: ok';
+      }
+      case 'unlockCollection': {
+        const nextMeta = unlockAllCollection(saveData.meta);
+        const { revision, updatedAt } = nextMonotonicRevisionAndTime();
+        saveData = createPlayerSaveData(nextMeta, saveData.activeRun, revision, updatedAt);
+        void persistBaliteSave(bridge, saveData).catch(() => false);
+        renderOverlay();
+        render();
+        return 'unlockCollection: all items unlocked';
+      }
+      case 'resetCollection': {
+        const nextMeta = resetCollection(saveData.meta);
+        const { revision, updatedAt } = nextMonotonicRevisionAndTime();
+        saveData = createPlayerSaveData(nextMeta, saveData.activeRun, revision, updatedAt);
+        void persistBaliteSave(bridge, saveData).catch(() => false);
+        renderOverlay();
+        render();
+        return 'resetCollection: collection reset to default';
       }
     }
   }

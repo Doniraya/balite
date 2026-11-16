@@ -20,3 +20,4 @@ export * from './save';
 export * from './run';
 export * from './deckView';
 export * from './debugTools';
+export * from './collection';

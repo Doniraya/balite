@@ -14,6 +14,7 @@ function createMenuHandlers(): MainMenuHandlers {
     onPlay: vi.fn(),
     onOpenSettings: vi.fn(),
     onToggleLanguage: vi.fn(),
+    onOpenCollection: vi.fn(),
   };
 }
 
@@ -74,8 +75,8 @@ describe('Главное меню Balite (src/ui/mainMenu.ts)', () => {
 
       expect(playBtn?.disabled).toBe(false);
       expect(settingsBtn?.disabled).toBe(false);
-      expect(collectionBtn?.disabled).toBe(true);
-      expect(collectionBtn?.textContent).toContain(lang === 'ru' ? 'Скоро' : 'Soon');
+      expect(collectionBtn?.disabled).toBe(false);
+      expect(collectionBtn?.textContent).not.toContain(lang === 'ru' ? 'Скоро' : 'Soon');
       expect(langBtn?.textContent).toContain(lang === 'ru' ? 'Русский' : 'English');
 
       // Запрещённые элементы референса (Профиль, Discord, X, Выход, внешние ссылки) отсутствуют
@@ -92,6 +93,21 @@ describe('Главное меню Balite (src/ui/mainMenu.ts)', () => {
       expect(handlers.onPlay).toHaveBeenCalledTimes(1);
       expect(handlers.onOpenSettings).toHaveBeenCalledTimes(1);
       expect(handlers.onToggleLanguage).toHaveBeenCalledTimes(1);
+      expect(handlers.onOpenCollection).toHaveBeenCalledTimes(1);
+
+      // Бэйдж «!» появляется при наличии новых сущностей в коллекции
+      renderMainMenu(
+        root,
+        {
+          translator,
+          lang,
+          version: APP_VERSION,
+          hasSavedRun: false,
+          hasUnseenCollection: true,
+        },
+        handlers,
+      );
+      expect(root.querySelector('.main-menu__alert-badge')?.textContent).toBe('!');
     }
   });
 

@@ -402,9 +402,9 @@ export function buildPlayingCardTooltip(
 /**
  * Формирует данные ховер-тултипа для Реликвии с текущими параметрами подстановки.
  */
-function buildRelicTooltip(
+export function buildRelicTooltip(
   relic: RelicInstance,
-  state: RunState,
+  state: RunState | undefined,
   translator: Translator,
   price?: string,
 ): TooltipData {
@@ -432,7 +432,7 @@ function buildRelicTooltip(
 /**
  * Формирует данные ховер-тултипа для Расходника.
  */
-function buildConsumableTooltip(
+export function buildConsumableTooltip(
   consumable: ConsumableInstance,
   translator: Translator,
   price?: string,
@@ -471,7 +471,11 @@ export function buildCharterTooltip(
 /**
  * Формирует данные ховер-тултипа для бустер-набора.
  */
-function buildPackTooltip(pack: PackOffer, translator: Translator, price?: string): TooltipData {
+export function buildPackTooltip(
+  pack: PackOffer,
+  translator: Translator,
+  price?: string,
+): TooltipData {
   return {
     title: translator.getPackTitle(pack.type, pack.size),
     subtitle: translator.getPackSubtitle(pack.chooseCount, pack.totalCards),

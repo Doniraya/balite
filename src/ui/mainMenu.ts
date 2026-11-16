@@ -17,6 +17,7 @@ export interface MainMenuViewModel {
   readonly lang: I18nLang;
   readonly version: string;
   readonly hasSavedRun: boolean;
+  readonly hasUnseenCollection?: boolean;
 }
 
 /**
@@ -26,6 +27,7 @@ export interface MainMenuHandlers {
   readonly onPlay: () => void;
   readonly onOpenSettings: () => void;
   readonly onToggleLanguage: () => void;
+  readonly onOpenCollection?: () => void;
 }
 
 /**
@@ -265,15 +267,21 @@ export function renderMainMenu(
   collectionBtn.type = 'button';
   collectionBtn.className = 'main-menu__btn main-menu__btn--collection';
   collectionBtn.dataset.menuAction = 'collection';
-  collectionBtn.disabled = true;
-  collectionBtn.setAttribute('aria-disabled', 'true');
+  if (handlers.onOpenCollection) {
+    collectionBtn.addEventListener('click', handlers.onOpenCollection);
+  }
 
   const collectionLabel = document.createElement('span');
   collectionLabel.textContent = translator.t('ui.mainMenu.collection');
-  const soonBadge = document.createElement('span');
-  soonBadge.className = 'main-menu__soon-badge';
-  soonBadge.textContent = translator.t('ui.mainMenu.comingSoon');
-  collectionBtn.append(collectionLabel, soonBadge);
+  collectionBtn.append(collectionLabel);
+
+  if (vm.hasUnseenCollection) {
+    const alertBadge = document.createElement('span');
+    alertBadge.className = 'main-menu__alert-badge';
+    alertBadge.textContent = '!';
+    alertBadge.setAttribute('aria-hidden', 'true');
+    collectionBtn.append(alertBadge);
+  }
 
   panel.append(playBtn, settingsBtn, collectionBtn);
 

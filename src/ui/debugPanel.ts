@@ -26,7 +26,13 @@ export type DebugPanelTab = 'combat' | 'cards' | 'spawn' | 'system';
 export type DebugSpawnFilter = 'relics' | 'celestial' | 'scroll' | 'rune' | 'charters';
 
 /** Действия вкладки Система / SDK. */
-export type DebugSystemAction = 'interstitial' | 'rewarded' | 'flush' | 'resetRun';
+export type DebugSystemAction =
+  | 'interstitial'
+  | 'rewarded'
+  | 'flush'
+  | 'resetRun'
+  | 'unlockCollection'
+  | 'resetCollection';
 
 /** Параметры рендера Админ-панели. */
 export interface DebugPanelOptions {
@@ -474,6 +480,8 @@ export function renderDebugPanel(options: DebugPanelOptions): HTMLElement {
       { action: 'rewarded', label: 'showRewarded()' },
       { action: 'flush', label: 'flushCloudSave()' },
       { action: 'resetRun', label: 'resetRun()' },
+      { action: 'unlockCollection', label: 'Открыть всю коллекцию' },
+      { action: 'resetCollection', label: 'Сбросить коллекцию' },
     ];
 
     for (const item of sysActions) {
