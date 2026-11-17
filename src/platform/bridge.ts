@@ -18,15 +18,25 @@ const DEFAULT_BRIDGE_CONFIG: PlatformBridgeConfig<Record<string, unknown>> = {
   vkPlayAppId: '',
   storageKey: 'balite_save_v1',
   localBackupKey: 'balite_platform_save_v1',
-  maxStorageBytes: 4000,
+  maxStorageBytes: 2200,
   sandboxMockDelayMs: 420,
   cloudDebounceMs: 0,
 };
 
-function parseDebugFlag(params: Record<string, string>): boolean {
-  if (params.debug === undefined) return false;
-  const val = params.debug.trim().toLowerCase();
-  return val !== '0' && val !== 'false' && val !== 'no';
+function parseDebugFlag(
+  params: Record<string, string>,
+  hash: string = typeof window !== 'undefined' ? window.location.hash : '',
+): boolean {
+  if (import.meta.env.PROD) return false;
+  if (params.debug !== undefined) {
+    const val = params.debug.trim().toLowerCase();
+    return val !== '0' && val !== 'false' && val !== 'no';
+  }
+  if (!hash) return false;
+  return hash
+    .replace(/^#/, '')
+    .split('&')
+    .some((token) => token.trim().toLowerCase() === 'debug');
 }
 
 /**
@@ -114,7 +124,7 @@ export function createPlatformBridge<
   let readyFlag = false;
   let readyCalled = false;
   let adShowing = false;
-  let currentLang: SupportedLang = normalizeLang(params.lang);
+  let currentLang: SupportedLang = normalizeLang(params.lang || params.vk_language);
   let saveQueuePromise: Promise<void> = Promise.resolve();
   let inMemoryBackup: Partial<TSave> = {};
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -187,10 +197,10 @@ export function createPlatformBridge<
         try {
           currentLang = normalizeLang(await adapter.getLanguage());
         } catch {
-          currentLang = normalizeLang(null);
+          currentLang = normalizeLang(params.vk_language || null);
         }
       } else {
-        currentLang = normalizeLang(null);
+        currentLang = normalizeLang(params.vk_language || null);
       }
 
       readyFlag = true;

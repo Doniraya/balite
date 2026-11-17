@@ -1,4 +1,8 @@
-import { trySerializeWithinLimit } from '../storage';
+import {
+  assembleFromKeyValueCloud,
+  isPlainRecord,
+  splitPayloadForKeyValueCloud,
+} from '../storage';
 import type {
   AdapterContext,
   InterstitialResult,
@@ -241,21 +245,24 @@ export class OkAdapter<TSave extends Record<string, unknown> = Record<string, un
 
   async loadPlayerData(): Promise<Partial<TSave>> {
     try {
-      const { status, data } = await this.callClient({
-        method: 'storage.get',
-        keys: [this.ctx.storageKey],
-        scope: 'CUSTOM',
+      return await assembleFromKeyValueCloud<TSave>(this.ctx.storageKey, async (keys) => {
+        const { status, data } = await this.callClient({
+          method: 'storage.get',
+          keys,
+          scope: 'CUSTOM',
+        });
+        if (status !== 'ok' || !isPlainRecord(data)) return {};
+
+        const container = isPlainRecord(data.data) ? data.data : data;
+        const out: Record<string, string | undefined> = {};
+        for (const key of keys) {
+          const raw = container[key];
+          if (typeof raw === 'string' && raw) {
+            out[key] = raw;
+          }
+        }
+        return out;
       });
-      if (status !== 'ok' || !data || typeof data !== 'object') return {};
-
-      const container = (data as { data?: Record<string, unknown> }).data ?? (data as Record<string, unknown>);
-      const raw = container[this.ctx.storageKey];
-      if (typeof raw !== 'string' || !raw) return {};
-
-      const parsed: unknown = JSON.parse(raw);
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-        ? (parsed as Partial<TSave>)
-        : {};
     } catch {
       return {};
     }
@@ -263,22 +270,29 @@ export class OkAdapter<TSave extends Record<string, unknown> = Record<string, un
 
   async savePlayerData(mergedData: TSave): Promise<boolean> {
     try {
-      const serialized = trySerializeWithinLimit(
+      const entries = splitPayloadForKeyValueCloud(
         mergedData,
+        this.ctx.storageKey,
         this.ctx.maxStorageBytes,
         this.ctx.compactFallback,
       );
-      if (serialized === null) {
+      if (entries === null) {
         // Не перезаписываем облачное сохранение пустым '{}', оставляя локальный сейв целым
         return false;
       }
-      const { status } = await this.callClient({
-        method: 'storage.set',
-        key: this.ctx.storageKey,
-        value: serialized,
-        scope: 'CUSTOM',
-      });
-      return status === 'ok';
+
+      for (const entry of entries) {
+        const { status } = await this.callClient({
+          method: 'storage.set',
+          key: entry.key,
+          value: entry.value,
+          scope: 'CUSTOM',
+        });
+        if (status !== 'ok') {
+          return false;
+        }
+      }
+      return true;
     } catch {
       return false;
     }

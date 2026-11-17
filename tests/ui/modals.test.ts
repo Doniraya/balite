@@ -1055,6 +1055,49 @@ describe('Модальные окна (src/ui/modals.ts)', () => {
     expect(onOpenDebugPanel).toHaveBeenCalledTimes(1);
   });
 
+  it('отображает блок техподдержки в «Титрах» только для платформ vk и ok (п. 4.9 правил ВК)', () => {
+    const ru = createTranslator('ru');
+    const meta = createInitialMetaSave(1000, { lang: 'ru' });
+
+    const vkModal = renderSettingsModal({
+      settings: meta.settings,
+      meta,
+      initialTab: 'credits',
+      platformId: 'vk',
+      translator: ru,
+      onChangeSettings: vi.fn(),
+      onClose: vi.fn(),
+    });
+    const vkSupport = vkModal.querySelector<HTMLElement>('[data-credits-support="true"]');
+    expect(vkSupport).not.toBeNull();
+    const vkLink = vkSupport?.querySelector<HTMLAnchorElement>('.credits-card__support-link');
+    expect(vkLink?.getAttribute('href')).toBe('mailto:support@balite.game');
+    expect(vkLink?.textContent).toBe('support@balite.game');
+
+    const okModal = renderSettingsModal({
+      settings: meta.settings,
+      meta,
+      initialTab: 'credits',
+      platformId: 'ok',
+      translator: ru,
+      onChangeSettings: vi.fn(),
+      onClose: vi.fn(),
+    });
+    expect(okModal.querySelector('[data-credits-support="true"]')).not.toBeNull();
+
+    const yandexModal = renderSettingsModal({
+      settings: meta.settings,
+      meta,
+      initialTab: 'credits',
+      platformId: 'yandex',
+      translator: ru,
+      onChangeSettings: vi.fn(),
+      onClose: vi.fn(),
+    });
+    expect(yandexModal.querySelector('[data-credits-support="true"]')).toBeNull();
+    expect(yandexModal.querySelectorAll('a').length).toBe(0);
+  });
+
   it('синхронизирует сводку открытий в Статистике (computeMetaStatsSummary) со всеми категориями Коллекции (1..143, до 100%)', () => {
     const ru = createTranslator('ru');
 

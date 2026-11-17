@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  assembleFromKeyValueCloud,
   readLocalSave,
   serializeWithinLimit,
+  splitPayloadForKeyValueCloud,
   trySerializeWithinLimit,
   utf8ByteLength,
   writeLocalSave,
@@ -108,5 +110,55 @@ describe('readLocalSave / writeLocalSave', () => {
       return typeof obj.score === 'number' ? { score: obj.score } : {};
     });
     expect(parsed).toEqual({ score: 150 });
+  });
+});
+
+describe('splitPayloadForKeyValueCloud / assembleFromKeyValueCloud', () => {
+  it('разбивает большой activeRun на чанки <= 2200 символов/байт и собирает обратно без потерь', async () => {
+    const payload = {
+      revision: 7,
+      meta: { unlocked: ['b_red', 'b_blue'] },
+      activeRun: {
+        seed: 'VK_CLOUD_SYNC',
+        cards: Array.from({ length: 60 }, (_, idx) => ({
+          id: `card_${idx}`,
+          label: `Карта гильдии #${idx}`,
+        })),
+      },
+    };
+
+    const entries = splitPayloadForKeyValueCloud(
+      payload,
+      'balite_save_v1',
+      2200,
+      (d) => ({ revision: d.revision, meta: d.meta, activeRun: null }),
+    );
+    expect(entries).not.toBeNull();
+    expect(entries!.length).toBeGreaterThan(1);
+    for (const entry of entries!) {
+      expect(entry.value.length).toBeLessThanOrEqual(2200);
+      expect(utf8ByteLength(entry.value)).toBeLessThanOrEqual(2200);
+    }
+
+    const cloudMap = new Map<string, string>(entries!.map((e) => [e.key, e.value]));
+    const assembled = await assembleFromKeyValueCloud('balite_save_v1', async (keys) => {
+      const res: Record<string, string | undefined> = {};
+      for (const k of keys) res[k] = cloudMap.get(k);
+      return res;
+    });
+    expect(assembled).toEqual(payload);
+
+    // Если один из чанков потерян, MetaSave остаётся целым, а activeRun = null
+    cloudMap.delete('balite_save_v1_r0');
+    const fallbackOnly = await assembleFromKeyValueCloud('balite_save_v1', async (keys) => {
+      const res: Record<string, string | undefined> = {};
+      for (const k of keys) res[k] = cloudMap.get(k);
+      return res;
+    });
+    expect(fallbackOnly).toEqual({
+      revision: 7,
+      meta: { unlocked: ['b_red', 'b_blue'] },
+      activeRun: null,
+    });
   });
 });

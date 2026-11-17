@@ -82,10 +82,12 @@ export function formatVoucherCondition(
   meta: MetaSave,
   translator: Translator,
 ): string {
-  let current = '$0';
+  const isRu = translator.lang === 'ru';
+  const formatGold = (amount: number): string => (isRu ? `${amount} з.` : `${amount} Gold`);
+  let current = formatGold(0);
   switch (key) {
     case 'spend2500':
-      current = `$${meta.stats?.totalMoneySpent ?? 0}`;
+      current = formatGold(meta.stats?.totalMoneySpent ?? 0);
       break;
     case 'reroll50':
       current = `${meta.stats?.totalShopRerolls ?? 0}/50`;
@@ -97,7 +99,9 @@ export function formatVoucherCondition(
       current = `${meta.stats?.totalHandsPlayed ?? 0}/250`;
       break;
     case 'earn400Dollars':
-      current = `$${meta.stats?.maxDollars ?? 0}/$400`;
+      current = isRu
+        ? `${meta.stats?.maxDollars ?? 0}/400 з.`
+        : `${meta.stats?.maxDollars ?? 0}/400 Gold`;
       break;
     case 'defeat10Bosses':
       current = `${meta.discoveredBosses?.length ?? 0}/10`;

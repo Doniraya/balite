@@ -1353,12 +1353,18 @@ function renderStatsTabBody(body: HTMLElement, meta: MetaSave | undefined, trans
 }
 
 /**
- * Заполняет содержимое текстового окна «Титры и об игре» без внешних ссылок.
+ * Контактный адрес обратной связи для витрин VK / OK (п. 4.9 правил ВК).
+ */
+export const BALITE_SUPPORT_EMAIL = 'support@balite.game';
+
+/**
+ * Заполняет содержимое текстового окна «Титры и об игре» (контакт поддержки рендерится только для VK/OK).
  */
 function renderCreditsTabBody(
   body: HTMLElement,
   version: string,
   translator: Translator,
+  platformId?: string,
 ): void {
   const card = document.createElement('div');
   card.className = 'credits-card';
@@ -1383,6 +1389,28 @@ function renderCreditsTabBody(
     p.className = 'credits-card__line';
     p.textContent = line;
     card.append(p);
+  }
+
+  if (platformId === 'vk' || platformId === 'ok') {
+    const supportBlock = document.createElement('div');
+    supportBlock.className = 'credits-card__support';
+    supportBlock.dataset.creditsSupport = 'true';
+
+    const supportTitle = document.createElement('div');
+    supportTitle.className = 'credits-card__support-title';
+    supportTitle.textContent = translator.t('ui.credits.supportLabel');
+
+    const supportDesc = document.createElement('p');
+    supportDesc.className = 'credits-card__support-desc';
+    supportDesc.textContent = translator.t('ui.credits.supportText');
+
+    const supportLink = document.createElement('a');
+    supportLink.className = 'credits-card__support-link';
+    supportLink.href = `mailto:${BALITE_SUPPORT_EMAIL}`;
+    supportLink.textContent = BALITE_SUPPORT_EMAIL;
+
+    supportBlock.append(supportTitle, supportDesc, supportLink);
+    card.append(supportBlock);
   }
 
   body.append(card);
@@ -1483,8 +1511,8 @@ function renderSettingsControlsBody(body: HTMLElement, options: SettingsModalOpt
   resetTutorialBtn.dataset.action = 'reset-tutorial';
   body.appendChild(resetTutorialBtn);
 
-  // Отладочные инструменты и DEV-переключатель словаря доступны строго по флагу ?debug
-  if (options.isDebug === true) {
+  // Отладочные инструменты и DEV-переключатель словаря доступны строго по флагу ?debug вне prod-сборки
+  if (!import.meta.env.PROD && options.isDebug === true) {
     if (import.meta.env.DEV && options.onToggleDevOriginalTerms) {
       const devTermsLabel =
         translator.lang === 'ru'
@@ -1611,7 +1639,7 @@ export function renderSettingsModal(options: SettingsModalOptions): HTMLElement 
       if (titleEl) {
         titleEl.textContent = translator.t('ui.credits.title');
       }
-      renderCreditsTabBody(body, version, translator);
+      renderCreditsTabBody(body, version, translator, options.platformId);
     }
 
     const backBtn = document.createElement('button');

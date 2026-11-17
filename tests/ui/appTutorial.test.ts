@@ -185,4 +185,39 @@ describe('Интеграция Tutorial Overlay в app.ts (tests/ui/appTutorial.
     expect(latestSave.meta.tutorialCompleted).toBe(false);
     expect(latestSave.meta.tutorialStep).toBe(0);
   });
+
+  it('не показывает межстраничную рекламу при выходе из лавки на шаге обучения 20 -> 21 (Story 6.5.1)', async () => {
+    const baseRun = createInitialRunState('b_red', 'TUTORIAL');
+    const shopState: RunState = {
+      ...baseRun,
+      phase: 'shop',
+      round: 1,
+      shop: {
+        offers: [],
+        voucher: null,
+        packs: [],
+        rerollCost: 5,
+        tempRerollCost: null,
+        rerollsUsedThisShop: 0,
+      },
+    };
+    const meta = createInitialMetaSave(1000, {
+      tutorialCompleted: false,
+      tutorialStep: 19,
+    });
+    const snapshot = serializeRunStateToSnapshot(shopState, 2, 1000);
+    const save = createPlayerSaveData(meta, snapshot, 2, 1000);
+    const mock = createMockBridge(save);
+
+    mounted = mountBaliteApp(root, { bridge: mock.bridge, adCooldownMs: 0 });
+    await mounted.readyPromise;
+
+    const nextRoundBtn = findButtonByText(root, 'Далее');
+    expect(nextRoundBtn).toBeDefined();
+    nextRoundBtn?.click();
+
+    expect(mock.bridge.showInterstitial).not.toHaveBeenCalled();
+    expect(mounted.getState().phase).toBe('blind_select');
+    expect(mounted.getSaveData().meta.settings.tutorialStep).toBe(20);
+  });
 });

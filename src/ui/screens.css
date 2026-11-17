@@ -602,6 +602,7 @@
   transform: scale(1.07);
   z-index: 10;
   filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.55));
+  touch-action: none;
 }
 
 .inventory-slot[data-highlighted='true'] {
@@ -1766,6 +1767,7 @@
   transform: translateY(-22px) scale(1.06);
   z-index: 12;
   filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.6));
+  touch-action: none;
 }
 
 .hand-card-slot[data-highlighted='true'] {

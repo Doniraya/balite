@@ -29,7 +29,9 @@ const CIS_LANG_CODES: ReadonlySet<string> = new Set([
   'ru',
   'be',
   'kk',
+  'kz',
   'uk',
+  'ua',
   'uz',
 ]);
 

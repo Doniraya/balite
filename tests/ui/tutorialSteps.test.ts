@@ -15,6 +15,7 @@ import {
   getTutorialStepsByPhase,
   getTutorialTotalSteps,
   normalizeTutorialEmotion,
+  preloadDevTutorialSteps,
   TUTORIAL_STEPS,
   type CanonicalTutorialEmotion,
   type TutorialPhase,
@@ -115,7 +116,8 @@ describe('Интерактивный сценарий обучения (src/ui/t
     }
   });
 
-  it('в DEV-режиме использует аутентичные термины Balatro и рассказчика Джимбо', () => {
+  it('в DEV-режиме использует аутентичные термины Balatro и рассказчика Джимбо', async () => {
+    await preloadDevTutorialSteps();
     const devSteps = getTutorialSteps(true);
     expect(devSteps).toHaveLength(21);
 

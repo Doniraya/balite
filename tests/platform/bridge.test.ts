@@ -384,4 +384,22 @@ describe('createPlatformBridge', () => {
       vi.useRealTimers();
     }
   });
+
+  it('распознаёт vk_language (включая kz/ua и числовой код 3) и флаг #debug в hash в dev-режиме', async () => {
+    window.history.replaceState({}, '', '/?platform=vk&vk_language=3#debug');
+    const bridgeEn = createPlatformBridge();
+    expect(bridgeEn.getLanguage()).toBe('en');
+    expect(bridgeEn.isDebugMode()).toBe(true);
+    await bridgeEn.init();
+    expect(bridgeEn.getLanguage()).toBe('en');
+    bridgeEn.audio.dispose();
+
+    window.history.replaceState({}, '', '/?platform=vk&vk_language=kz');
+    const bridgeKz = createPlatformBridge();
+    expect(bridgeKz.getLanguage()).toBe('ru');
+    expect(bridgeKz.isDebugMode()).toBe(false);
+    await bridgeKz.init();
+    expect(bridgeKz.getLanguage()).toBe('ru');
+    bridgeKz.audio.dispose();
+  });
 });

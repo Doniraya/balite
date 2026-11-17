@@ -74,11 +74,11 @@ import {
   renderInspectorOverlay,
   type InspectTarget,
 } from './inspector';
-import {
-  renderDebugPanel,
-  type DebugPanelTab,
-  type DebugSpawnFilter,
-  type DebugSystemAction,
+import type {
+  DebugPanelOptions,
+  DebugPanelTab,
+  DebugSpawnFilter,
+  DebugSystemAction,
 } from './debugPanel';
 import {
   renderDeckModal,
@@ -119,6 +119,7 @@ import {
 } from './tutorialOverlay';
 import {
   getTutorialSteps,
+  preloadDevTutorialSteps,
 } from './tutorialSteps';
 import {
   playTraceEvents,
@@ -140,6 +141,17 @@ const SEED_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CELESTIAL_ID_SET = new Set<string>(CELESTIAL_IDS);
 const SCROLL_ID_SET = new Set<string>(SCROLL_IDS);
 const RUNE_ID_SET = new Set<string>(RUNE_IDS);
+
+let cachedRenderDebugPanel: ((opts: DebugPanelOptions) => HTMLElement) | null = null;
+const debugPanelModulePromise: Promise<((opts: DebugPanelOptions) => HTMLElement) | null> =
+  !import.meta.env.PROD
+    ? import('./debugPanel')
+        .then((mod) => {
+          cachedRenderDebugPanel = mod.renderDebugPanel;
+          return cachedRenderDebugPanel;
+        })
+        .catch(() => null)
+    : Promise.resolve(null);
 
 function resolveConsumableKind(consumableId: ConsumableId): ConsumableKind {
   if (CELESTIAL_ID_SET.has(consumableId)) return 'celestial';
@@ -629,6 +641,16 @@ export function mountBaliteApp(
     options.clearScheduledTimeout ??
     ((id: ReturnType<typeof setTimeout>) => globalThis.clearTimeout(id));
   const adCooldownMs = options.adCooldownMs ?? DEFAULT_AD_COOLDOWN_MS;
+
+  const ensureDebugPanelLoaded = (): Promise<((opts: DebugPanelOptions) => HTMLElement) | null> => {
+    if (import.meta.env.PROD || !bridge.isDebugMode()) {
+      return Promise.resolve(null);
+    }
+    if (cachedRenderDebugPanel) {
+      return Promise.resolve(cachedRenderDebugPanel);
+    }
+    return debugPanelModulePromise;
+  };
 
   // Строим корневую раскладку: живой фон на весь вьюпорт + портретная сцена 9:16
   root.replaceChildren();
@@ -1357,7 +1379,10 @@ export function mountBaliteApp(
             ? {
                 devOriginalTermsEnabled: isDevOriginalTermsEnabled(),
                 onToggleDevOriginalTerms: (enabled: boolean) => {
-                  void setDevOriginalTermsEnabled(enabled, true).then(() => {
+                  void Promise.all([
+                    setDevOriginalTermsEnabled(enabled, true),
+                    enabled ? preloadDevTutorialSteps() : Promise.resolve(),
+                  ]).then(() => {
                     if (destroyed) return;
                     translator = createTranslator(saveData.meta.settings.lang);
                     mountHoverTooltip();
@@ -1401,12 +1426,20 @@ export function mountBaliteApp(
     }
 
     if (activeModal === 'debug') {
-      if (!bridge.isDebugMode()) {
+      if (import.meta.env.PROD || !bridge.isDebugMode()) {
         activeModal = null;
         return;
       }
+      if (!cachedRenderDebugPanel) {
+        void ensureDebugPanelLoaded().then((fn) => {
+          if (!destroyed && fn && activeModal === 'debug') {
+            renderOverlay();
+          }
+        });
+        return;
+      }
       overlayHostEl.append(
-        renderDebugPanel({
+        cachedRenderDebugPanel({
           state: runState,
           selectedCardIds,
           translator,
@@ -1421,7 +1454,10 @@ export function mountBaliteApp(
             ? {
                 devOriginalTermsEnabled: isDevOriginalTermsEnabled(),
                 onToggleDevOriginalTerms: (enabled: boolean) => {
-                  void setDevOriginalTermsEnabled(enabled, true).then(() => {
+                  void Promise.all([
+                    setDevOriginalTermsEnabled(enabled, true),
+                    enabled ? preloadDevTutorialSteps() : Promise.resolve(),
+                  ]).then(() => {
                     if (destroyed) return;
                     translator = createTranslator(saveData.meta.settings.lang);
                     mountHoverTooltip();
@@ -2335,8 +2371,15 @@ export function mountBaliteApp(
         cashoutFinishedKey = cashoutStartedKey;
       }
       if (command.type === 'NEXT_ROUND' && runState.phase === 'shop') {
-        runWithLogicalPauseAd(() => applyGameCommand(command));
-        return;
+        const isTutorialShopExit =
+          isTutorialActive() &&
+          (runState.seed === 'TUTORIAL' ||
+            getTutorialSteps(isDevOriginalTermsEnabled())[currentTutorialIndex]?.id ===
+              'reroll_and_next_round');
+        if (!isTutorialShopExit) {
+          runWithLogicalPauseAd(() => applyGameCommand(command));
+          return;
+        }
       }
       applyGameCommand(command);
     },
@@ -2638,54 +2681,126 @@ export function mountBaliteApp(
     }
   });
 
-  // Асинхронная инициализация платформы, загрузка сохранения и первый рендер
-  const readyPromise = (async () => {
-    bridge.audio.install();
-    await bridge.init();
+  const renderBootState = (mode: 'loading' | 'error', onRetry?: () => void): void => {
     if (destroyed) return;
+    screenHostEl.replaceChildren();
+    const wrap = document.createElement('div');
+    wrap.className = 'boot-screen';
+    wrap.dataset.bootState = mode;
 
-    const loaded = await loadBaliteSave(bridge, {
-      defaultLang: bridge.getLanguage(),
-      nowMs: now(),
-    });
-    if (destroyed) return;
+    const card = document.createElement('div');
+    card.className = 'boot-card';
 
-    saveData = loaded;
-    currentTutorialIndex =
-      saveData.meta.settings.tutorialCompleted === true || saveData.meta.tutorialCompleted === true
-        ? 21
-        : (saveData.meta.settings.tutorialStep ?? saveData.meta.tutorialStep ?? 0);
-    if (import.meta.env.DEV && readStoredDevOriginalTermsFlag()) {
-      await setDevOriginalTermsEnabled(true, false);
-      if (destroyed) return;
-    }
-    translator = createTranslator(saveData.meta.settings.lang);
-    syncDocumentLanguage(saveData.meta.settings.lang);
-    syncAnimationSpeedCss(saveData.meta.settings.animationSpeed);
-    syncCrtModeCss(saveData.meta.settings.crtMode);
-    mountHoverTooltip();
-    audio.setSettings(saveData.meta.settings);
-
-    selectedDeckId = saveData.meta.unlockedDecks[0] ?? 'b_red';
-    savedRunSnapshot = saveData.activeRun;
-
-    if (saveData.activeRun && saveData.activeRun.phase !== 'deck_select') {
-      showMainMenu = false;
-      runState = restoreRunStateFromSnapshot(saveData.activeRun);
-      selectedDeckId = runState.deckId;
-      completionRecordedForCurrentRun = isTerminalRunPhase(runState.phase);
+    if (mode === 'loading') {
+      wrap.setAttribute('role', 'status');
+      wrap.setAttribute('aria-live', 'polite');
+      const spinner = document.createElement('div');
+      spinner.className = 'boot-spinner';
+      spinner.setAttribute('aria-hidden', 'true');
+      const title = document.createElement('p');
+      title.className = 'boot-title';
+      title.textContent = translator.t('ui.boot.loading');
+      card.append(spinner, title);
     } else {
-      showMainMenu = true;
-      runState = createDeckSelectState(selectedDeckId, seedInput);
+      wrap.setAttribute('role', 'alert');
+      const title = document.createElement('h2');
+      title.className = 'boot-title';
+      title.textContent = translator.t('ui.boot.errorTitle');
+      const desc = document.createElement('p');
+      desc.className = 'boot-desc';
+      desc.textContent = translator.t('ui.boot.errorDesc');
+      const retryBtn = document.createElement('button');
+      retryBtn.type = 'button';
+      retryBtn.className = 'boot-retry-btn';
+      retryBtn.dataset.action = 'boot-retry';
+      retryBtn.textContent = translator.t('ui.boot.retry');
+      if (onRetry) {
+        retryBtn.addEventListener('click', onRetry);
+      }
+      card.append(title, desc, retryBtn);
     }
 
-    selectedCardIds = normalizeSelectedCardIds(runState, [], null);
-    render();
-    // Сигнал готовности должен уйти строго до первого вызова gameplayStart()
-    bridge.ready();
-    initialized = true;
-    syncGameplayState();
-  })();
+    wrap.append(card);
+    screenHostEl.append(wrap);
+  };
+
+  let bootInFlight: Promise<void> | null = null;
+  const runBootAttempt = (): Promise<void> => {
+    if (bootInFlight) return bootInFlight;
+    renderBootState('loading');
+    const attempt = (async () => {
+      try {
+        bridge.audio.install();
+        await bridge.init();
+        if (!import.meta.env.PROD && bridge.isDebugMode() && !cachedRenderDebugPanel) {
+          await ensureDebugPanelLoaded();
+        }
+        if (destroyed) return;
+
+        const loaded = await loadBaliteSave(bridge, {
+          defaultLang: bridge.getLanguage(),
+          nowMs: now(),
+        });
+        if (destroyed) return;
+
+        saveData = loaded;
+        currentTutorialIndex =
+          saveData.meta.settings.tutorialCompleted === true ||
+          saveData.meta.tutorialCompleted === true
+            ? 21
+            : (saveData.meta.settings.tutorialStep ?? saveData.meta.tutorialStep ?? 0);
+        if (import.meta.env.DEV && readStoredDevOriginalTermsFlag()) {
+          await Promise.all([
+            setDevOriginalTermsEnabled(true, false),
+            preloadDevTutorialSteps(),
+          ]);
+          if (destroyed) return;
+        }
+        translator = createTranslator(saveData.meta.settings.lang);
+        syncDocumentLanguage(saveData.meta.settings.lang);
+        syncAnimationSpeedCss(saveData.meta.settings.animationSpeed);
+        syncCrtModeCss(saveData.meta.settings.crtMode);
+        mountHoverTooltip();
+        audio.setSettings(saveData.meta.settings);
+
+        selectedDeckId = saveData.meta.unlockedDecks[0] ?? 'b_red';
+        savedRunSnapshot = saveData.activeRun;
+
+        if (saveData.activeRun && saveData.activeRun.phase !== 'deck_select') {
+          showMainMenu = false;
+          runState = restoreRunStateFromSnapshot(saveData.activeRun);
+          selectedDeckId = runState.deckId;
+          completionRecordedForCurrentRun = isTerminalRunPhase(runState.phase);
+        } else {
+          showMainMenu = true;
+          runState = createDeckSelectState(selectedDeckId, seedInput);
+        }
+
+        selectedCardIds = normalizeSelectedCardIds(runState, [], null);
+        render();
+        // Сигнал готовности должен уйти строго до первого вызова gameplayStart()
+        bridge.ready();
+        initialized = true;
+        syncGameplayState();
+      } catch {
+        if (destroyed) return;
+        const detectedLang = bridge.getLanguage();
+        translator = createTranslator(detectedLang);
+        syncDocumentLanguage(detectedLang);
+        renderBootState('error', () => {
+          audio.playButton();
+          void runBootAttempt();
+        });
+      } finally {
+        bootInFlight = null;
+      }
+    })();
+    bootInFlight = attempt;
+    return attempt;
+  };
+
+  // Асинхронная инициализация платформы, загрузка сохранения и первый рендер
+  const readyPromise = runBootAttempt();
 
   const destroy = (): void => {
     if (destroyed) return;

@@ -48,7 +48,9 @@ describe('normalizeLang', () => {
     expect(normalizeLang('ru-RU')).toBe('ru');
     expect(normalizeLang('be')).toBe('ru');
     expect(normalizeLang('kk_KZ')).toBe('ru');
+    expect(normalizeLang('kz')).toBe('ru');
     expect(normalizeLang('uk')).toBe('ru');
+    expect(normalizeLang('ua')).toBe('ru');
     expect(normalizeLang('uz')).toBe('ru');
 
     expect(normalizeLang('en-US')).toBe('en');

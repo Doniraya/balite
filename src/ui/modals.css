@@ -950,6 +950,36 @@
   color: var(--text-main, #f3f0e6);
 }
 
+.credits-card__support {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(245, 185, 66, 0.32);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.credits-card__support-title {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--accent-gold, #f5b942);
+}
+
+.credits-card__support-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-muted, #a7b8ae);
+}
+
+.credits-card__support-link {
+  align-self: flex-start;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--accent-gold, #f5b942);
+  text-decoration: underline;
+}
+
 @media (max-width: 600px) {
   .stats-grid {
     grid-template-columns: 1fr;

@@ -10,6 +10,12 @@ export const EN_DICTIONARY: LocaleDictionary = {
       subtitle: 'Adventurers’ Guild',
       portraitHint: 'Designed for 720×1280 portrait',
     },
+    boot: {
+      loading: 'Loading Guild...',
+      errorTitle: 'Failed to load game data',
+      errorDesc: 'Please check your connection and try again.',
+      retry: 'Retry',
+    },
     mainMenu: {
       play: 'Play',
       options: 'Options',
@@ -41,11 +47,11 @@ export const EN_DICTIONARY: LocaleDictionary = {
       anteBaseTitle: 'FLOOR',
       baseScoreTitle: 'BASE',
       voucherConditions: {
-        spend2500: 'Spend $2500 total in the shop ({current})',
+        spend2500: 'Spend 2500 Gold total in the shop ({current})',
         reroll50: 'Reroll the shop 50 times ({current})',
         use50Celestials: 'Use 50 celestial tomes ({current})',
         play250Hands: 'Play 250 hands ({current})',
-        earn400Dollars: 'Earn $400 in a single run ({current})',
+        earn400Dollars: 'Earn 400 Gold in a single run ({current})',
         defeat10Bosses: 'Defeat 10 bosses ({current})',
       },
     },
@@ -176,7 +182,7 @@ export const EN_DICTIONARY: LocaleDictionary = {
       noSlots: 'No free slots',
       notEnoughGold: 'Not enough Gold',
       free: 'Free',
-      charterEmpty: 'Rank Privilege already claimed',
+      charterEmpty: 'Floor Privilege already claimed',
       newBadge: 'New!',
     },
     booster: {
@@ -214,7 +220,7 @@ export const EN_DICTIONARY: LocaleDictionary = {
       title: 'Stats',
       bestHand: 'Best Combo',
       highestRound: 'Highest Battle',
-      highestStage: 'Highest Rank',
+      highestStage: 'Highest Floor',
       mostPlayedHand: 'Most Played Combo',
       noneHand: 'None ({count})',
       maxGold: 'Max Gold',
@@ -230,6 +236,8 @@ export const EN_DICTIONARY: LocaleDictionary = {
       audioLine: 'Audio: hybrid Web Audio engine & procedural synthesis',
       fontLine: 'Font: Pixellari (by Zacchary Dempsey-Plante, Cyrillic by YuRaNnNzZZ, SIL OFL 1.1)',
       complianceLine: 'Web edition with no external links.',
+      supportLabel: 'Player Support:',
+      supportText: 'For game support inquiries, contact us at:',
     },
     handReference: {
       title: 'Combo Reference',
@@ -299,7 +307,7 @@ export const EN_DICTIONARY: LocaleDictionary = {
     },
     runEnd: {
       victoryTitle: 'Victory!',
-      victorySubtitle: 'All 8 Guild Ranks cleared!',
+      victorySubtitle: 'All 8 dungeon floors cleared!',
       defeatTitle: 'Quest Failed',
       defeatSubtitle: 'Quest target score not reached',
       bestHandScore: 'Best Combo Score',
@@ -307,7 +315,7 @@ export const EN_DICTIONARY: LocaleDictionary = {
       discardsUsed: 'Discards Used',
       cardsDestroyed: 'Cards Destroyed',
       dollarsSpent: 'Gold Spent',
-      finalStage: 'Rank Reached',
+      finalStage: 'Floor Reached',
       finalRound: 'Battle',
       runSeed: 'Seed',
       mostPlayedHand: 'Most Played Combo',
@@ -742,7 +750,7 @@ export const EN_DICTIONARY: LocaleDictionary = {
     },
     v_directors_cut: {
       name: 'Contract Swap',
-      description: 'Reroll the Boss Monster 1 time per Rank for {dollars} Gold',
+      description: 'Reroll the Boss Monster 1 time per Floor for {dollars} Gold',
     },
   },
   tags: {
@@ -802,7 +810,7 @@ export const EN_DICTIONARY: LocaleDictionary = {
     },
     bl_pillar: {
       name: 'Mahoraga',
-      description: 'Cards played previously at this Rank are weakened',
+      description: 'Cards played previously on this Floor are weakened',
     },
     bl_club: {
       name: 'Goliath',
@@ -822,7 +830,7 @@ export const EN_DICTIONARY: LocaleDictionary = {
     },
     bl_final_vessel: {
       name: 'Storm Dragon',
-      description: 'Colossal final Rank threshold (×6 base)',
+      description: 'Colossal final Floor threshold (×6 base)',
     },
     bl_final_bell: {
       name: 'Orsted',

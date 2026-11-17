@@ -15,9 +15,10 @@ import type { PlatformBridge, PlatformBridgeConfig } from './types';
 export const BALITE_CLOUD_DEBOUNCE_MS = 1500;
 
 /**
- * Жёсткий порог размера облачного сохранения в байтах UTF-8 (лимит VK/OK).
+ * Жёсткий порог размера одной записи облачного сохранения в символах/байтах UTF-8
+ * (лимит сериализованного JSON в VKWebAppStorageSet — 2236 символов).
  */
-export const BALITE_MAX_STORAGE_BYTES = 4000;
+export const BALITE_MAX_STORAGE_BYTES = 2200;
 
 /**
  * Параметры немедленной или отложенной записи сохранения игры.
@@ -43,7 +44,7 @@ export interface LoadBaliteSaveOptions {
 
 /**
  * Создаёт преднастроенный экземпляр PlatformBridge для сохранений Balite:
- * дебаунс облака 1500 мс, compactFallback для лимита 4000 байт,
+ * дебаунс облака 1500 мс, compactFallback и чанкование под лимит 2200 байт/символов,
  * санитизация схемы и монотонное слияние по revision/updatedAt.
  */
 export function createBalitePlatformBridge(

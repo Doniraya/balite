@@ -20,6 +20,7 @@ import {
   getTutorialStepByIndex,
   getTutorialSteps,
   normalizeTutorialEmotion,
+  preloadDevTutorialSteps,
   TUTORIAL_STEPS,
 } from '../../src/ui/tutorialSteps';
 
@@ -641,7 +642,8 @@ describe('Интерактивное обучение (tests/ui/tutorial.test.ts
       }
     });
 
-    it('в DEV-режиме (devOriginal: true) используется оригинальная терминология Balatro и Джимбо', () => {
+    it('в DEV-режиме (devOriginal: true) используется оригинальная терминология Balatro и Джимбо', async () => {
+      await preloadDevTutorialSteps();
       const devSteps = getTutorialSteps(true);
       expect(devSteps.length).toBe(21);
 

@@ -229,7 +229,7 @@ describe('baliteSave и createBalitePlatformBridge', () => {
     };
 
     expect(BALITE_CLOUD_DEBOUNCE_MS).toBe(1500);
-    expect(BALITE_MAX_STORAGE_BYTES).toBe(4000);
+    expect(BALITE_MAX_STORAGE_BYTES).toBe(2200);
 
     const bridge = createBalitePlatformBridge({
       localBackupKey: 'balite_save_debounce_test',
@@ -276,18 +276,23 @@ describe('baliteSave и createBalitePlatformBridge', () => {
     bridge.audio.dispose();
   });
 
-  it('на площадке VK с лимитом 4000 байт отправляет compactFallback в облако и сохраняет полный RunSnapshot локально', async () => {
+  it('на площадке VK с лимитом 2200 байт на ключ укладывает каждый ключ в <= 2200 байт и синхронизирует и MetaSave, и activeRun между устройствами', async () => {
     window.history.replaceState({}, '', '/?platform=vk');
 
-    let vkStoredValue = '';
+    const vkStorage = new Map<string, string>();
     vkBridgeMock.send.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
       if (method === 'VKWebAppStorageSet') {
-        vkStoredValue = String(params?.value ?? '');
+        const key = String(params?.key ?? '');
+        const value = String(params?.value ?? '');
+        vkStorage.set(key, value);
         return { result: true };
       }
       if (method === 'VKWebAppStorageGet') {
+        const reqKeys = Array.isArray(params?.keys) ? (params.keys as string[]) : [];
         return {
-          keys: vkStoredValue ? [{ key: 'balite_save_v1', value: vkStoredValue }] : [],
+          keys: reqKeys
+            .filter((k) => vkStorage.has(k))
+            .map((k) => ({ key: k, value: vkStorage.get(k)! })),
         };
       }
       return {};
@@ -316,27 +321,32 @@ describe('baliteSave и createBalitePlatformBridge', () => {
     const snapshot = serializeRunStateToSnapshot(runState, 11, 5000);
     const fullSave: PlayerSaveData = createPlayerSaveData(meta, snapshot, 11, 5000);
 
-    // Полный JSON > 4000 байт, а trySerializeWithinLimit с createCompactFallbackSave укладывается
-    expect(utf8ByteLength(JSON.stringify(fullSave))).toBeGreaterThan(4000);
-    const compactJson = trySerializeWithinLimit(fullSave, 4000, createCompactFallbackSave);
+    // Полный JSON > 2200 байт, а trySerializeWithinLimit с createCompactFallbackSave укладывается в <= 2200 байт
+    expect(utf8ByteLength(JSON.stringify(fullSave))).toBeGreaterThan(2200);
+    const compactJson = trySerializeWithinLimit(fullSave, 2200, createCompactFallbackSave);
     expect(compactJson).not.toBeNull();
-    expect(utf8ByteLength(compactJson!)).toBeLessThanOrEqual(4000);
+    expect(utf8ByteLength(compactJson!)).toBeLessThanOrEqual(2200);
+    expect(compactJson!.length).toBeLessThanOrEqual(2200);
 
     await expect(persistBaliteSave(bridge, fullSave)).resolves.toBe(true);
-    expect(utf8ByteLength(vkStoredValue)).toBeLessThanOrEqual(4000);
+    expect(vkStorage.has('balite_save_v1')).toBe(true);
+    for (const [, storedVal] of vkStorage) {
+      expect(storedVal.length).toBeLessThanOrEqual(2200);
+      expect(utf8ByteLength(storedVal)).toBeLessThanOrEqual(2200);
+    }
 
-    const parsedCloud = JSON.parse(vkStoredValue) as PlayerSaveData;
-    expect(parsedCloud.activeRun).toBeNull();
-    expect(parsedCloud.revision).toBe(11);
-    expect(parsedCloud.meta.unlockedDecks).toEqual(['b_red', 'b_blue']);
-    expect(parsedCloud.meta.discoveredRelics).toEqual(['j_constellation', 'j_hologram']);
+    const parsedPrimary = JSON.parse(vkStorage.get('balite_save_v1')!) as PlayerSaveData;
+    expect(parsedPrimary.activeRun).toBeNull();
+    expect(parsedPrimary.revision).toBe(11);
+    expect(parsedPrimary.meta.unlockedDecks).toEqual(['b_red', 'b_blue']);
+    expect(parsedPrimary.meta.discoveredRelics).toEqual(['j_constellation', 'j_hologram']);
 
-    // На том же устройстве loadBaliteSave восстанавливает полный activeRun из localStorage
+    // На том же устройстве loadBaliteSave восстанавливает полный activeRun
     const reloadedSameDevice = await loadBaliteSave(bridge);
     expect(reloadedSameDevice.revision).toBe(11);
     expect(reloadedSameDevice.activeRun).toEqual(snapshot);
 
-    // На новом устройстве (пустой localStorage) loadBaliteSave восстанавливает MetaSave из облачного fallback
+    // На новом устройстве (пустой localStorage) loadBaliteSave восстанавливает и MetaSave, и чанкованный activeRun из облака VK!
     localStorage.clear();
     const freshDeviceBridge = createBalitePlatformBridge({
       localBackupKey: 'balite_vk_local_fresh_device',
@@ -346,10 +356,23 @@ describe('baliteSave и createBalitePlatformBridge', () => {
     expect(loadedNewDevice.revision).toBe(11);
     expect(loadedNewDevice.meta.unlockedDecks).toEqual(['b_red', 'b_blue']);
     expect(loadedNewDevice.meta.stats.bestHandScore).toBe(15000);
-    expect(loadedNewDevice.activeRun).toBeNull();
+    expect(loadedNewDevice.activeRun).toEqual(snapshot);
+
+    // Даже если чанки activeRun отсутствуют в облаке, основной ключ безопасно отдаёт весь MetaSave
+    vkStorage.delete('balite_save_v1_r0');
+    localStorage.clear();
+    const fallbackDeviceBridge = createBalitePlatformBridge({
+      localBackupKey: 'balite_vk_local_fallback_device',
+    });
+    await fallbackDeviceBridge.init();
+    const loadedWithoutChunks = await loadBaliteSave(fallbackDeviceBridge);
+    expect(loadedWithoutChunks.revision).toBe(11);
+    expect(loadedWithoutChunks.meta.unlockedDecks).toEqual(['b_red', 'b_blue']);
+    expect(loadedWithoutChunks.activeRun).toBeNull();
 
     bridge.audio.dispose();
     freshDeviceBridge.audio.dispose();
+    fallbackDeviceBridge.audio.dispose();
   });
 
   it('возвращает валидное стартовое сохранение на первом запуске и защищает более свежий локальный сейв от старого облака', async () => {
@@ -404,10 +427,10 @@ describe('baliteSave и createBalitePlatformBridge', () => {
     bridge2.audio.dispose();
   });
 
-  it('поддерживает flush: true в persistBaliteSave, ок-адаптер с лимитом 4000 байт и безопасное восстановление из битого localStorage', async () => {
+  it('поддерживает flush: true в persistBaliteSave, ок-адаптер с лимитом 2200 байт на ключ и безопасное восстановление из битого localStorage', async () => {
     window.history.replaceState({}, '', '/?platform=ok');
 
-    let okStoredValue = '';
+    const okStorage = new Map<string, string>();
     (globalThis as Record<string, unknown>).FAPI = {
       init: vi.fn((_s: string, _c: string, onSuccess?: () => void) => onSuccess?.()),
       Client: {
@@ -417,10 +440,15 @@ describe('baliteSave и createBalitePlatformBridge', () => {
             cb: (status: string, data: unknown) => void,
           ) => {
             if (params.method === 'storage.set') {
-              okStoredValue = String(params.value ?? '');
+              okStorage.set(String(params.key ?? ''), String(params.value ?? ''));
               cb('ok', { success: true });
             } else if (params.method === 'storage.get') {
-              cb('ok', { data: okStoredValue ? { balite_save_v1: okStoredValue } : {} });
+              const reqKeys = Array.isArray(params.keys) ? (params.keys as string[]) : [];
+              const dataObj: Record<string, string> = {};
+              for (const k of reqKeys) {
+                if (okStorage.has(k)) dataObj[k] = okStorage.get(k)!;
+              }
+              cb('ok', { data: dataObj });
             }
           },
         ),
@@ -439,13 +467,17 @@ describe('baliteSave и createBalitePlatformBridge', () => {
 
     // Немедленный сброс с опцией flush: true без ожидания 1500 мс
     await expect(persistBaliteSave(bridge, fullSave, { flush: true })).resolves.toBe(true);
-    expect(utf8ByteLength(okStoredValue)).toBeLessThanOrEqual(4000);
-    const cloudObj = JSON.parse(okStoredValue) as PlayerSaveData;
+    for (const [, val] of okStorage) {
+      expect(val.length).toBeLessThanOrEqual(2200);
+      expect(utf8ByteLength(val)).toBeLessThanOrEqual(2200);
+    }
+    const okPrimaryValue = okStorage.get('balite_save_v1')!;
+    const cloudObj = JSON.parse(okPrimaryValue) as PlayerSaveData;
     expect(cloudObj.activeRun).toBeNull();
     expect(cloudObj.meta.unlockedDecks).toEqual(['b_red', 'b_yellow']);
 
     // Имитируем перезагрузку страницы при повреждённом JSON в localStorage —
-    // новый экземпляр bridge безопасно восстанавливает MetaSave из облака OK
+    // новый экземпляр bridge безопасно восстанавливает и MetaSave, и activeRun из облака OK
     localStorage.setItem('balite_ok_save_test', '{broken_json');
     const reloadedBridge = createBalitePlatformBridge({
       localBackupKey: 'balite_ok_save_test',
@@ -454,7 +486,7 @@ describe('baliteSave и createBalitePlatformBridge', () => {
     const recovered = await loadBaliteSave(reloadedBridge);
     expect(recovered.revision).toBe(12);
     expect(recovered.meta.unlockedDecks).toEqual(['b_red', 'b_yellow']);
-    expect(recovered.activeRun).toBeNull();
+    expect(recovered.activeRun).toEqual(snapshot);
     reloadedBridge.audio.dispose();
 
     // При экстремально малом лимите, куда не влезает даже compactFallback, облако не затирается пустым '{}'
@@ -463,26 +495,29 @@ describe('baliteSave и createBalitePlatformBridge', () => {
       maxStorageBytes: 50,
     });
     await tinyBridge.init();
-    const prevStored = okStoredValue;
+    const prevStored = okStorage.get('balite_save_v1');
     await expect(persistBaliteSave(tinyBridge, fullSave, { flush: true })).resolves.toBe(false);
-    expect(okStoredValue).toBe(prevStored);
+    expect(okStorage.get('balite_save_v1')).toBe(prevStored);
 
     bridge.audio.dispose();
     tinyBridge.audio.dispose();
   });
 
-  it('при 100% открытой Коллекции (unlockAllCollection) и полной статистике укладывает compactFallback в <= 2500 байт (лимит 4000) и полностью восстанавливает открытия', async () => {
+  it('при 100% открытой Коллекции (unlockAllCollection) и полной статистике укладывает каждый ключ облака в <= 2200 байт и полностью восстанавливает открытия и activeRun', async () => {
     window.history.replaceState({}, '', '/?platform=vk');
 
-    let vkStoredValue = '';
+    const vkStorage = new Map<string, string>();
     vkBridgeMock.send.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
       if (method === 'VKWebAppStorageSet') {
-        vkStoredValue = String(params?.value ?? '');
+        vkStorage.set(String(params?.key ?? ''), String(params?.value ?? ''));
         return { result: true };
       }
       if (method === 'VKWebAppStorageGet') {
+        const reqKeys = Array.isArray(params?.keys) ? (params.keys as string[]) : [];
         return {
-          keys: vkStoredValue ? [{ key: 'balite_save_v1', value: vkStoredValue }] : [],
+          keys: reqKeys
+            .filter((k) => vkStorage.has(k))
+            .map((k) => ({ key: k, value: vkStorage.get(k)! })),
         };
       }
       return {};
@@ -549,12 +584,14 @@ describe('baliteSave и createBalitePlatformBridge', () => {
     expect(sanitizedCompact.meta?.stats.totalShopRerolls).toBe(60);
     expect(sanitizedCompact.meta?.stats.totalCelestialsUsed).toBe(55);
 
-    // Сохранение через мост в облако VK проходит успешно в рамках 4000 байт
+    // Сохранение через мост в облако VK проходит успешно в рамках 2200 байт на каждый ключ
     await expect(persistBaliteSave(bridge, fullSave)).resolves.toBe(true);
-    expect(utf8ByteLength(vkStoredValue)).toBeLessThanOrEqual(BALITE_MAX_STORAGE_BYTES);
-    expect(utf8ByteLength(vkStoredValue)).toBeLessThanOrEqual(2500);
+    for (const [, storedVal] of vkStorage) {
+      expect(storedVal.length).toBeLessThanOrEqual(BALITE_MAX_STORAGE_BYTES);
+      expect(utf8ByteLength(storedVal)).toBeLessThanOrEqual(BALITE_MAX_STORAGE_BYTES);
+    }
 
-    // На чистом устройстве из облачного сейва VK восстанавливается вся 100% Коллекция
+    // На чистом устройстве из облачного сейва VK восстанавливается вся 100% Коллекция и activeRun
     localStorage.clear();
     const freshDeviceBridge = createBalitePlatformBridge({
       localBackupKey: 'balite_vk_unlock_all_fresh_device',
@@ -562,7 +599,7 @@ describe('baliteSave и createBalitePlatformBridge', () => {
     await freshDeviceBridge.init();
     const loadedFromCloud = await loadBaliteSave(freshDeviceBridge);
     expect(loadedFromCloud.revision).toBe(19);
-    expect(loadedFromCloud.activeRun).toBeNull();
+    expect(loadedFromCloud.activeRun).toEqual(snapshot);
     expect(countMetaDiscoveries(loadedFromCloud.meta)).toBe(139);
     expect(loadedFromCloud.meta.unlockedDecks).toEqual(unlockedMeta.unlockedDecks);
     expect(loadedFromCloud.meta.discoveredRelics).toEqual(unlockedMeta.discoveredRelics);

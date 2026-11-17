@@ -10,6 +10,12 @@ export const RU_DICTIONARY: LocaleDictionary = {
       subtitle: 'Гильдия приключенцев',
       portraitHint: 'Оптимально для портрета 720×1280',
     },
+    boot: {
+      loading: 'Загрузка гильдии...',
+      errorTitle: 'Не удалось загрузить данные',
+      errorDesc: 'Проверьте соединение и попробуйте снова.',
+      retry: 'Повторить',
+    },
     mainMenu: {
       play: 'Играть',
       options: 'Параметры',
@@ -41,11 +47,11 @@ export const RU_DICTIONARY: LocaleDictionary = {
       anteBaseTitle: 'ЭТАЖ',
       baseScoreTitle: 'БАЗА',
       voucherConditions: {
-        spend2500: 'Потратить суммарно $2500 в лавке ({current})',
+        spend2500: 'Потратить суммарно 2500 з. в лавке ({current})',
         reroll50: 'Сделать 50 обновлений в лавке ({current})',
         use50Celestials: 'Использовать 50 томов комбинаций ({current})',
         play250Hands: 'Сыграть 250 комбинаций ({current})',
-        earn400Dollars: 'Накопить $400 за один забег ({current})',
+        earn400Dollars: 'Накопить 400 з. за один забег ({current})',
         defeat10Bosses: 'Победить 10 боссов ({current})',
       },
     },
@@ -176,7 +182,7 @@ export const RU_DICTIONARY: LocaleDictionary = {
       noSlots: 'Нет свободных слотов',
       notEnoughGold: 'Недостаточно золота',
       free: 'Бесплатно',
-      charterEmpty: 'Привилегия ранга уже куплена',
+      charterEmpty: 'Привилегия этажа уже куплена',
       newBadge: 'Новое!',
     },
     booster: {
@@ -214,7 +220,7 @@ export const RU_DICTIONARY: LocaleDictionary = {
       title: 'Статистика',
       bestHand: 'Лучшая комбинация',
       highestRound: 'Наивысший бой',
-      highestStage: 'Высший ранг',
+      highestStage: 'Высший этаж',
       mostPlayedHand: 'Частая комбинация',
       noneHand: 'Нет ({count})',
       maxGold: 'Максимум золота',
@@ -230,6 +236,8 @@ export const RU_DICTIONARY: LocaleDictionary = {
       audioLine: 'Звуковое сопровождение: гибридный аудиодвижок и процедурный синтез',
       fontLine: 'Шрифт: Pixellari (Zacchary Dempsey-Plante, кириллица YuRaNnNzZZ, SIL OFL 1.1)',
       complianceLine: 'Веб-версия без внешних ссылок и переходов.',
+      supportLabel: 'Поддержка игроков:',
+      supportText: 'По вопросам работы игры обращайтесь в поддержку:',
     },
     handReference: {
       title: 'Список комбинаций',
@@ -299,7 +307,7 @@ export const RU_DICTIONARY: LocaleDictionary = {
     },
     runEnd: {
       victoryTitle: 'Победа!',
-      victorySubtitle: 'Все 8 рангов гильдии пройдены — получен ранг гильдии!',
+      victorySubtitle: 'Все 8 этажей подземелья пройдены — контракт выполнен!',
       defeatTitle: 'Заказ провален',
       defeatSubtitle: 'Цель заказа не достигнута',
       bestHandScore: 'Лучшая комбинация',
@@ -307,7 +315,7 @@ export const RU_DICTIONARY: LocaleDictionary = {
       discardsUsed: 'Использовано сбросов',
       cardsDestroyed: 'Уничтожено карт',
       dollarsSpent: 'Потрачено золота',
-      finalStage: 'Достигнутый ранг',
+      finalStage: 'Достигнутый этаж',
       finalRound: 'Бой',
       runSeed: 'Код забега',
       mostPlayedHand: 'Частая комбинация',
@@ -744,7 +752,7 @@ export const RU_DICTIONARY: LocaleDictionary = {
     },
     v_directors_cut: {
       name: 'Замена контракта',
-      description: 'Позволяет 1 раз за ранг сменить Босса-монстра за {dollars} з.',
+      description: 'Позволяет 1 раз за этаж сменить Босса-монстра за {dollars} з.',
     },
   },
   tags: {
@@ -804,7 +812,7 @@ export const RU_DICTIONARY: LocaleDictionary = {
     },
     bl_pillar: {
       name: 'Махорага',
-      description: 'Карты, уже сыгранные на этом ранге, ослаблены',
+      description: 'Карты, уже сыгранные на этом этаже, ослаблены',
     },
     bl_club: {
       name: 'Голиаф',
@@ -824,7 +832,7 @@ export const RU_DICTIONARY: LocaleDictionary = {
     },
     bl_final_vessel: {
       name: 'Штормовой дракон',
-      description: 'Гигантский порог финального ранга (×6 базы)',
+      description: 'Гигантский порог финального этажа (×6 базы)',
     },
     bl_final_bell: {
       name: 'Орстед',

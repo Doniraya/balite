@@ -172,18 +172,18 @@ export function renderDebugPanel(options: DebugPanelOptions): HTMLElement {
 
     if (activeTab === 'combat') {
       const resSec = createDebugEl('div', 'debug-panel__section');
-      resSec.append(createDebugEl('h3', 'debug-panel__section-title', isRu ? 'Ресурсы и Ранг' : 'Resources & Rank'));
+      resSec.append(createDebugEl('h3', 'debug-panel__section-title', isRu ? 'Ресурсы и Этаж' : 'Resources & Floor'));
       const resGrid = createDebugEl('div', 'debug-panel__grid');
 
       const resButtons: ReadonlyArray<{ cmd: string; label: string; opts: DebugResourcesOptions }> = [
-        { cmd: 'add-dollars-20', label: '+$20', opts: { addDollars: 20 } },
-        { cmd: 'add-dollars-100', label: '+$100', opts: { addDollars: 100 } },
+        { cmd: 'add-dollars-20', label: isRu ? '+20 з.' : '+20 Gold', opts: { addDollars: 20 } },
+        { cmd: 'add-dollars-100', label: isRu ? '+100 з.' : '+100 Gold', opts: { addDollars: 100 } },
         { cmd: 'add-hands-2', label: isRu ? '+2 Руки' : '+2 Hands', opts: { addHands: 2 } },
         { cmd: 'add-discards-2', label: isRu ? '+2 Сброса' : '+2 Discards', opts: { addDiscards: 2 } },
         { cmd: 'target-50', label: isRu ? '50% цели' : '50% Target', opts: { targetPercent: 50 } },
         { cmd: 'target-100', label: isRu ? 'Пробить порог' : '100% Target', opts: { targetPercent: 100 } },
-        { cmd: 'ante-next', label: isRu ? 'Ранг +1' : 'Rank +1', opts: { setAnte: Math.min(8, state.ante + 1) } },
-        { cmd: 'ante-8', label: isRu ? 'Ранг SS (8)' : 'Rank SS (8)', opts: { setAnte: 8 } },
+        { cmd: 'ante-next', label: isRu ? 'Этаж +1' : 'Floor +1', opts: { setAnte: Math.min(8, state.ante + 1) } },
+        { cmd: 'ante-8', label: isRu ? 'Этаж 8 (финал)' : 'Floor 8 (Final)', opts: { setAnte: 8 } },
       ];
       for (const item of resButtons) {
         const btn = createDebugButton(item.label, 'debug-panel__btn', () => {

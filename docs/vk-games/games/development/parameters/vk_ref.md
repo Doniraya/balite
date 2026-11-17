@@ -1,0 +1,190 @@
+---
+title: "Значения параметра запуска vk_ref"
+original_url: "https://dev.vk.com/ru/games/development/parameters/vk_ref"
+category: "VK Games / Разработка / Запуск / Параметры запуска приложений ВКонтакте"
+---
+
+# Значения параметра запуска vk_ref
+
+В параметре `vk_ref` передаются данные об источнике запуска мини-приложения или игры.
+
+## Значения для мини-приложений
+
+- Категории в каталоге:
+  - `catalog_recent` — категория **Недавние**.
+  - `catalog_recommendation` — категория **Рекомендации**.
+  - `catalog_top_dau` — категория **Популярное**.
+  - `catalog_sport` — категория **Спорт**.
+  - `catalog_entertainment` — категория **Развлечения**.
+  - `catalog_communication` — категория **Общение**.
+  - `catalog_tools` — категория **Инструменты**.
+  - `catalog_shopping` — категория **Покупки**.
+  - `catalog_lifestyle` — категория **Образ жизни**.
+  - `catalog_travel` — категория **Путешествия**.
+  - `catalog_finance` — категория **Финансы**.
+  - `catalog_food` — категория **Еда и напитки**.
+  - `catalog_events` — категория **Мероприятия**.
+  - `catalog_education` — категория **Образование**.
+  - `catalog_social` — категория **Социальные**.
+  - `catalog_payments` — категория **Оплата услуг**.
+  - `catalog_health` — категория **Красота и здоровье**.
+  - `catalog_job` — категория **Новости, работа**.
+  - `catalog_realty` — категория **Недвижимость**.
+  - `catalog_business` — категория **Бизнес**.
+  - `catalog_taxi` — категория **Транспорт**.
+  - `catalog_favorites` — категория **Избранное**.
+  - `catalog_admin` — категория **Созданные**.
+- Плагины:
+  - `community_installed_app_settings` — панель управления сообществом.
+  - `community_installed_app_popup` — меню **Действия** в плагине или событие [`VKWebAppAddToCommunity`](../../../bridge/VKWebAppAddToCommunity.md).
+- Обсуждения в сообществе:
+  - `board_topic_all` — предварительный просмотр обсуждений, где перечислены все обсуждения сообщества.
+  - `board_topic_view` — экран обсуждения, где отображены все комментарии обсуждения.
+- Лента:
+  - `feed` — вкладка **Новости** ленты новостей.
+  - `feed_post` — ссылка записи без сниппета.
+  - `feed_comments` — комментарий к записи.
+- Фичеринг:
+  - `featuring_discover` — блок рекомендаций в ленте новостей.
+  - `featuring_menu` — блок **Мини-приложения** в мобильной версии сайта (m.vk.com).
+  - `featuring_new` — виджет на вкладке **Для вас** приложения ВКонтакте.
+  - `catalog_messenger_apps_with_action` – запуск приложения, интегрированного в мессенджер, из каталога.
+- Закладки:
+  - `fave` — общий список закладок.
+  - `fave_links` — вкладка **Ссылки** закладок.
+  - `fave_posts` — вкладка **Записи** закладок.
+- Сообщества:
+  - `group` — стена сообщества.
+  - `group_menu` — меню сообщества (Android).
+  - `group_messages` — сообщения сообщества.
+  - `group_addresses` — адрес сообщества.
+- Сниппеты:
+  - `snippet_post` — сниппет записи.
+  - `snippet_im` — сниппет в личных сообщениях.
+- Клипы:
+  - `clips` — экран клипов (iOS).
+  - `comments_list_clip` — из комментариев к клипу (Android).
+- Чаты:
+  - `im` — предварительный просмотр чата.
+  - `im_chat` — экран чата.
+  - `im_attach_picker` – запуск из аттач-пикера.
+  - `im_app_action` – запуск из виджета приложения, интегрированного в мессенджер.
+- Уведомления:
+  - `notifications` — заблокированный экран, где сгруппированы уведомления.
+  - `notifications_grouped` — экран сгруппированных уведомлений.
+  - `notifications_auto` — одно или сгруппированное автоматическое уведомление.
+- Поиск:
+  - `search_all` — поисковая выдача на общей странице поиска (Android, iOS, мобильная версия сайта ВКонтакте).
+  - `search_all_recommendation` — рекомендации, когда задан пустой поисковый запрос (Android, iOS, мобильная версия сайта ВКонтакте).
+  - `search_all_block` — поисковая выдача на отдельной странице поиска по мини-приложениям (Android, iOS, мобильная версия сайта ВКонтакте).
+  - Вкладка «Сервисы»:
+  - `showcase` — меню.
+  - `recs` — виджет «Для вас».
+  - `mini_widget_<id>` — мини-виджет.
+  - `promo_widget_<state>` — промо-виджет.
+  - `widget_<id>` или `widget_<id>_<state>` — плиточный виджет.
+  - `section_<id>` или `section_<id>_<state>` — секция.
+- `super_app` — вкладка **Сервисы** приложения ВКонтакте.
+- `profile` — записи профиля.
+- `group_apps_block` — блок **Приложения** справа на странице сообщества.
+- `article_read` — статья сообщества.
+- `music_playlist` — музыкальный плейлист.
+- `video_carousel` — видео (iOS).
+- `photo_browser` — экран просмотра фотографий записи (iOS).
+- `shopping_center` — лента товаров (iOS).
+- `market_item` — экран товара.
+- `story${user_id}_${params}` — история.
+- `widget` — виджет на вкладке **Сервисы** приложения ВКонтакте.
+- `showcase` — витрина на вкладке **Сервисы** приложения ВКонтакте.
+- `home_screen` — домашний экран устройства (Android).
+- `left_nav` — левое меню в десктопной версии сайта ([vk.com](https://vk.com)).
+- `quick_search` — результаты быстрого поиска.
+- `menu` — блок **Мини-приложения** на вкладке **Ещё** в мобильной версии сайта ([m.vk.com](https://m.vk.com)).
+- `other` — прочие источники.
+
+## Значения для игр
+
+- Навигация
+  - `left_nav` — избранное в левом блоке.
+  - `apps_direct_link` — переход по прямой ссылке.
+  - `app` — переход из приложения.
+  - `home_screen` — запуск с домашнего экрана.
+  - `game_unavailable_page` — запуск с экрана недоступной игры.
+  - `action_menu` — запуск через три точки.
+  - `profile_status` — запуск из статуса профиля.
+  - `rustore` — запуск из RuStore.
+  - `play_machine` — запуск из Play Machine.
+  - `other` — остальные источники.
+- Реклама
+  - `ad_<id>` — переход по рекламе.
+  - `apps_games_ad` — переход по рекламе в ленте.
+- Лента
+  - `feed` — запуск из ленты новостей.
+  - `feed_post`— запуск из поста ленты новостей.
+  - `feed_block_achievement_game` — блок в ленте с рекомендацией игры.
+  - `feed_block_recommended_games_carousel` — блок в ленте **Рекомендация нескольких игр**.
+  - `feed_block_recommended_game_clip` — блок в ленте **Рекомендация с клипом**.
+  - `feed_block_continue_game` — блок в ленте **Продолжить играть**.
+- Сообщества
+  - `club` — пост в сообществе.
+- Каталог игр
+  - `apps_games_catalog_friends` — блок **Друзья играют**.
+  - `apps_games_catalog_friends` — блок **Друзья играют**.
+  - `apps_games_catalog_new` — блок **Новые**.
+  - `apps_games_catalog_growing` — блок **Растущие**.
+  - `apps_games_catalog_popular` — блок **Популярные**.
+  - `apps_games_catalog_ads` — блок рекламы.
+  - `apps_games_catalog_recent` — блок **Продолжить играть**.
+  - `apps_games_collection` — блок подборки.
+  - `apps_games_genre` — жанровый блок.
+  - `apps_games_friends_activity`— лента активности.
+  - `apps_games_featured` — фичеринг.
+  - `apps_games_request` — запрос в игре.
+  - `apps_games_invite` — приглашение в игру.
+  - `apps_games_similar` — похожие игры.
+  - `apps_games_recommendations` — рекомендации.
+  - `apps_games_catalog_search` — поиск в каталоге.
+  - `apps_games_profile_favorites` — любимые игры.
+  - `apps_installed_games` — установленные игры.
+  - `apps_random_recommendation` — случайная игра.
+  - `apps_games_catalog_search_popular` — популярные игры в поиске.
+  - `apps_games_game_of_week` — блок **Игра недели**.
+  - `catalog_games_catalog` — каталог сервисов.
+  - `friends` — блок **Друзья играют**.
+- Сниппеты
+  - `snippet_post` — запуск из сниппета поста.
+  - `snippet_post_comment` — запуск из комментария к посту со сниппетом.
+  - `snippet_video_comment` — запуск из комментария к видео.
+  - `snippet_clip_comment` — запуск из комментария к клипу.
+  - `snippet_foto_comment` — запуск из комментария к фото.
+  - `snippet_im` — запуск из сниппета в личных сообщениях.
+  - `snippet` — запуск из остальных сниппеты.
+- Личные сообщения
+  - `im` — переход из личных сообщений.
+- Поиск
+  - `search_all` — глобальный поиск.
+  - `quick_search` – быстрый поиск на платформе WEB.
+  - `quick_search_recent`— недавние из быстрого поиска.
+  - `global_search_games_recommendations` — рекомендации в глобальном поиске.
+  - `global_search_games`— вкладка игр в глобальном поиске.
+- Уведомления
+  - `apps_trigger_notifications`— переход из уведомления по триггеру.
+  - `apps_broadcast_notifications` — переход из уведомлений авторассылок.
+  - `apps_custom_broadcast_notifications` — переход из рассылок, совершаемых вручную.
+  - `apps_auto_retention_broadcast` — переход из рассылок автоматических возвратных уведомлений.
+  - `apps_games_invite_notify` — переход из приглашения в игру.
+  - `apps_games_notifications` — переход из ленты активности.
+  - `apps_auto_ml_broadcast` — автоматические умные рассылки.
+  - `apps_api_notifications` — переход из уведомлений, рассылаемых через API.
+  - `request` — уведомление запроса в игре.
+- Суперапп
+  - `ugc_component_games_carousel` – игры: рекомендации.
+  - `ugc_component_games_genres` — игры: жанр.
+  - `super_app_tile_continue_play` — плитка **Продолжить играть**.
+  - `super_app_tile_recommendation` — плитка **Рекомендуемая игра**.
+  - `super_app_tile_friends_playing` — плитка **Друзья играют**.
+  - `super_app_widget_continue_play` — виджет **Продолжить играть**.
+  - `super_app_widget_recommendation` — виджет **Рекомендация**.
+  - `super_app_widget_friends_playing` — виджет **Друзья играют**.
+  - `recs` — виджет **Для вас**.
+  - `menu` — переход из других виджетов.

@@ -2840,4 +2840,75 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
       expect(mounted.getSaveData().meta.stats.runsStarted).toBe(1);
     });
   });
+
+  describe('Story 6.5.4: загрузочный спиннер, экран ошибки с повтором и touch-action: none при перетаскивании', () => {
+    it('показывает локализованный лоадер до инициализации, а при ошибке init рендерит кнопку повтора и успешно перезапускается', async () => {
+      const mock = createMockBridge({ lang: 'ru', initialSave: null });
+      let shouldFailInit = true;
+      let resolveSecondInit: (() => void) | null = null;
+
+      (mock.bridge.init as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        mock.callLog.push('init');
+        if (shouldFailInit) {
+          shouldFailInit = false;
+          return Promise.reject(new Error('VKBridge timeout'));
+        }
+        return new Promise<void>((resolve) => {
+          resolveSecondInit = resolve;
+        });
+      });
+
+      mounted = mountBaliteApp(root, { bridge: mock.bridge });
+
+      // Сразу после синхронного вызова mountBaliteApp отображается лоадер
+      expect(root.querySelector('[data-boot-state="loading"]')).not.toBeNull();
+
+      await mounted.readyPromise;
+
+      // После первой ошибки инициализации показан экран ошибки с кнопкой Повторить
+      const errorScreen = root.querySelector<HTMLElement>('[data-boot-state="error"]');
+      expect(errorScreen).not.toBeNull();
+      expect(errorScreen?.textContent).toContain('Не удалось загрузить данные');
+      expect(mock.bridge.ready).not.toHaveBeenCalled();
+
+      const retryBtn = root.querySelector<HTMLButtonElement>('[data-action="boot-retry"]');
+      expect(retryBtn).not.toBeNull();
+      retryBtn!.click();
+
+      // Во время повторной попытки снова виден лоадер
+      expect(root.querySelector('[data-boot-state="loading"]')).not.toBeNull();
+      expect(resolveSecondInit).not.toBeNull();
+      resolveSecondInit!();
+      await flushMicrotasks(8);
+
+      expect(root.querySelector('[data-boot-state]')).toBeNull();
+      expect(root.querySelector('.main-menu')).not.toBeNull();
+      expect(mock.bridge.ready).toHaveBeenCalledTimes(1);
+    });
+
+    it('выставляет touch-action: none на перетаскиваемых слотах карт руки и реликвий', async () => {
+      const baseRun = createInitialRunState('b_red', 'DRAG_TOUCH_ACTION');
+      const playing = dispatch(baseRun, { type: 'SELECT_BLIND' }).nextState;
+      const runWithRelic: RunState = {
+        ...playing,
+        relics: [createRelicInstance('j_joker', 'r_drag_1')],
+      };
+      const meta = createInitialMetaSave(1000, { lang: 'ru', tutorialCompleted: true });
+      const save = createPlayerSaveData(
+        meta,
+        serializeRunStateToSnapshot(runWithRelic, 1, 1000),
+        1,
+        1000,
+      );
+      const mock = createMockBridge({ initialSave: save });
+
+      mounted = mountBaliteApp(root, { bridge: mock.bridge });
+      await mounted.readyPromise;
+
+      const handSlot = root.querySelector<HTMLElement>('.hand-card-slot[data-zone="hand"]');
+      const relicSlot = root.querySelector<HTMLElement>('.inventory-slot[data-relic-uid="r_drag_1"]');
+      expect(handSlot?.style.touchAction).toBe('none');
+      expect(relicSlot?.style.touchAction).toBe('none');
+    });
+  });
 });

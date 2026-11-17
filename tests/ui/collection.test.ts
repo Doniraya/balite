@@ -443,8 +443,8 @@ describe('Коллекция Balite (src/ui/collection.ts)', () => {
   it('отображает реальный прогресс условий Т2-привилегий (spend2500, reroll50, use50Celestials) из meta.stats в formatVoucherCondition и тултипах', () => {
     const emptyMeta = createInitialMetaSave();
 
-    // При нулевом прогрессе возвращаются начальные счётчики без хардкодных заглушек
-    expect(formatVoucherCondition('spend2500', emptyMeta, translator)).toContain('$0');
+    // При нулевом прогрессе возвращаются начальные счётчики в золоте без хардкодных заглушек
+    expect(formatVoucherCondition('spend2500', emptyMeta, translator)).toContain('0 з.');
     expect(formatVoucherCondition('reroll50', emptyMeta, translator)).toContain('0/50');
     expect(formatVoucherCondition('use50Celestials', emptyMeta, translator)).toContain('0/50');
 
@@ -462,7 +462,7 @@ describe('Коллекция Balite (src/ui/collection.ts)', () => {
     const rerollCond = formatVoucherCondition('reroll50', progressedMeta, translator);
     const telescopeCond = formatVoucherCondition('use50Celestials', progressedMeta, translator);
 
-    expect(seedCond).toContain('$1420');
+    expect(seedCond).toContain('1420 з.');
     expect(rerollCond).toContain('31/50');
     expect(telescopeCond).toContain('18/50');
 
@@ -485,7 +485,7 @@ describe('Коллекция Balite (src/ui/collection.ts)', () => {
     const page2Tooltips = collectLockedTooltipDescriptions();
     const allTooltips = [...page1Tooltips, ...page2Tooltips].join('\n');
 
-    expect(allTooltips).toContain('$1420');
+    expect(allTooltips).toContain('1420 з.');
     expect(allTooltips).toContain('31/50');
     expect(allTooltips).toContain('18/50');
   });

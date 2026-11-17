@@ -706,6 +706,10 @@ function attachSlotGestures(options: SlotGestureOptions): void {
   let suppressTimer: ReturnType<typeof setTimeout> | null = null;
   let startRect = new DOMRect();
 
+  if (enableDrag) {
+    el.style.touchAction = 'none';
+  }
+
   const clearTimersAndListeners = (): void => {
     if (holdTimer !== null) {
       clearTimeout(holdTimer);

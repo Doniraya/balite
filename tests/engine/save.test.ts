@@ -1439,12 +1439,12 @@ describe('Story 6.1 & 6.2: накопительная статистика, coun
     expect(compact.revision).toBe(25);
     expect(compact.updatedAt).toBe(1700000055555);
 
-    const serializedDirect = trySerializeWithinLimit(compact, 4000);
+    const serializedDirect = trySerializeWithinLimit(compact, 2200);
     expect(serializedDirect).not.toBeNull();
-    expect(utf8ByteLength(serializedDirect!)).toBeLessThanOrEqual(4000);
-    expect(utf8ByteLength(serializedDirect!)).toBeLessThanOrEqual(2500);
+    expect(serializedDirect!.length).toBeLessThanOrEqual(2200);
+    expect(utf8ByteLength(serializedDirect!)).toBeLessThanOrEqual(2200);
 
-    const serializedViaFallback = trySerializeWithinLimit(fullSave, 4000, createCompactFallbackSave);
+    const serializedViaFallback = trySerializeWithinLimit(fullSave, 2200, createCompactFallbackSave);
     expect(serializedViaFallback).toBe(serializedDirect);
 
     // Полный lossless round-trip через sanitizePlayerSaveData

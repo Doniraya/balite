@@ -160,37 +160,20 @@ export function formatTutorialText(raw: string): string {
   return text;
 }
 
+const devSpeakerAvatarRenderers = new Map<string, () => string>();
+
 /**
- * Генерирует пиксель-арт SVG портрета Джимбо (пасхалка для разработчика).
+ * Регистрирует DEV-рендерер альтернативного спикера обучения (исключается из prod-сборки).
  */
-function renderJimboAvatar(): string {
-  return `
-    <svg viewBox="0 0 64 64" width="100%" height="100%" shape-rendering="crispEdges" aria-label="Джимбо">
-      <!-- Фон карты -->
-      <rect x="12" y="6" width="40" height="52" rx="4" fill="#ffffff" stroke="#c0392b" stroke-width="2"/>
-      <text x="16" y="16" font-family="'Pixellari', monospace" font-size="7" font-weight="900" fill="#c0392b">J</text>
-      <!-- Шут и бубенцы -->
-      <path d="M 22 24 Q 18 14 12 18 Q 18 26 24 28" fill="#3a86ff"/>
-      <circle cx="11" cy="18" r="2.5" fill="#f5b942"/>
-      <path d="M 42 24 Q 46 14 52 18 Q 46 26 40 28" fill="#e84a5f"/>
-      <circle cx="53" cy="18" r="2.5" fill="#f5b942"/>
-      <path d="M 24 26 Q 32 12 40 26 Z" fill="#f5b942"/>
-      <circle cx="32" cy="12" r="2.5" fill="#ffffff"/>
-      <!-- Лицо -->
-      <ellipse cx="32" cy="34" rx="10" ry="9" fill="#fde2cd"/>
-      <!-- Глаза -->
-      <circle cx="28" cy="33" r="1.5" fill="#11231f"/>
-      <circle cx="36" cy="33" r="1.5" fill="#11231f"/>
-      <!-- Румянец -->
-      <circle cx="25" cy="36" r="2" fill="#ff7675" opacity="0.6"/>
-      <circle cx="39" cy="36" r="2" fill="#ff7675" opacity="0.6"/>
-      <!-- Улыбка -->
-      <path d="M 27 37 Q 32 43 37 37" stroke="#c0392b" stroke-width="1.8" fill="none" stroke-linecap="round"/>
-      <!-- Воротник шута -->
-      <polygon points="20,44 26,48 32,44 38,48 44,44 40,52 24,52" fill="#3a86ff"/>
-      <polygon points="26,48 32,44 38,48 32,53" fill="#e84a5f"/>
-    </svg>
-  `;
+export function registerTutorialSpeakerAvatar(speaker: string, renderFn: () => string): void {
+  if (!import.meta.env.DEV) return;
+  devSpeakerAvatarRenderers.set(speaker, renderFn);
+}
+
+if (import.meta.env.DEV) {
+  void import('./tutorialDevOverlay').then((mod) => {
+    registerTutorialSpeakerAvatar(mod.DEV_TUTORIAL_SPEAKER, mod.renderJimboAvatar);
+  });
 }
 
 /**
@@ -206,14 +189,18 @@ export function resolveMiraSprite(emotion: TutorialEmotion = 'idle'): string {
 /**
  * Отрисовывает аватар персонажа обучения:
  * - Для Миры возвращает <img> спрайт чиби-маскота (webp с fallback на png по onerror).
- * - Для Джимбо (пасхалка DEV-режима) возвращает векторный SVG.
+ * - В DEV-режиме для альтернативного спикера использует зарегистрированный векторный рендерер.
  */
 export function renderMiraAvatar(
   emotion: TutorialEmotion = 'idle',
   speaker: string = 'Мира',
 ): string {
-  if (speaker === 'Джимбо') {
-    return renderJimboAvatar();
+  if (import.meta.env.DEV && speaker !== 'Мира') {
+    const customRenderer = devSpeakerAvatarRenderers.get(speaker);
+    if (customRenderer) {
+      return customRenderer();
+    }
+    return `<svg viewBox="0 0 64 64" width="100%" height="100%" shape-rendering="crispEdges" aria-label="${speaker}"><rect x="12" y="6" width="40" height="52" rx="4" fill="#ffffff" stroke="#c0392b" stroke-width="2"/></svg>`;
   }
 
   const spriteName = resolveMiraSprite(emotion);

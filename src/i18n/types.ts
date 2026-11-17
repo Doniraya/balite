@@ -141,6 +141,12 @@ export interface UiDictionary {
     readonly subtitle: string;
     readonly portraitHint: string;
   };
+  readonly boot: {
+    readonly loading: string;
+    readonly errorTitle: string;
+    readonly errorDesc: string;
+    readonly retry: string;
+  };
   readonly mainMenu: {
     readonly play: string;
     readonly options: string;
@@ -361,6 +367,8 @@ export interface UiDictionary {
     readonly audioLine: string;
     readonly fontLine: string;
     readonly complianceLine: string;
+    readonly supportLabel: string;
+    readonly supportText: string;
   };
   readonly handReference: {
     readonly title: string;

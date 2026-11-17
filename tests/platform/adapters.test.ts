@@ -12,8 +12,11 @@ const { vkBridgeMock, vkListeners } = vi.hoisted(() => {
     vkListeners: listeners,
     vkBridgeMock: {
       isEmbedded: vi.fn(() => true),
-      send: vi.fn(async () => ({})),
-      supportsAsync: vi.fn(async () => true),
+      send: vi.fn(
+        async (_method?: string, _params?: Record<string, unknown>): Promise<Record<string, unknown>> =>
+          ({}),
+      ),
+      supportsAsync: vi.fn(async (_method?: string): Promise<boolean> => true),
       subscribe: vi.fn((fn: (event: { detail: { type: string; data?: unknown } }) => void) => {
         listeners.add(fn);
       }),
@@ -271,6 +274,44 @@ describe('VkAdapter', () => {
     const ok = await adapter.savePlayerData({ large: 'x'.repeat(100) });
     expect(ok).toBe(false);
     expect(vkBridgeMock.send).not.toHaveBeenCalledWith('VKWebAppStorageSet', expect.anything());
+  });
+
+  it('не открывает автоматически VKWebAppShowLeaderBoardBox, применяет insets и отключает swipe-back', async () => {
+    vkBridgeMock.send.mockImplementation(async (method = '') => {
+      if (method === 'VKWebAppGetConfig') {
+        return { insets: { top: 44, right: 0, bottom: 34, left: 0 } };
+      }
+      return { result: true };
+    });
+
+    const { ctx } = makeContext({
+      params: { platform: 'vk', vk_language: 'kz' },
+    });
+    const adapter = new VkAdapter(ctx);
+    await adapter.init();
+
+    expect(adapter.getLanguage()).toBe('ru');
+    expect(vkBridgeMock.send).toHaveBeenCalledWith('VKWebAppSetSwipeSettings', { history: false });
+    expect(document.documentElement.style.getPropertyValue('--vk-inset-top')).toBe('44px');
+    expect(document.documentElement.style.getPropertyValue('--vk-inset-bottom')).toBe('34px');
+
+    for (const listener of vkListeners) {
+      listener({
+        detail: {
+          type: 'VKWebAppUpdateInsets',
+          data: { insets: { top: 24, right: 8, bottom: 16, left: 8 } },
+        },
+      });
+    }
+    expect(document.documentElement.style.getPropertyValue('--vk-inset-top')).toBe('24px');
+    expect(document.documentElement.style.getPropertyValue('--vk-inset-left')).toBe('8px');
+
+    vkBridgeMock.send.mockClear();
+    await adapter.setLeaderboardScore('best_run', 9999);
+    expect(vkBridgeMock.send).not.toHaveBeenCalledWith(
+      'VKWebAppShowLeaderBoardBox',
+      expect.anything(),
+    );
   });
 });
 

@@ -154,7 +154,7 @@ const ALL_SEEN_COLLECTION_IDS: readonly string[] = (() => {
   return result;
 })();
 const ALL_SEEN_SET: ReadonlySet<string> = new Set(ALL_SEEN_COLLECTION_IDS);
-const COMPACT_META_THRESHOLD_BYTES = 1800;
+const COMPACT_META_THRESHOLD_BYTES = 1600;
 const RUN_PHASE_SET: ReadonlySet<RunPhase> = new Set([
   'deck_select',
   'blind_select',
@@ -1303,8 +1303,8 @@ function encodeCompactCollection(meta: MetaSave): CompactCollectionSave {
 }
 
 /**
- * Формирует компактный резервный сейв для облачных хранилищ с лимитом 4000 байт (VK/OK),
- * отбрасывая activeRun и при превышении порога сжимая каталожные списки коллекции в битовые маски
+ * Формирует компактный резервный сейв для облачных хранилищ с жёстким лимитом 2200 байт на ключ (VK/OK),
+ * вынося activeRun из основного ключа и при превышении порога сжимая каталожные списки коллекции в битовые маски
  * без потери открытых предметов.
  */
 export function createCompactFallbackSave(saveData: PlayerSaveData): PlayerSaveData {
