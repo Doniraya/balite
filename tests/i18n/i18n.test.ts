@@ -540,5 +540,23 @@ describe('Локализация Balite (i18n)', () => {
 
     expect(ruT.t('ui.credits.fontLine')).toContain('Pixellari');
     expect(enT.t('ui.credits.fontLine')).toContain('Pixellari');
+
+    // Ключи Story 6.4 (повтор сида, подсказки разблокировки колод, бейдж Новое!, отметка сыгранных карт)
+    expect(ruT.t('ui.actions.replaySeed')).toBe('Повторить расклад (тот же сид)');
+    expect(enT.t('ui.actions.replaySeed')).toBe('Replay Run (Same Seed)');
+    expect(ruT.t('ui.deckSelect.unlockHintNext')).toBe('Победите в забеге, чтобы открыть эту колоду');
+    expect(enT.t('ui.deckSelect.unlockHintNext')).toBe('Win a run to unlock this deck');
+    expect(ruT.t('ui.deckSelect.unlockHintRemaining', { count: 2 })).toBe(
+      'Победите в забегах (осталось побед: 2)',
+    );
+    expect(enT.t('ui.deckSelect.unlockHintRemaining', { count: 2 })).toBe(
+      'Win runs to unlock (2 left)',
+    );
+    expect(ruT.t('ui.shop.newBadge')).toBe('Новое!');
+    expect(enT.t('ui.shop.newBadge')).toBe('New!');
+    expect(ruT.t('ui.deckModal.playedThisAnteBadge')).toBe('Сыграна');
+    expect(enT.t('ui.deckModal.playedThisAnteBadge')).toBe('Played');
+    expect(ruT.t('ui.deckModal.playedThisAnteHint')).toBe('Уже сыграна на этом этаже');
+    expect(enT.t('ui.deckModal.playedThisAnteHint')).toBe('Already played on this floor');
   });
 });

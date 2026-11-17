@@ -1,3 +1,10 @@
+import {
+  COLLECTION_EDITIONS,
+  COLLECTION_ENHANCEMENTS,
+  COLLECTION_PACK_IDS,
+  COLLECTION_SEALS,
+  REGULAR_MONSTER_IDS,
+} from './collection';
 import { getHandLevelStats } from './handEval';
 import { RNG_STREAM_NAMES, type RngState, type RngStreamName } from './prng';
 import {
@@ -32,6 +39,7 @@ import {
   type CelestialId,
   type CharterId,
   type CompactCardTuple,
+  type CompactCollectionSave,
   type CompactHandLevelTuple,
   type ConsumableId,
   type ConsumableInstance,
@@ -112,6 +120,41 @@ const BLIND_KIND_SET: ReadonlySet<BlindKind> = new Set(BLIND_KINDS);
 const CONSUMABLE_KIND_SET: ReadonlySet<ConsumableKind> = new Set(CONSUMABLE_KINDS);
 const PACK_TYPE_SET: ReadonlySet<PackType> = new Set(PACK_TYPES);
 const PACK_SIZE_SET: ReadonlySet<PackSize> = new Set(PACK_SIZES);
+const COLLECTION_PACK_SET: ReadonlySet<string> = new Set(COLLECTION_PACK_IDS);
+const REGULAR_MONSTER_SET: ReadonlySet<string> = new Set(REGULAR_MONSTER_IDS);
+const ALL_CONSUMABLE_IDS: readonly ConsumableId[] = [
+  ...SCROLL_IDS,
+  ...CELESTIAL_IDS,
+  ...RUNE_IDS,
+];
+const ALL_SEEN_COLLECTION_IDS: readonly string[] = (() => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  const sources: ReadonlyArray<readonly string[]> = [
+    RELIC_IDS,
+    DECK_IDS,
+    CHARTER_IDS,
+    ALL_CONSUMABLE_IDS,
+    TAG_IDS,
+    REGULAR_MONSTER_IDS,
+    COLLECTION_PACK_IDS,
+    COLLECTION_EDITIONS,
+    BOSS_IDS,
+    COLLECTION_ENHANCEMENTS,
+    COLLECTION_SEALS,
+  ];
+  for (const list of sources) {
+    for (const id of list) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        result.push(id);
+      }
+    }
+  }
+  return result;
+})();
+const ALL_SEEN_SET: ReadonlySet<string> = new Set(ALL_SEEN_COLLECTION_IDS);
+const COMPACT_META_THRESHOLD_BYTES = 1800;
 const RUN_PHASE_SET: ReadonlySet<RunPhase> = new Set([
   'deck_select',
   'blind_select',
@@ -315,6 +358,9 @@ function sanitizeMetaStats(raw: unknown): MetaStats {
   const rec = isRecord(raw) ? raw : {};
   const currentWinStreak = sanitizeNonNegInt(rec.currentWinStreak, 0);
   const bestWinStreak = Math.max(sanitizeNonNegInt(rec.bestWinStreak, 0), currentWinStreak);
+  const totalMoneySpent = sanitizeNonNegInt(rec.totalMoneySpent, 0);
+  const totalShopRerolls = sanitizeNonNegInt(rec.totalShopRerolls, 0);
+  const totalCelestialsUsed = sanitizeNonNegInt(rec.totalCelestialsUsed, 0);
 
   return {
     runsStarted: sanitizeNonNegInt(rec.runsStarted, 0),
@@ -332,6 +378,9 @@ function sanitizeMetaStats(raw: unknown): MetaStats {
     currentWinStreak,
     totalHandsPlayed: sanitizeNonNegInt(rec.totalHandsPlayed, 0),
     handPlayCounts: sanitizeHandPlayCounts(rec.handPlayCounts),
+    ...(totalMoneySpent > 0 ? { totalMoneySpent } : {}),
+    ...(totalShopRerolls > 0 ? { totalShopRerolls } : {}),
+    ...(totalCelestialsUsed > 0 ? { totalCelestialsUsed } : {}),
   };
 }
 
@@ -344,6 +393,9 @@ export interface UpdateMetaStatsFlags {
   readonly playedHandType?: HandType | null;
   readonly runWon?: boolean;
   readonly runLost?: boolean;
+  readonly dollarsSpentDelta?: number;
+  readonly shopRerollsDelta?: number;
+  readonly celestialsUsedDelta?: number;
 }
 
 /**
@@ -383,6 +435,14 @@ export function updateMetaStatsFromRunState(
       ? state.stats.bestHandScore
       : 0;
 
+  const totalMoneySpent =
+    sanitizeNonNegInt(base.totalMoneySpent, 0) + sanitizeNonNegInt(flags.dollarsSpentDelta, 0);
+  const totalShopRerolls =
+    sanitizeNonNegInt(base.totalShopRerolls, 0) + sanitizeNonNegInt(flags.shopRerollsDelta, 0);
+  const totalCelestialsUsed =
+    sanitizeNonNegInt(base.totalCelestialsUsed, 0) +
+    sanitizeNonNegInt(flags.celestialsUsedDelta, 0);
+
   return {
     runsStarted: base.runsStarted + (flags.runStarted ? 1 : 0),
     runsWon: base.runsWon + (flags.runWon ? 1 : 0),
@@ -394,6 +454,9 @@ export function updateMetaStatsFromRunState(
     currentWinStreak,
     totalHandsPlayed: base.totalHandsPlayed + (flags.handPlayed ? 1 : 0),
     handPlayCounts: nextCounts,
+    ...(totalMoneySpent > 0 ? { totalMoneySpent } : {}),
+    ...(totalShopRerolls > 0 ? { totalShopRerolls } : {}),
+    ...(totalCelestialsUsed > 0 ? { totalCelestialsUsed } : {}),
   };
 }
 
@@ -436,20 +499,52 @@ export function getMostPlayedHandInRun(
   return pickMostFrequentHand((handType) => state.handLevels[handType]?.playedCount ?? 0);
 }
 
+function countUniqueValid<T extends string>(
+  items: readonly T[] | undefined,
+  predicate?: (item: T) => boolean,
+): number {
+  if (!items || items.length === 0) return 0;
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (typeof item === 'string' && item.length > 0 && (!predicate || predicate(item))) {
+      seen.add(item);
+    }
+  }
+  return seen.size;
+}
+
 /**
- * Подсчитывает общее количество открытых записей коллекции в мета-прогрессе.
+ * Подсчитывает общее количество открытых записей коллекции в мета-прогрессе
+ * по всем 8 коллекционным категориям (без стартовых монстров 1-го этапа и издания 'base').
  */
 export function countMetaDiscoveries(
   meta: Pick<
     MetaSave,
-    'discoveredRelics' | 'discoveredConsumables' | 'discoveredCharters' | 'discoveredBosses'
+    | 'discoveredRelics'
+    | 'discoveredConsumables'
+    | 'discoveredCharters'
+    | 'discoveredBosses'
+    | 'discoveredTags'
+    | 'discoveredMonsters'
+    | 'discoveredPacks'
+    | 'discoveredEditions'
   >,
 ): number {
   return (
-    meta.discoveredRelics.length +
-    meta.discoveredConsumables.length +
-    meta.discoveredCharters.length +
-    meta.discoveredBosses.length
+    countUniqueValid(meta.discoveredRelics) +
+    countUniqueValid(meta.discoveredConsumables) +
+    countUniqueValid(meta.discoveredCharters) +
+    countUniqueValid(meta.discoveredBosses) +
+    countUniqueValid(meta.discoveredTags) +
+    countUniqueValid(
+      meta.discoveredMonsters,
+      (id) => id !== 'm_ante_1_small' && id !== 'm_ante_1_big',
+    ) +
+    countUniqueValid(meta.discoveredPacks, (id) => COLLECTION_PACK_SET.has(id)) +
+    countUniqueValid(
+      meta.discoveredEditions,
+      (ed) => EDITION_SET.has(ed) && ed !== 'base',
+    )
   );
 }
 
@@ -1110,9 +1205,107 @@ export function createPlayerSaveData(
   };
 }
 
+function measureJsonUtf8Bytes(value: unknown): number {
+  const json = JSON.stringify(value);
+  if (typeof TextEncoder !== 'undefined') {
+    return new TextEncoder().encode(json).length;
+  }
+  return json.length;
+}
+
+function encodeCatalogBitmask<T extends string>(
+  items: readonly T[],
+  catalog: readonly T[],
+): string {
+  const itemSet = new Set(items);
+  const nibbleCount = Math.ceil(catalog.length / 4);
+  let hex = '';
+  for (let n = 0; n < nibbleCount; n += 1) {
+    let nibble = 0;
+    const base = n * 4;
+    for (let bit = 0; bit < 4; bit += 1) {
+      const idx = base + bit;
+      if (idx < catalog.length && itemSet.has(catalog[idx]!)) {
+        nibble |= 1 << bit;
+      }
+    }
+    hex += nibble.toString(16);
+  }
+  // Обрезаем хвостовые нули: пустое множество кодируется как ''
+  return hex.replace(/0+$/, '');
+}
+
+function decodeCatalogBitmask<T extends string>(
+  hex: unknown,
+  catalog: readonly T[],
+): T[] | undefined {
+  if (typeof hex !== 'string') return undefined;
+  const maxNibbles = Math.ceil(catalog.length / 4);
+  if (hex.length > maxNibbles || !/^[0-9a-fA-F]*$/.test(hex)) {
+    return undefined;
+  }
+  const result: T[] = [];
+  for (let n = 0; n < hex.length; n += 1) {
+    const nibble = Number.parseInt(hex[n]!, 16);
+    const base = n * 4;
+    for (let bit = 0; bit < 4; bit += 1) {
+      const idx = base + bit;
+      if (idx < catalog.length && (nibble & (1 << bit)) !== 0) {
+        result.push(catalog[idx]!);
+      }
+    }
+  }
+  return result;
+}
+
+function encodeCompactCollection(meta: MetaSave): CompactCollectionSave {
+  const extraMonsters = meta.discoveredMonsters
+    ? meta.discoveredMonsters.filter((id) => !REGULAR_MONSTER_SET.has(id))
+    : [];
+  const extraPacks = meta.discoveredPacks
+    ? meta.discoveredPacks.filter((id) => !COLLECTION_PACK_SET.has(id))
+    : [];
+  const extraSeen = meta.seenCollectionItems
+    ? meta.seenCollectionItems.filter((id) => !ALL_SEEN_SET.has(id))
+    : [];
+
+  return {
+    d: encodeCatalogBitmask(meta.unlockedDecks, DECK_IDS),
+    r: encodeCatalogBitmask(meta.discoveredRelics, RELIC_IDS),
+    c: encodeCatalogBitmask(meta.discoveredConsumables, ALL_CONSUMABLE_IDS),
+    v: encodeCatalogBitmask(meta.discoveredCharters, CHARTER_IDS),
+    b: encodeCatalogBitmask(meta.discoveredBosses, BOSS_IDS),
+    ...(meta.discoveredTags !== undefined
+      ? { t: encodeCatalogBitmask(meta.discoveredTags, TAG_IDS) }
+      : {}),
+    ...(meta.discoveredMonsters !== undefined
+      ? {
+          m: encodeCatalogBitmask(meta.discoveredMonsters, REGULAR_MONSTER_IDS),
+          ...(extraMonsters.length > 0 ? { mx: extraMonsters } : {}),
+        }
+      : {}),
+    ...(meta.discoveredPacks !== undefined
+      ? {
+          p: encodeCatalogBitmask(meta.discoveredPacks, COLLECTION_PACK_IDS),
+          ...(extraPacks.length > 0 ? { px: extraPacks } : {}),
+        }
+      : {}),
+    ...(meta.discoveredEditions !== undefined
+      ? { e: encodeCatalogBitmask(meta.discoveredEditions, COLLECTION_EDITIONS) }
+      : {}),
+    ...(meta.seenCollectionItems !== undefined
+      ? {
+          s: encodeCatalogBitmask(meta.seenCollectionItems, ALL_SEEN_COLLECTION_IDS),
+          ...(extraSeen.length > 0 ? { sx: extraSeen } : {}),
+        }
+      : {}),
+  };
+}
+
 /**
  * Формирует компактный резервный сейв для облачных хранилищ с лимитом 4000 байт (VK/OK),
- * отбрасывая activeRun и сохраняя мета-прогресс, версию, revision и updatedAt.
+ * отбрасывая activeRun и при превышении порога сжимая каталожные списки коллекции в битовые маски
+ * без потери открытых предметов.
  */
 export function createCompactFallbackSave(saveData: PlayerSaveData): PlayerSaveData {
   const sanitized = sanitizePlayerSaveData(saveData);
@@ -1120,17 +1313,55 @@ export function createCompactFallbackSave(saveData: PlayerSaveData): PlayerSaveD
   const updatedAt = sanitized.updatedAt ?? sanitizeNonNegInt(saveData?.updatedAt, 0);
   const meta = sanitized.meta ?? createInitialMetaSave(updatedAt, { revision });
 
-  return {
+  const plainMeta: MetaSave = {
+    ...cloneMetaSave(meta),
+    version: SAVE_SCHEMA_VERSION,
+    revision,
+    updatedAt,
+  };
+
+  const plainSave: PlayerSaveData = {
+    revision,
+    updatedAt,
+    meta: plainMeta,
+    activeRun: null,
+  };
+
+  if (measureJsonUtf8Bytes(plainSave) <= COMPACT_META_THRESHOLD_BYTES) {
+    return plainSave;
+  }
+
+  const compactSave: PlayerSaveData = {
     revision,
     updatedAt,
     meta: {
-      ...cloneMetaSave(meta),
       version: SAVE_SCHEMA_VERSION,
       revision,
       updatedAt,
+      settings: plainMeta.settings,
+      unlockedDecks: [],
+      discoveredRelics: [],
+      discoveredConsumables: [],
+      discoveredCharters: [],
+      discoveredBosses: [],
+      compactCollection: encodeCompactCollection(plainMeta),
+      stats: plainMeta.stats,
+      ...(plainMeta.activeRunTracker !== undefined
+        ? { activeRunTracker: plainMeta.activeRunTracker }
+        : {}),
+      ...(plainMeta.tutorialCompleted !== undefined
+        ? { tutorialCompleted: plainMeta.tutorialCompleted }
+        : {}),
+      ...(plainMeta.tutorialStep !== undefined
+        ? { tutorialStep: plainMeta.tutorialStep }
+        : {}),
     },
     activeRun: null,
   };
+
+  return measureJsonUtf8Bytes(compactSave) < measureJsonUtf8Bytes(plainSave)
+    ? compactSave
+    : plainSave;
 }
 
 function isValidConsumableIdForKind(id: string, kind: ConsumableKind): id is ConsumableId {
@@ -1170,19 +1401,55 @@ function sanitizeMetaSave(
     'discoveredConsumables' in raw ||
     'discoveredCharters' in raw ||
     'discoveredBosses' in raw ||
+    'compactCollection' in raw ||
     'stats' in raw ||
     'tutorialCompleted' in raw ||
     'tutorialStep' in raw;
 
   if (!hasRecognizedField) return undefined;
 
-  const unlocked = sanitizeIdList(raw.unlockedDecks, DECK_SET);
+  const cc = isRecord(raw.compactCollection) ? raw.compactCollection : null;
+
+  const decodedDecks = cc ? decodeCatalogBitmask(cc.d, DECK_IDS) : undefined;
+  const decodedRelics = cc ? decodeCatalogBitmask(cc.r, RELIC_IDS) : undefined;
+  const decodedConsumables = cc ? decodeCatalogBitmask(cc.c, ALL_CONSUMABLE_IDS) : undefined;
+  const decodedCharters = cc ? decodeCatalogBitmask(cc.v, CHARTER_IDS) : undefined;
+  const decodedBosses = cc ? decodeCatalogBitmask(cc.b, BOSS_IDS) : undefined;
+  const decodedTags = cc ? decodeCatalogBitmask(cc.t, TAG_IDS) : undefined;
+  const decodedMonsters = cc ? decodeCatalogBitmask(cc.m, REGULAR_MONSTER_IDS) : undefined;
+  const decodedPacks = cc ? decodeCatalogBitmask(cc.p, COLLECTION_PACK_IDS) : undefined;
+  const decodedEditions = cc ? decodeCatalogBitmask(cc.e, COLLECTION_EDITIONS) : undefined;
+  const decodedSeen = cc ? decodeCatalogBitmask(cc.s, ALL_SEEN_COLLECTION_IDS) : undefined;
+
+  const extraMonsters = cc && Array.isArray(cc.mx) ? sanitizeStringList(cc.mx) : undefined;
+  const extraPacks = cc && Array.isArray(cc.px) ? sanitizeStringList(cc.px) : undefined;
+  const extraSeen = cc && Array.isArray(cc.sx) ? sanitizeStringList(cc.sx) : undefined;
+
+  const unlocked = mergeUniqueIds(sanitizeIdList(raw.unlockedDecks, DECK_SET), decodedDecks ?? []);
   const rawDiscoveredConsumables = Array.isArray(raw.discoveredConsumables)
     ? raw.discoveredConsumables
         .map(sanitizeConsumableId)
         .filter((item): item is ConsumableId => item !== null)
     : [];
-  const discoveredConsumables = mergeUniqueIds(rawDiscoveredConsumables, []);
+  const discoveredConsumables = mergeUniqueIds(
+    rawDiscoveredConsumables,
+    decodedConsumables ?? [],
+  );
+
+  const hasTags = Array.isArray(raw.discoveredTags) || decodedTags !== undefined;
+  const hasMonsters =
+    Array.isArray(raw.discoveredMonsters) ||
+    decodedMonsters !== undefined ||
+    extraMonsters !== undefined;
+  const hasPacks =
+    Array.isArray(raw.discoveredPacks) ||
+    decodedPacks !== undefined ||
+    extraPacks !== undefined;
+  const hasEditions = Array.isArray(raw.discoveredEditions) || decodedEditions !== undefined;
+  const hasSeen =
+    Array.isArray(raw.seenCollectionItems) ||
+    decodedSeen !== undefined ||
+    extraSeen !== undefined;
 
   const activeRunTracker =
     'activeRunTracker' in raw && raw.activeRunTracker !== undefined
@@ -1219,15 +1486,59 @@ function sanitizeMetaSave(
     updatedAt: sanitizeNonNegInt(raw.updatedAt, fallbackUpdatedAt),
     settings: effectiveSettings,
     unlockedDecks: unlocked.length > 0 ? unlocked : ['b_red'],
-    discoveredRelics: sanitizeIdList(raw.discoveredRelics, RELIC_SET),
+    discoveredRelics: mergeUniqueIds(
+      sanitizeIdList(raw.discoveredRelics, RELIC_SET),
+      decodedRelics ?? [],
+    ),
     discoveredConsumables,
-    discoveredCharters: sanitizeIdList(raw.discoveredCharters, CHARTER_SET),
-    discoveredBosses: sanitizeIdList(raw.discoveredBosses, BOSS_SET),
-    ...(raw.discoveredTags ? { discoveredTags: sanitizeIdList(raw.discoveredTags, TAG_SET) } : {}),
-    ...(raw.discoveredMonsters ? { discoveredMonsters: sanitizeStringList(raw.discoveredMonsters) } : {}),
-    ...(raw.discoveredPacks ? { discoveredPacks: sanitizeStringList(raw.discoveredPacks) } : {}),
-    ...(raw.discoveredEditions ? { discoveredEditions: sanitizeIdList(raw.discoveredEditions, EDITION_SET) } : {}),
-    ...(raw.seenCollectionItems ? { seenCollectionItems: sanitizeStringList(raw.seenCollectionItems) } : {}),
+    discoveredCharters: mergeUniqueIds(
+      sanitizeIdList(raw.discoveredCharters, CHARTER_SET),
+      decodedCharters ?? [],
+    ),
+    discoveredBosses: mergeUniqueIds(
+      sanitizeIdList(raw.discoveredBosses, BOSS_SET),
+      decodedBosses ?? [],
+    ),
+    ...(hasTags
+      ? {
+          discoveredTags: mergeUniqueIds(
+            sanitizeIdList(raw.discoveredTags, TAG_SET),
+            decodedTags ?? [],
+          ),
+        }
+      : {}),
+    ...(hasMonsters
+      ? {
+          discoveredMonsters: mergeUniqueIds(
+            sanitizeStringList(raw.discoveredMonsters),
+            mergeUniqueIds(decodedMonsters ?? [], extraMonsters ?? []),
+          ),
+        }
+      : {}),
+    ...(hasPacks
+      ? {
+          discoveredPacks: mergeUniqueIds(
+            sanitizeStringList(raw.discoveredPacks),
+            mergeUniqueIds(decodedPacks ?? [], extraPacks ?? []),
+          ),
+        }
+      : {}),
+    ...(hasEditions
+      ? {
+          discoveredEditions: mergeUniqueIds(
+            sanitizeIdList(raw.discoveredEditions, EDITION_SET),
+            decodedEditions ?? [],
+          ),
+        }
+      : {}),
+    ...(hasSeen
+      ? {
+          seenCollectionItems: mergeUniqueIds(
+            sanitizeStringList(raw.seenCollectionItems),
+            mergeUniqueIds(decodedSeen ?? [], extraSeen ?? []),
+          ),
+        }
+      : {}),
     stats: sanitizeMetaStats(raw.stats),
     ...(activeRunTracker !== undefined ? { activeRunTracker } : {}),
     ...(rawTutorialCompleted !== undefined ? { tutorialCompleted: rawTutorialCompleted } : {}),
@@ -2114,6 +2425,25 @@ function mergeMetaSaves(
       currentWinStreak: base.stats.currentWinStreak,
       totalHandsPlayed: Math.max(base.stats.totalHandsPlayed, other.stats.totalHandsPlayed),
       handPlayCounts: mergeHandPlayCounts(base.stats.handPlayCounts, other.stats.handPlayCounts),
+      ...(() => {
+        const totalMoneySpent = Math.max(
+          sanitizeNonNegInt(base.stats.totalMoneySpent, 0),
+          sanitizeNonNegInt(other.stats.totalMoneySpent, 0),
+        );
+        const totalShopRerolls = Math.max(
+          sanitizeNonNegInt(base.stats.totalShopRerolls, 0),
+          sanitizeNonNegInt(other.stats.totalShopRerolls, 0),
+        );
+        const totalCelestialsUsed = Math.max(
+          sanitizeNonNegInt(base.stats.totalCelestialsUsed, 0),
+          sanitizeNonNegInt(other.stats.totalCelestialsUsed, 0),
+        );
+        return {
+          ...(totalMoneySpent > 0 ? { totalMoneySpent } : {}),
+          ...(totalShopRerolls > 0 ? { totalShopRerolls } : {}),
+          ...(totalCelestialsUsed > 0 ? { totalCelestialsUsed } : {}),
+        };
+      })(),
     },
     ...(activeRunTracker !== undefined ? { activeRunTracker } : {}),
     ...(tutorialCompleted !== undefined ? { tutorialCompleted } : {}),

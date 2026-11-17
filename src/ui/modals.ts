@@ -3,16 +3,22 @@ import {
   BOSS_IDS,
   CELESTIAL_IDS,
   CHARTER_IDS,
+  COLLECTION_EDITIONS,
+  COLLECTION_PACK_IDS,
   DECK_IDS,
   DECK_VIEW_SUIT_ORDER,
   HAND_TYPES,
+  REGULAR_MONSTER_IDS,
   RELIC_IDS,
   RUNE_IDS,
   SCROLL_IDS,
+  TAG_IDS,
   buildDeckViewModel,
+  countMetaDiscoveries,
   getMostPlayedHand,
   type AnimationSpeed,
   type CrtMode,
+  type DeckViewCardEntry,
   type DeckViewMode,
   type GameSettings,
   type HandType,
@@ -713,6 +719,87 @@ function formatDeckRankLabel(rank: Rank, translator: Translator): string {
 }
 
 /**
+ * Создаёт компактную карточку для окна «Состав колоды» с визуальными бейджами
+ * сыгранности на текущем этаже (playedThisAnte) и ослабления (debuffed), а также обогащённым тултипом.
+ */
+function createDeckModalCardFrame(
+  entry: DeckViewCardEntry,
+  activeMode: DeckViewMode,
+  translator: Translator,
+): HTMLElement {
+  // В окне состава колоды отображаем лицо карты, но в детерминированном порядке по масти/рангу
+  const visibleCard: PlayingCard =
+    entry.card.facing === 'back' ? { ...entry.card, facing: 'front' } : entry.card;
+  const frame = renderPlayingCardFrame({
+    card: visibleCard,
+    translator,
+    compact: true,
+    interactive: false,
+    faceDown: false,
+  });
+  frame.dataset.inDraw = entry.inDrawPile ? 'true' : 'false';
+  if (activeMode === 'full' && !entry.inDrawPile) {
+    frame.classList.add('is-out-of-draw');
+  }
+
+  const fxLayer = frame.querySelector<HTMLElement>('.card-frame__layer-fx') ?? frame;
+
+  // Визуальная пометка карт, уже сыгранных на текущем этаже (важно против Босса Махораги)
+  if (visibleCard.playedThisAnte) {
+    frame.classList.add('is-played-this-ante');
+    frame.dataset.playedThisAnte = 'true';
+
+    const playedBadge = document.createElement('span');
+    playedBadge.className = 'deck-card-badge deck-card-badge--played-ante';
+    playedBadge.dataset.deckBadge = 'played-this-ante';
+    playedBadge.textContent = translator.t('ui.deckModal.playedThisAnteBadge');
+    fxLayer.appendChild(playedBadge);
+  }
+
+  // Явная визуальная пометка ослабленных карт в окне колоды
+  if (visibleCard.debuffed) {
+    frame.classList.add('is-debuffed');
+    frame.dataset.debuffed = 'true';
+
+    const existingDebuffBadge = frame.querySelector<HTMLElement>('.card-frame__debuff-badge');
+    if (existingDebuffBadge) {
+      existingDebuffBadge.classList.add('deck-card-badge', 'deck-card-badge--debuffed');
+      existingDebuffBadge.dataset.deckBadge = 'debuffed';
+    } else {
+      const debuffBadge = document.createElement('span');
+      debuffBadge.className = 'card-frame__debuff-badge deck-card-badge deck-card-badge--debuffed';
+      debuffBadge.dataset.deckBadge = 'debuffed';
+      debuffBadge.textContent = translator.t('ui.hud.debuffedBadge');
+      fxLayer.appendChild(debuffBadge);
+    }
+  }
+
+  const baseTooltip = buildPlayingCardTooltip(visibleCard, translator);
+  if (visibleCard.playedThisAnte) {
+    const playedHint = translator.t('ui.deckModal.playedThisAnteHint');
+    const nextDescription = baseTooltip.description
+      ? `${baseTooltip.description} • ${playedHint}`
+      : playedHint;
+    const nextBadges = [
+      ...(baseTooltip.badges ?? []),
+      {
+        label: translator.t('ui.deckModal.playedThisAnteBadge'),
+        tone: 'gold' as const,
+        kind: 'status' as const,
+      },
+    ];
+    setTooltipData(frame, {
+      ...baseTooltip,
+      description: nextDescription,
+      badges: nextBadges,
+    });
+  } else {
+    setTooltipData(frame, baseTooltip);
+  }
+
+  return frame;
+}
+/**
  * Отрисовывает подробное модальное окно состава колоды с вкладками Оставшаяся/Полная,
  * левой сводкой базовых карт и рангов и 4 веерными рядами мастей с ховер-тултипами.
  */
@@ -914,22 +1001,7 @@ export function renderDeckModal(
       fanEl.style.setProperty('--deck-fan-extra', `${extraOverlap}px`);
 
       for (const entry of suitRow.cards) {
-        // В окне состава колоды отображаем лицо карты, но в детерминированном порядке по масти/рангу
-        const visibleCard: PlayingCard =
-          entry.card.facing === 'back' ? { ...entry.card, facing: 'front' } : entry.card;
-        const frame = renderPlayingCardFrame({
-          card: visibleCard,
-          translator,
-          compact: true,
-          interactive: false,
-          faceDown: false,
-        });
-        frame.dataset.inDraw = entry.inDrawPile ? 'true' : 'false';
-        if (activeMode === 'full' && !entry.inDrawPile) {
-          frame.classList.add('is-out-of-draw');
-        }
-        setTooltipData(frame, buildPlayingCardTooltip(visibleCard, translator));
-        fanEl.appendChild(frame);
+        fanEl.appendChild(createDeckModalCardFrame(entry, activeMode, translator));
       }
 
       rowEl.appendChild(fanEl);
@@ -945,21 +1017,7 @@ export function renderDeckModal(
       const stoneFan = document.createElement('div');
       stoneFan.className = 'deck-fan-row';
       for (const entry of model.stoneCards) {
-        const visibleCard: PlayingCard =
-          entry.card.facing === 'back' ? { ...entry.card, facing: 'front' } : entry.card;
-        const frame = renderPlayingCardFrame({
-          card: visibleCard,
-          translator,
-          compact: true,
-          interactive: false,
-          faceDown: false,
-        });
-        frame.dataset.inDraw = entry.inDrawPile ? 'true' : 'false';
-        if (activeMode === 'full' && !entry.inDrawPile) {
-          frame.classList.add('is-out-of-draw');
-        }
-        setTooltipData(frame, buildPlayingCardTooltip(visibleCard, translator));
-        stoneFan.appendChild(frame);
+        stoneFan.appendChild(createDeckModalCardFrame(entry, activeMode, translator));
       }
       stoneRowEl.append(stoneLabel, stoneFan);
       rowsPanel.appendChild(stoneRowEl);
@@ -1161,7 +1219,7 @@ function createDebugSection(
 /**
  * Вычисляет безопасные значения статистики и процент открытий из MetaSave.
  */
-function computeMetaStatsSummary(meta: MetaSave | undefined): MetaStats & {
+export function computeMetaStatsSummary(meta: MetaSave | undefined): MetaStats & {
   readonly discoveredCount: number;
   readonly totalDiscoverable: number;
   readonly discoveryPercent: number;
@@ -1175,14 +1233,14 @@ function computeMetaStatsSummary(meta: MetaSave | undefined): MetaStats & {
     SCROLL_IDS.length +
     RUNE_IDS.length +
     CHARTER_IDS.length +
-    BOSS_IDS.length;
+    BOSS_IDS.length +
+    TAG_IDS.length +
+    (REGULAR_MONSTER_IDS.length - 2) +
+    COLLECTION_PACK_IDS.length +
+    (COLLECTION_EDITIONS.length - 1);
 
   const discoveredCount = meta
-    ? new Set(meta.unlockedDecks).size +
-      new Set(meta.discoveredRelics).size +
-      new Set(meta.discoveredConsumables).size +
-      new Set(meta.discoveredCharters).size +
-      new Set(meta.discoveredBosses).size
+    ? Math.min(totalDiscoverable, countMetaDiscoveries(meta) + new Set(meta.unlockedDecks).size)
     : 0;
 
   const discoveryPercent =
@@ -1201,6 +1259,13 @@ function computeMetaStatsSummary(meta: MetaSave | undefined): MetaStats & {
     bestWinStreak: rawStats.bestWinStreak ?? 0,
     currentWinStreak: rawStats.currentWinStreak ?? 0,
     handPlayCounts: rawStats.handPlayCounts ?? {},
+    ...(rawStats.totalMoneySpent !== undefined ? { totalMoneySpent: rawStats.totalMoneySpent } : {}),
+    ...(rawStats.totalShopRerolls !== undefined
+      ? { totalShopRerolls: rawStats.totalShopRerolls }
+      : {}),
+    ...(rawStats.totalCelestialsUsed !== undefined
+      ? { totalCelestialsUsed: rawStats.totalCelestialsUsed }
+      : {}),
     discoveredCount,
     totalDiscoverable,
     discoveryPercent,

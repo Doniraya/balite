@@ -9,6 +9,7 @@ import {
   applyDebugCardMods,
   applyDebugVoucher,
   canUseConsumable,
+  collectRunMetaDiscoveries,
   createInitialMetaSave,
   createInitialRunState,
   createPlayerSaveData,
@@ -17,14 +18,16 @@ import {
   forceDebugRunEnd,
   giveDebugConsumable,
   giveDebugRelic,
+  hasAnyUnseenCollectionItems,
+  normalizePackIdForCollection,
+  resetCollection,
   restoreRunStateFromSnapshot,
   serializeRunStateToSnapshot,
   setDebugResources,
-  updateMetaStatsFromRunState,
-  hasAnyUnseenCollectionItems,
-  resetCollection,
   unlockAllCollection,
+  updateMetaStatsFromRunState,
   type CollectionCategory,
+  type RunMetaDiscoveriesExtras,
 } from '../engine';
 import type {
   AnimationSpeed,
@@ -42,11 +45,11 @@ import type {
   PackOffer,
   PlayerSaveData,
   PlayingCard,
-  RelicId,
   RunPhase,
   RunSnapshot,
   RunState,
   ShopOffer,
+  TagId,
   TraceEvent,
 } from '../engine/types';
 import {
@@ -324,17 +327,17 @@ function updateMetaFromRunState(
     handPlayed?: boolean;
     runWon?: boolean;
     runLost?: boolean;
+    dollarsSpentDelta?: number;
+    shopRerollsDelta?: number;
+    celestialsUsedDelta?: number;
+    extras?: RunMetaDiscoveriesExtras;
     settingsPatch?: Partial<GameSettings>;
     revision: number;
     updatedAt: number;
   },
 ): MetaSave {
-  const relicIds: RelicId[] = state.relics.map((relic) => relic.id);
-  const consumableIds: ConsumableId[] = state.consumables.map((item) => item.id);
-  const charterIds: CharterId[] = [...state.charters];
-  const bossIds: BossId[] = state.anteBlinds
-    .map((slot) => slot.bossId)
-    .filter((id): id is BossId => id !== null);
+  // Собираем все 8 категорий открытий коллекции из состояния забега и событийных дополнений
+  const discoveries = collectRunMetaDiscoveries(state, flags.extras);
 
   let unlockedDecks = [...meta.unlockedDecks];
   if (flags.runWon) {
@@ -354,15 +357,31 @@ function updateMetaFromRunState(
       ? { ...meta.settings, ...flags.settingsPatch }
       : meta.settings,
     unlockedDecks,
-    discoveredRelics: appendUniqueIds(meta.discoveredRelics, relicIds),
-    discoveredConsumables: appendUniqueIds(meta.discoveredConsumables, consumableIds),
-    discoveredCharters: appendUniqueIds(meta.discoveredCharters, charterIds),
-    discoveredBosses: appendUniqueIds(meta.discoveredBosses, bossIds),
+    discoveredRelics: appendUniqueIds(meta.discoveredRelics, discoveries.discoveredRelics),
+    discoveredConsumables: appendUniqueIds(
+      meta.discoveredConsumables,
+      discoveries.discoveredConsumables,
+    ),
+    discoveredCharters: appendUniqueIds(meta.discoveredCharters, discoveries.discoveredCharters),
+    discoveredBosses: appendUniqueIds(meta.discoveredBosses, discoveries.discoveredBosses),
+    discoveredTags: appendUniqueIds(meta.discoveredTags ?? [], discoveries.discoveredTags),
+    discoveredMonsters: appendUniqueIds(
+      meta.discoveredMonsters ?? [],
+      discoveries.discoveredMonsters,
+    ),
+    discoveredPacks: appendUniqueIds(meta.discoveredPacks ?? [], discoveries.discoveredPacks),
+    discoveredEditions: appendUniqueIds(
+      meta.discoveredEditions ?? [],
+      discoveries.discoveredEditions,
+    ),
     stats: updateMetaStatsFromRunState(meta.stats, state, {
       runStarted: flags.runStarted,
       handPlayed: flags.handPlayed,
       runWon: flags.runWon,
       runLost: flags.runLost,
+      dollarsSpentDelta: flags.dollarsSpentDelta,
+      shopRerollsDelta: flags.shopRerollsDelta,
+      celestialsUsedDelta: flags.celestialsUsedDelta,
     }),
     ...(flags.settingsPatch?.tutorialCompleted !== undefined
       ? { tutorialCompleted: flags.settingsPatch.tutorialCompleted }
@@ -379,6 +398,127 @@ function updateMetaFromRunState(
       nextMetaWithoutTracker,
       Boolean(flags.runStarted),
     ),
+  };
+}
+
+/**
+ * Вычисляет дельты накопительной статистики и событийные дополнения коллекции по выполненной команде.
+ */
+function extractCommandMetaTracking(
+  prevState: RunState,
+  command: GameCommand,
+  nextState: RunState,
+): {
+  dollarsSpentDelta: number;
+  shopRerollsDelta: number;
+  celestialsUsedDelta: number;
+  extras?: RunMetaDiscoveriesExtras;
+} {
+  const dollarsSpentDelta =
+    command.type === 'BUY_SHOP_OFFER' ||
+    command.type === 'REROLL_SHOP' ||
+    command.type === 'BUY_CHARTER' ||
+    command.type === 'OPEN_PACK'
+      ? Math.max(0, prevState.dollars - nextState.dollars)
+      : 0;
+
+  const shopRerollsDelta =
+    command.type === 'REROLL_SHOP'
+      ? Math.max(0, nextState.stats.rerollsCount - prevState.stats.rerollsCount)
+      : 0;
+
+  const extraConsumableIds: ConsumableId[] = [];
+  const extraPackIds: string[] = [];
+  const extraTagIds: TagId[] = [];
+  let celestialsUsedDelta = 0;
+
+  let appliedConsumableId: ConsumableId | null = null;
+  if (command.type === 'USE_CONSUMABLE') {
+    const used = prevState.consumables.find((item) => item.uid === command.consumableUid);
+    if (used && !nextState.consumables.some((item) => item.uid === used.uid)) {
+      appliedConsumableId = used.id;
+    }
+  } else if (command.type === 'BUY_SHOP_OFFER' && command.useImmediately) {
+    const offer = prevState.shop?.offers.find((item) => item.uid === command.offerUid);
+    if (
+      offer?.kind === 'consumable' &&
+      !offer.sold &&
+      nextState.shop?.offers.find((item) => item.uid === offer.uid)?.sold === true
+    ) {
+      appliedConsumableId = offer.consumable.id;
+    }
+  } else if (command.type === 'PICK_BOOSTER_ITEM') {
+    const choice = prevState.booster?.choices.find((item) => item.uid === command.choiceUid);
+    if (choice?.kind === 'consumable' && !choice.picked) {
+      const nextChoice = nextState.booster?.choices.find((item) => item.uid === choice.uid);
+      if (
+        nextState.booster !== prevState.booster &&
+        (!nextChoice || nextChoice.picked === true)
+      ) {
+        appliedConsumableId = choice.consumable.id;
+      }
+    }
+  }
+
+  if (appliedConsumableId !== null) {
+    extraConsumableIds.push(appliedConsumableId);
+    if (resolveConsumableKind(appliedConsumableId) === 'celestial') {
+      celestialsUsedDelta = 1;
+    }
+  }
+
+  if (command.type === 'OPEN_PACK') {
+    const pack = prevState.shop?.packs.find(
+      (item) => item.uid === command.packUid && !item.purchased,
+    );
+    if (
+      pack &&
+      (nextState.phase === 'booster' ||
+        nextState.shop?.packs.find((item) => item.uid === pack.uid)?.purchased === true)
+    ) {
+      // Передаём пару (type, size) с приоритетом над сырым packId (в тестах встречается формат без префикса)
+      const normalizedPackId =
+        normalizePackIdForCollection(pack.type, pack.size) ??
+        normalizePackIdForCollection(pack.packId);
+      if (normalizedPackId !== null) {
+        extraPackIds.push(normalizedPackId);
+      }
+    }
+  } else if (
+    (command.type === 'PICK_BOOSTER_ITEM' || command.type === 'SKIP_BOOSTER') &&
+    prevState.booster &&
+    nextState !== prevState
+  ) {
+    // На случай закрытия бустера с последнего выбора фиксируем тип текущего набора из prevState.booster
+    const normalizedPackId =
+      normalizePackIdForCollection(prevState.booster.packType, prevState.booster.packSize) ??
+      normalizePackIdForCollection(prevState.booster.packId);
+    if (normalizedPackId !== null) {
+      extraPackIds.push(normalizedPackId);
+    }
+  }
+
+  if (command.type === 'SKIP_BLIND') {
+    const slot = prevState.anteBlinds[prevState.currentBlindIndex];
+    if (slot?.skipTagId && nextState.skipsCount > prevState.skipsCount) {
+      extraTagIds.push(slot.skipTagId);
+    }
+  }
+
+  const extras: RunMetaDiscoveriesExtras | undefined =
+    extraConsumableIds.length > 0 || extraPackIds.length > 0 || extraTagIds.length > 0
+      ? {
+          ...(extraConsumableIds.length > 0 ? { extraConsumableIds } : {}),
+          ...(extraPackIds.length > 0 ? { extraPackIds } : {}),
+          ...(extraTagIds.length > 0 ? { extraTagIds } : {}),
+        }
+      : undefined;
+
+  return {
+    dollarsSpentDelta,
+    shopRerollsDelta,
+    celestialsUsedDelta,
+    extras,
   };
 }
 
@@ -1066,6 +1206,10 @@ export function mountBaliteApp(
     flags: {
       runStarted?: boolean;
       handPlayed?: boolean;
+      dollarsSpentDelta?: number;
+      shopRerollsDelta?: number;
+      celestialsUsedDelta?: number;
+      extras?: RunMetaDiscoveriesExtras;
       settingsPatch?: Partial<GameSettings>;
       keepActiveSnapshot?: boolean;
       flush?: boolean;
@@ -1086,6 +1230,10 @@ export function mountBaliteApp(
       handPlayed: flags.handPlayed,
       runWon: shouldMarkWon,
       runLost: shouldMarkLost,
+      dollarsSpentDelta: flags.dollarsSpentDelta,
+      shopRerollsDelta: flags.shopRerollsDelta,
+      celestialsUsedDelta: flags.celestialsUsedDelta,
+      extras: flags.extras,
       settingsPatch: flags.settingsPatch,
       revision,
       updatedAt,
@@ -1854,9 +2002,14 @@ export function mountBaliteApp(
     }
 
     const handPlayed = command.type === 'PLAY_HAND';
+    const metaTracking = extractCommandMetaTracking(prevState, command, runState);
     persistSnapshotAndMeta(runState, {
       runStarted: command.type === 'START_RUN',
       handPlayed,
+      dollarsSpentDelta: metaTracking.dollarsSpentDelta,
+      shopRerollsDelta: metaTracking.shopRerollsDelta,
+      celestialsUsedDelta: metaTracking.celestialsUsedDelta,
+      extras: metaTracking.extras,
       flush: command.type === 'CLAIM_CASHOUT' || command.type === 'NEXT_ROUND',
     });
 
@@ -2141,6 +2294,18 @@ export function mountBaliteApp(
         return;
       }
       startNewRunInternal();
+    },
+    onReplaySeed: (seed, deckId) => {
+      const startReplayRun = (): void => {
+        selectedDeckId = deckId;
+        seedInput = seed;
+        startNewRunInternal();
+      };
+      if (runState.phase === 'game_over') {
+        runWithLogicalPauseAd(startReplayRun);
+        return;
+      }
+      startReplayRun();
     },
     onResumeSavedRun: () => {
       if (!savedRunSnapshot) return;

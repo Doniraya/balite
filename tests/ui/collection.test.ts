@@ -4,7 +4,8 @@ import {
   type MetaSave,
 } from '../../src/engine';
 import { createTranslator } from '../../src/i18n';
-import { renderCollectionModal } from '../../src/ui/collection';
+import { formatVoucherCondition, renderCollectionModal } from '../../src/ui/collection';
+import { getTooltipData } from '../../src/ui/tooltip';
 
 describe('Коллекция Balite (src/ui/collection.ts)', () => {
   let root: HTMLDivElement;
@@ -437,6 +438,56 @@ describe('Коллекция Balite (src/ui/collection.ts)', () => {
 
     modal.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('отображает реальный прогресс условий Т2-привилегий (spend2500, reroll50, use50Celestials) из meta.stats в formatVoucherCondition и тултипах', () => {
+    const emptyMeta = createInitialMetaSave();
+
+    // При нулевом прогрессе возвращаются начальные счётчики без хардкодных заглушек
+    expect(formatVoucherCondition('spend2500', emptyMeta, translator)).toContain('$0');
+    expect(formatVoucherCondition('reroll50', emptyMeta, translator)).toContain('0/50');
+    expect(formatVoucherCondition('use50Celestials', emptyMeta, translator)).toContain('0/50');
+
+    const progressedMeta: MetaSave = {
+      ...emptyMeta,
+      stats: {
+        ...emptyMeta.stats,
+        totalMoneySpent: 1420,
+        totalShopRerolls: 31,
+        totalCelestialsUsed: 18,
+      },
+    };
+
+    const seedCond = formatVoucherCondition('spend2500', progressedMeta, translator);
+    const rerollCond = formatVoucherCondition('reroll50', progressedMeta, translator);
+    const telescopeCond = formatVoucherCondition('use50Celestials', progressedMeta, translator);
+
+    expect(seedCond).toContain('$1420');
+    expect(rerollCond).toContain('31/50');
+    expect(telescopeCond).toContain('18/50');
+
+    // Проверяем, что тултипы заблокированных привилегий в DOM содержат реальный прогресс из meta.stats
+    const modal = renderCollectionModal({
+      meta: progressedMeta,
+      translator,
+      initialCategory: 'vouchers',
+      onClose: vi.fn(),
+    });
+    root.appendChild(modal);
+
+    const collectLockedTooltipDescriptions = (): string[] =>
+      Array.from(modal.querySelectorAll<HTMLElement>('.card-frame--locked'))
+        .map((el) => getTooltipData(el)?.description ?? '')
+        .filter(Boolean);
+
+    const page1Tooltips = collectLockedTooltipDescriptions();
+    modal.querySelector<HTMLButtonElement>('.collection-page-btn--next')?.click();
+    const page2Tooltips = collectLockedTooltipDescriptions();
+    const allTooltips = [...page1Tooltips, ...page2Tooltips].join('\n');
+
+    expect(allTooltips).toContain('$1420');
+    expect(allTooltips).toContain('31/50');
+    expect(allTooltips).toContain('18/50');
   });
 
   it('collection.css допускает :hover только под @media (hover: hover) and (pointer: fine)', async () => {

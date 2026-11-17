@@ -6,6 +6,9 @@ import {
   evaluatePokerHand,
   getRelicDefinition,
   getRunEndSummary,
+  isCollectionItemDiscovered,
+  normalizePackIdForCollection,
+  type CollectionCategory,
 } from '../engine';
 import type {
   BlindKind,
@@ -13,6 +16,7 @@ import type {
   CharterId,
   ConsumableId,
   ConsumableInstance,
+  ConsumableKind,
   DeckId,
   Edition,
   GameCommand,
@@ -125,6 +129,7 @@ export interface ScreenActionHandlers {
   onOpenDebugPanel?: () => void;
   onSkipAnimation: () => void;
   onReturnToDeckSelect: () => void;
+  onReplaySeed?: (seed: string, deckId: DeckId) => void;
   onBackToMainMenu?: () => void;
 }
 
@@ -1343,6 +1348,7 @@ function renderDeckSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void {
   header.append(createEl('h2', 'arena-title', translator.t('ui.deckSelect.title')));
 
   const grid = createEl('div', 'deck-grid');
+  let lockedQueuePos = 0;
   for (const deckId of DECK_IDS) {
     const unlocked = vm.unlockedDecks.includes(deckId);
     const selected = vm.selectedDeckId === deckId;
@@ -1367,6 +1373,15 @@ function renderDeckSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void {
       ),
     );
     btn.append(top, createEl('span', 'deck-option__desc', deckText.description));
+    if (!unlocked) {
+      // Порядок разблокировки колод в app.ts идёт строго по очереди DECK_IDS: 1-я закрытая -> следующая победа
+      lockedQueuePos += 1;
+      const unlockHintText =
+        lockedQueuePos === 1
+          ? translator.t('ui.deckSelect.unlockHintNext')
+          : translator.t('ui.deckSelect.unlockHintRemaining', { count: lockedQueuePos });
+      btn.append(createEl('span', 'deck-option__unlock-hint', unlockHintText));
+    }
 
     btn.addEventListener('click', () => {
       if (unlocked) {
@@ -1741,6 +1756,29 @@ function formatShopPrice(cost: number, translator: Translator): string {
 }
 
 /**
+ * Сопоставляет тип расходника с соответствующей категорией в коллекции.
+ */
+function resolveConsumableCollectionCategory(kind: ConsumableKind): CollectionCategory {
+  switch (kind) {
+    case 'celestial':
+      return 'celestials';
+    case 'rune':
+      return 'runes';
+    case 'scroll':
+      return 'scrolls';
+  }
+}
+
+/**
+ * Создаёт компактный бейдж «Новое!» для ещё не открытой сущности в лавке или бустере.
+ */
+function createDiscoveryNewBadge(translator: Translator): HTMLSpanElement {
+  const badge = createEl('span', 'discovery-new-badge', translator.t('ui.shop.newBadge'));
+  badge.dataset.newBadge = 'true';
+  return badge;
+}
+
+/**
  * Отрисовывает экран лавки (фаза `shop`).
  */
 function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
@@ -1799,6 +1837,7 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
     // Не передаём price/free и interactive: кнопка-обёртка уже кликабельна и выводит цену снизу
     let frame: HTMLElement;
     let tooltip: TooltipData;
+    let isUndiscovered = false;
     const priceLabel = formatShopPrice(offer.cost, translator);
     if (offer.kind === 'relic') {
       frame = renderEntityCardFrame({
@@ -1810,6 +1849,9 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
         disabled: !affordable,
       });
       tooltip = buildRelicTooltip(offer.relic, state, translator, priceLabel);
+      isUndiscovered = vm.meta
+        ? !isCollectionItemDiscovered(vm.meta, 'relics', offer.relic.id)
+        : false;
     } else if (offer.kind === 'consumable') {
       frame = renderEntityCardFrame({
         kind: 'consumable',
@@ -1820,6 +1862,13 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
         disabled: !affordable,
       });
       tooltip = buildConsumableTooltip(offer.consumable, translator, priceLabel);
+      isUndiscovered = vm.meta
+        ? !isCollectionItemDiscovered(
+            vm.meta,
+            resolveConsumableCollectionCategory(offer.consumable.kind),
+            offer.consumable.id,
+          )
+        : false;
     } else {
       frame = renderPlayingCardFrame({
         card: offer.card,
@@ -1832,6 +1881,9 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
     }
     setTooltipData(slotBtn, tooltip);
     cleanups.push(attachCardTilt(frame));
+    if (isUndiscovered) {
+      slotBtn.append(createDiscoveryNewBadge(translator));
+    }
     slotBtn.append(
       frame,
       createEl(
@@ -1872,6 +1924,9 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
     const charterPriceLabel = formatShopPrice(voucher.cost, translator);
     cleanups.push(attachCardTilt(frame));
     setTooltipData(voucherBtn, buildCharterTooltip(voucher.charterId, translator, charterPriceLabel));
+    if (vm.meta && !isCollectionItemDiscovered(vm.meta, 'vouchers', voucher.charterId)) {
+      voucherBtn.append(createDiscoveryNewBadge(translator));
+    }
     voucherBtn.append(
       frame,
       createEl(
@@ -1918,6 +1973,16 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
     const packPriceLabel = formatShopPrice(pack.cost, translator);
     cleanups.push(attachCardTilt(frame));
     setTooltipData(packBtn, buildPackTooltip(pack, translator, packPriceLabel));
+    const collectionPackId =
+      normalizePackIdForCollection(pack.type, pack.size) ??
+      normalizePackIdForCollection(pack.packId);
+    if (
+      vm.meta &&
+      collectionPackId !== null &&
+      !isCollectionItemDiscovered(vm.meta, 'packs', collectionPackId)
+    ) {
+      packBtn.append(createDiscoveryNewBadge(translator));
+    }
     packBtn.append(
       frame,
       createEl(
@@ -1977,6 +2042,7 @@ function renderBoosterArena(ctx: RenderContext, arenaEl: HTMLElement): void {
     let canPick = !choice.picked && booster.remainingPicks > 0;
     let pickTargetIds: readonly string[] | undefined;
     let blockReason = '';
+    let isUndiscovered = false;
 
     let tooltip: TooltipData;
 
@@ -1991,6 +2057,10 @@ function renderBoosterArena(ctx: RenderContext, arenaEl: HTMLElement): void {
       });
       nameText = translator.getRelicText(choice.relic.id).name;
       tooltip = buildRelicTooltip(choice.relic, state, translator);
+      isUndiscovered =
+        !choice.picked &&
+        Boolean(vm.meta) &&
+        !isCollectionItemDiscovered(vm.meta!, 'relics', choice.relic.id);
       const hasSlot = choice.relic.edition === 'negative' || state.relics.length < maxRelics;
       if (!hasSlot) {
         canPick = false;
@@ -2007,6 +2077,14 @@ function renderBoosterArena(ctx: RenderContext, arenaEl: HTMLElement): void {
       });
       nameText = translator.getConsumableText(choice.consumable.id).name;
       tooltip = buildConsumableTooltip(choice.consumable, translator);
+      isUndiscovered =
+        !choice.picked &&
+        Boolean(vm.meta) &&
+        !isCollectionItemDiscovered(
+          vm.meta!,
+          resolveConsumableCollectionCategory(choice.consumable.kind),
+          choice.consumable.id,
+        );
       if (!canUseConsumable(state, choice.consumable, vm.selectedCardIds)) {
         canPick = false;
       } else if (vm.selectedCardIds.length > 0) {
@@ -2031,6 +2109,9 @@ function renderBoosterArena(ctx: RenderContext, arenaEl: HTMLElement): void {
 
     setTooltipData(slot, tooltip);
     cleanups.push(attachCardTilt(frame));
+    if (isUndiscovered) {
+      slot.append(createDiscoveryNewBadge(translator));
+    }
     const pickBtn = createButton(
       blockReason || translator.t('ui.actions.pickItem'),
       'ui-btn--primary ui-btn--compact',
@@ -2221,6 +2302,13 @@ function renderRunEndArena(
   seedRow.append(seedInfo, copyBtn);
 
   const actions = createEl('div', 'run-end-actions');
+  const replaySeedBtn = createButton(
+    translator.t('ui.actions.replaySeed'),
+    '',
+    () => handlers.onReplaySeed?.(summary.seed, state.deckId),
+  );
+  replaySeedBtn.dataset.action = 'replay-seed';
+
   if (isVictory) {
     actions.append(
       createButton(
@@ -2233,6 +2321,7 @@ function renderRunEndArena(
         'ui-btn--primary',
         handlers.onReturnToDeckSelect,
       ),
+      replaySeedBtn,
     );
   } else {
     actions.append(
@@ -2241,6 +2330,7 @@ function renderRunEndArena(
         'ui-btn--primary',
         handlers.onStartRun,
       ),
+      replaySeedBtn,
     );
   }
   if (handlers.onBackToMainMenu) {

@@ -74,6 +74,7 @@ function createMockHandlers(): ScreenActionHandlers {
     onSeedInput: vi.fn(),
     onRandomSeed: vi.fn(),
     onStartRun: vi.fn(),
+    onReplaySeed: vi.fn(),
     onResumeSavedRun: vi.fn(),
     onCommand: vi.fn(),
     onToggleCard: vi.fn(),
@@ -1579,6 +1580,412 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       // Резные деревянные лотки для слотов в дубовой балке
       expect(css).toMatch(/\.inventory-slot-placeholder\s*\{[^}]*inset\s+0\s+3px/);
       expect(css).not.toContain('background: rgba(6, 14, 11, 0.55);');
+    });
+  });
+
+  describe('Story 6.4: Повтор сида, подсказки колод и бейджи Новое!', () => {
+    it('экраны victory и game_over: кнопка Повторить расклад вызывает onReplaySeed(seed, deckId) на ru и en', () => {
+      const handlers = createMockHandlers();
+
+      const winBase = createInitialRunState('b_blue', 'SEED_WIN_77');
+      const winState: RunState = {
+        ...winBase,
+        phase: 'victory',
+      };
+      renderRunView(
+        root,
+        createViewModel(winState, { translator: createTranslator('ru') }),
+        handlers,
+      );
+      const winReplayBtn = root.querySelector<HTMLButtonElement>('[data-action="replay-seed"]');
+      expect(winReplayBtn).not.toBeNull();
+      expect(winReplayBtn?.textContent).toBe('Повторить расклад (тот же сид)');
+      winReplayBtn?.click();
+      expect(handlers.onReplaySeed).toHaveBeenCalledWith('SEED_WIN_77', 'b_blue');
+
+      const lossBase = createInitialRunState('b_yellow', 'SEED_LOSS_42');
+      const lossState: RunState = {
+        ...lossBase,
+        phase: 'game_over',
+      };
+      renderRunView(
+        root,
+        createViewModel(lossState, { translator: createTranslator('en') }),
+        handlers,
+      );
+      const lossReplayBtn = root.querySelector<HTMLButtonElement>('[data-action="replay-seed"]');
+      expect(lossReplayBtn).not.toBeNull();
+      expect(lossReplayBtn?.textContent).toBe('Replay Run (Same Seed)');
+      lossReplayBtn?.click();
+      expect(handlers.onReplaySeed).toHaveBeenCalledWith('SEED_LOSS_42', 'b_yellow');
+    });
+
+    it('экран deck_select: выводит подсказки очереди разблокировки закрытых колод на ru и en', () => {
+      const state: RunState = {
+        ...createInitialRunState('b_red', 'DECK_HINTS'),
+        phase: 'deck_select',
+      };
+      const handlers = createMockHandlers();
+
+      // 1-я закрытая (b_blue) -> unlockHintNext, 2-я (b_yellow) -> (2), 3-я (b_black) -> (3)
+      renderRunView(
+        root,
+        createViewModel(state, {
+          translator: createTranslator('ru'),
+          unlockedDecks: ['b_red'],
+          selectedDeckId: 'b_red',
+        }),
+        handlers,
+      );
+
+      expect(root.querySelector('[data-deck-id="b_red"] .deck-option__unlock-hint')).toBeNull();
+      expect(
+        root.querySelector('[data-deck-id="b_blue"] .deck-option__unlock-hint')?.textContent,
+      ).toBe('Победите в забеге, чтобы открыть эту колоду');
+      expect(
+        root.querySelector('[data-deck-id="b_yellow"] .deck-option__unlock-hint')?.textContent,
+      ).toBe('Победите в забегах (осталось побед: 2)');
+      expect(
+        root.querySelector('[data-deck-id="b_black"] .deck-option__unlock-hint')?.textContent,
+      ).toBe('Победите в забегах (осталось побед: 3)');
+
+      // Сдвигаем очередь при открытых b_red и b_blue (EN)
+      renderRunView(
+        root,
+        createViewModel(state, {
+          translator: createTranslator('en'),
+          unlockedDecks: ['b_red', 'b_blue'],
+          selectedDeckId: 'b_blue',
+        }),
+        handlers,
+      );
+
+      expect(root.querySelector('[data-deck-id="b_red"] .deck-option__unlock-hint')).toBeNull();
+      expect(root.querySelector('[data-deck-id="b_blue"] .deck-option__unlock-hint')).toBeNull();
+      expect(
+        root.querySelector('[data-deck-id="b_yellow"] .deck-option__unlock-hint')?.textContent,
+      ).toBe('Win a run to unlock this deck');
+      expect(
+        root.querySelector('[data-deck-id="b_black"] .deck-option__unlock-hint')?.textContent,
+      ).toBe('Win runs to unlock (2 left)');
+    });
+
+    it('экраны shop и booster: бейдж Новое! отображается строго при наличии meta и только для неоткрытых сущностей', () => {
+      const base = createPlayingState('NEW_BADGES');
+      const shopState: RunState = {
+        ...base,
+        phase: 'shop',
+        dollars: 50,
+        shop: {
+          offers: [
+            {
+              uid: 'off_relic_new',
+              kind: 'relic',
+              relic: createRelicInstance('j_blueprint', 'r_new'),
+              cost: 8,
+              baseCost: 8,
+              sold: false,
+            },
+            {
+              uid: 'off_relic_seen',
+              kind: 'relic',
+              relic: createRelicInstance('j_joker', 'r_seen'),
+              cost: 4,
+              baseCost: 4,
+              sold: false,
+            },
+            {
+              uid: 'off_cons_new',
+              kind: 'consumable',
+              consumable: createConsumableInstance('c_jupiter', 'c_new'),
+              cost: 3,
+              baseCost: 3,
+              sold: false,
+            },
+            {
+              uid: 'off_cons_seen',
+              kind: 'consumable',
+              consumable: createConsumableInstance('c_hermit', 'c_seen'),
+              cost: 3,
+              baseCost: 3,
+              sold: false,
+            },
+            {
+              uid: 'off_card',
+              kind: 'card',
+              card: createPlayingCard({ id: 'shop_card_1', suit: 'hearts', rank: 14 }),
+              cost: 3,
+              baseCost: 3,
+              sold: false,
+            },
+          ],
+          voucher: {
+            uid: 'v_new',
+            charterId: 'v_grabber',
+            cost: 10,
+            baseCost: 10,
+            sold: false,
+          },
+          packs: [
+            {
+              uid: 'pack_arc_new',
+              packId: 'arcana_normal',
+              type: 'arcana',
+              size: 'normal',
+              cost: 4,
+              baseCost: 4,
+              totalCards: 3,
+              chooseCount: 1,
+              purchased: false,
+            },
+            {
+              uid: 'pack_cel_seen',
+              packId: 'celestial_jumbo',
+              type: 'celestial',
+              size: 'jumbo',
+              cost: 6,
+              baseCost: 6,
+              totalCards: 5,
+              chooseCount: 1,
+              purchased: false,
+            },
+            {
+              uid: 'pack_spec',
+              packId: 'spectral_normal',
+              type: 'spectral',
+              size: 'normal',
+              cost: 4,
+              baseCost: 4,
+              totalCards: 2,
+              chooseCount: 1,
+              purchased: false,
+            },
+          ],
+          rerollCost: 5,
+          tempRerollCost: null,
+          rerollsUsedThisShop: 0,
+        },
+      };
+
+      const handlers = createMockHandlers();
+
+      // Без meta бейджи не показываются (сохранение совместимости изолированных тестов)
+      renderRunView(root, createViewModel(shopState), handlers);
+      expect(root.querySelectorAll('[data-new-badge="true"]').length).toBe(0);
+
+      // С переданной meta бейджи Новое! появляются только на неоткрытых позициях
+      const baseMeta = createInitialMetaSave(1_000, { lang: 'ru' });
+      const meta = {
+        ...baseMeta,
+        discoveredRelics: ['j_joker' as const],
+        discoveredConsumables: ['c_hermit' as const],
+        discoveredCharters: [],
+        discoveredPacks: ['pack_celestial_jumbo'],
+      };
+
+      renderRunView(
+        root,
+        createViewModel(shopState, { translator: createTranslator('ru'), meta }),
+        handlers,
+      );
+
+      expect(
+        root.querySelector('[data-offer-uid="off_relic_new"] [data-new-badge="true"]')?.textContent,
+      ).toBe('Новое!');
+      expect(
+        root.querySelector('[data-offer-uid="off_cons_new"] [data-new-badge="true"]')?.textContent,
+      ).toBe('Новое!');
+      expect(root.querySelector('[data-offer-uid="off_relic_seen"] [data-new-badge="true"]')).toBeNull();
+      expect(root.querySelector('[data-offer-uid="off_cons_seen"] [data-new-badge="true"]')).toBeNull();
+      expect(root.querySelector('[data-offer-uid="off_card"] [data-new-badge="true"]')).toBeNull();
+      expect(
+        root.querySelector('[data-charter-id="v_grabber"] [data-new-badge="true"]')?.textContent,
+      ).toBe('Новое!');
+      expect(
+        root.querySelector('[data-pack-uid="pack_arc_new"] [data-new-badge="true"]')?.textContent,
+      ).toBe('Новое!');
+      expect(root.querySelector('[data-pack-uid="pack_cel_seen"] [data-new-badge="true"]')).toBeNull();
+      // Сундук spectral пока не входит в каталог PACK_COLLECTION_IDS -> бейдж не показывается
+      expect(root.querySelector('[data-pack-uid="pack_spec"] [data-new-badge="true"]')).toBeNull();
+
+      // Проверяем английскую локализацию и открытую грамоту
+      renderRunView(
+        root,
+        createViewModel(shopState, {
+          translator: createTranslator('en'),
+          meta: {
+            ...meta,
+            discoveredCharters: ['v_grabber' as const],
+          },
+        }),
+        handlers,
+      );
+      expect(
+        root.querySelector('[data-offer-uid="off_relic_new"] [data-new-badge="true"]')?.textContent,
+      ).toBe('New!');
+      expect(root.querySelector('[data-charter-id="v_grabber"] [data-new-badge="true"]')).toBeNull();
+
+      // Проверяем экран бустера: бейдж на неоткрытых relic/consumable, отсутствует на picked, seen и playing card
+      const boosterCard = createPlayingCard({ id: 'b_card_1', suit: 'spades', rank: 10 });
+      const boosterState: RunState = {
+        ...base,
+        phase: 'booster',
+        deck: [...base.deck, boosterCard],
+        booster: {
+          packId: 'spectral_normal',
+          packType: 'spectral',
+          packSize: 'normal',
+          remainingPicks: 1,
+          drawnHandCardIds: [],
+          fromTag: false,
+          choices: [
+            {
+              uid: 'ch_relic_new',
+              kind: 'relic',
+              relic: createRelicInstance('j_banner', 'br_new'),
+              picked: false,
+            },
+            {
+              uid: 'ch_cons_new',
+              kind: 'consumable',
+              consumable: createConsumableInstance('c_black_hole', 'bc_new'),
+              picked: false,
+            },
+            {
+              uid: 'ch_cons_seen',
+              kind: 'consumable',
+              consumable: createConsumableInstance('c_hermit', 'bc_seen'),
+              picked: false,
+            },
+            {
+              uid: 'ch_relic_picked',
+              kind: 'relic',
+              relic: createRelicInstance('j_blueprint', 'br_picked'),
+              picked: true,
+            },
+            {
+              uid: 'ch_card',
+              kind: 'card',
+              card: boosterCard,
+              picked: false,
+            },
+          ],
+        },
+      };
+
+      renderRunView(root, createViewModel(boosterState), handlers);
+      expect(root.querySelectorAll('[data-new-badge="true"]').length).toBe(0);
+
+      renderRunView(
+        root,
+        createViewModel(boosterState, { translator: createTranslator('ru'), meta }),
+        handlers,
+      );
+      expect(
+        root.querySelector('[data-choice-uid="ch_relic_new"] [data-new-badge="true"]')?.textContent,
+      ).toBe('Новое!');
+      expect(
+        root.querySelector('[data-choice-uid="ch_cons_new"] [data-new-badge="true"]')?.textContent,
+      ).toBe('Новое!');
+      expect(root.querySelector('[data-choice-uid="ch_cons_seen"] [data-new-badge="true"]')).toBeNull();
+      expect(
+        root.querySelector('[data-choice-uid="ch_relic_picked"] [data-new-badge="true"]'),
+      ).toBeNull();
+      expect(root.querySelector('[data-choice-uid="ch_card"] [data-new-badge="true"]')).toBeNull();
+    });
+
+    it('строки Story 6.4 (replay-seed, подсказки колод и бейджи Новое!) не содержат запрещённых слов 6+/12+ и плейсхолдеров', () => {
+      const base = createPlayingState('MODERATION_64');
+      const meta = createInitialMetaSave(1_000, { lang: 'ru' });
+
+      const scenarios: RunState[] = [
+        { ...base, phase: 'deck_select' },
+        {
+          ...base,
+          phase: 'shop',
+          shop: {
+            offers: [
+              {
+                uid: 'm_o1',
+                kind: 'relic',
+                relic: createRelicInstance('j_blueprint', 'mr1'),
+                cost: 8,
+                baseCost: 8,
+                sold: false,
+              },
+            ],
+            voucher: {
+              uid: 'm_v1',
+              charterId: 'v_grabber',
+              cost: 10,
+              baseCost: 10,
+              sold: false,
+            },
+            packs: [
+              {
+                uid: 'm_p1',
+                packId: 'arcana_normal',
+                type: 'arcana',
+                size: 'normal',
+                cost: 4,
+                baseCost: 4,
+                totalCards: 3,
+                chooseCount: 1,
+                purchased: false,
+              },
+            ],
+            rerollCost: 5,
+            tempRerollCost: null,
+            rerollsUsedThisShop: 0,
+          },
+        },
+        {
+          ...base,
+          phase: 'booster',
+          booster: {
+            packId: 'celestial_normal',
+            packType: 'celestial',
+            packSize: 'normal',
+            remainingPicks: 1,
+            drawnHandCardIds: [],
+            fromTag: false,
+            choices: [
+              {
+                uid: 'm_ch1',
+                kind: 'consumable',
+                consumable: createConsumableInstance('c_jupiter', 'mc1'),
+                picked: false,
+              },
+            ],
+          },
+        },
+        { ...base, phase: 'victory' },
+        { ...base, phase: 'game_over' },
+      ];
+
+      for (const lang of ['ru', 'en'] as const) {
+        const translator = createTranslator(lang);
+        const patterns = lang === 'ru' ? FORBIDDEN_RU_PATTERNS : FORBIDDEN_EN_PATTERNS;
+
+        for (const state of scenarios) {
+          renderRunView(
+            root,
+            createViewModel(state, {
+              translator,
+              meta,
+              unlockedDecks: ['b_red'],
+            }),
+            createMockHandlers(),
+          );
+          const text = root.textContent ?? '';
+          expect(text).not.toMatch(/\{[a-zA-Z0-9_]+\}/);
+          for (const pattern of patterns) {
+            expect(text, `Найдено запрещённое слово (${lang}, ${state.phase}): ${pattern}`).not.toMatch(
+              pattern,
+            );
+          }
+        }
+      }
     });
   });
 });

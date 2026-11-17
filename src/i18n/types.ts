@@ -247,6 +247,7 @@ export interface UiDictionary {
     readonly continueRun: string;
     readonly newRun: string;
     readonly continueEndless: string;
+    readonly replaySeed: string;
     readonly playAgain: string;
     readonly toDeckSelect: string;
     readonly copy: string;
@@ -266,6 +267,8 @@ export interface UiDictionary {
     readonly seedPlaceholder: string;
     readonly unlocked: string;
     readonly locked: string;
+    readonly unlockHintNext: string;
+    readonly unlockHintRemaining: string;
   };
   readonly blindSelect: {
     readonly title: string;
@@ -305,6 +308,7 @@ export interface UiDictionary {
     readonly notEnoughGold: string;
     readonly free: string;
     readonly charterEmpty: string;
+    readonly newBadge: string;
   };
   readonly booster: {
     readonly picksLeft: string;
@@ -406,6 +410,8 @@ export interface UiDictionary {
     readonly discardPile: string;
     readonly inHand: string;
     readonly totalCards: string;
+    readonly playedThisAnteBadge: string;
+    readonly playedThisAnteHint: string;
   };
   readonly runEnd: {
     readonly victoryTitle: string;

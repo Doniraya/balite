@@ -116,6 +116,7 @@ export const EN_DICTIONARY: LocaleDictionary = {
       continueRun: 'Continue Run',
       newRun: 'New Run',
       continueEndless: 'Endless Mode',
+      replaySeed: 'Replay Run (Same Seed)',
       playAgain: 'Play Again',
       toDeckSelect: 'Deck Select',
       copy: 'Copy',
@@ -135,6 +136,8 @@ export const EN_DICTIONARY: LocaleDictionary = {
       seedPlaceholder: 'Enter seed or leave blank',
       unlocked: 'Unlocked',
       locked: 'Locked',
+      unlockHintNext: 'Win a run to unlock this deck',
+      unlockHintRemaining: 'Win runs to unlock ({count} left)',
     },
     blindSelect: {
       title: 'Floor {ante} Quests',
@@ -174,6 +177,7 @@ export const EN_DICTIONARY: LocaleDictionary = {
       notEnoughGold: 'Not enough Gold',
       free: 'Free',
       charterEmpty: 'Rank Privilege already claimed',
+      newBadge: 'New!',
     },
     booster: {
       picksLeft: 'Picks left: {count}',
@@ -290,6 +294,8 @@ export const EN_DICTIONARY: LocaleDictionary = {
       discardPile: 'Discard Pile ({count})',
       inHand: 'In Hand ({count})',
       totalCards: 'Total cards: {count}',
+      playedThisAnteBadge: 'Played',
+      playedThisAnteHint: 'Already played on this floor',
     },
     runEnd: {
       victoryTitle: 'Victory!',

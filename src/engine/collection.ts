@@ -12,11 +12,15 @@ import {
   TAG_IDS,
   type BossId,
   type CharterId,
+  type ConsumableId,
   type DeckId,
   type Edition,
   type Enhancement,
   type MetaSave,
+  type PackSize,
+  type PackType,
   type RelicId,
+  type RunState,
   type Seal,
   type TagId,
 } from './types';
@@ -343,5 +347,202 @@ export function resetCollection(meta: MetaSave): MetaSave {
     discoveredPacks: [],
     discoveredEditions: ['base'],
     seenCollectionItems: [],
+  };
+}
+
+const COLLECTION_PACK_ID_SET: ReadonlySet<string> = new Set(COLLECTION_PACK_IDS);
+const RELIC_ID_SET: ReadonlySet<RelicId> = new Set(RELIC_IDS);
+const CONSUMABLE_ID_SET: ReadonlySet<ConsumableId> = new Set([
+  ...CELESTIAL_IDS,
+  ...SCROLL_IDS,
+  ...RUNE_IDS,
+]);
+const CHARTER_ID_SET: ReadonlySet<CharterId> = new Set(CHARTER_IDS);
+const BOSS_ID_SET: ReadonlySet<BossId> = new Set(BOSS_IDS);
+const TAG_ID_SET: ReadonlySet<TagId> = new Set(TAG_IDS);
+const REGULAR_MONSTER_ID_SET: ReadonlySet<string> = new Set(REGULAR_MONSTER_IDS);
+const EDITION_ID_SET: ReadonlySet<Edition> = new Set(EDITIONS);
+
+/**
+ * Дополнительные открытия, зафиксированные в рамках текущего действия/хода UI
+ * вне мгновенного снимка RunState (использованные расходники, открытые бустеры и т.п.).
+ */
+export interface RunMetaDiscoveriesExtras {
+  readonly extraConsumableIds?: readonly ConsumableId[];
+  readonly extraTagIds?: readonly TagId[];
+  readonly extraPackIds?: readonly string[];
+  readonly extraEditions?: readonly Edition[];
+}
+
+/**
+ * Набор открытых коллекционных идентификаторов, собранный из RunState.
+ */
+export interface RunMetaDiscoveries {
+  readonly discoveredRelics: readonly RelicId[];
+  readonly discoveredConsumables: readonly ConsumableId[];
+  readonly discoveredCharters: readonly CharterId[];
+  readonly discoveredBosses: readonly BossId[];
+  readonly discoveredTags: readonly TagId[];
+  readonly discoveredMonsters: readonly string[];
+  readonly discoveredPacks: readonly string[];
+  readonly discoveredEditions: readonly Edition[];
+}
+
+function pushUniqueValidId<T extends string>(
+  target: T[],
+  seen: Set<T>,
+  id: T | null | undefined,
+  allowed: ReadonlySet<T>,
+): void {
+  if (typeof id === 'string' && allowed.has(id) && !seen.has(id)) {
+    seen.add(id);
+    target.push(id);
+  }
+}
+
+/**
+ * Сопоставляет формат бустер-набора из shop.ts ('p_arcana_normal' или пара packType + packSize)
+ * с каноническим идентификатором из COLLECTION_PACK_IDS ('pack_arcana_normal' и т.д.).
+ * Для наборов вне каталога коллекции (например, 'spectral') возвращает null.
+ */
+export function normalizePackIdForCollection(
+  packTypeOrId: PackType | string,
+  packSize?: PackSize | string,
+): string | null {
+  if (packSize !== undefined) {
+    const candidate = `pack_${packTypeOrId}_${packSize}`;
+    return COLLECTION_PACK_ID_SET.has(candidate) ? candidate : null;
+  }
+
+  const trimmed = packTypeOrId.trim();
+  if (COLLECTION_PACK_ID_SET.has(trimmed)) {
+    return trimmed;
+  }
+
+  const shopMatch = /^p_([a-z]+)_([a-z]+)(?:_\d+)?$/i.exec(trimmed);
+  if (shopMatch) {
+    const candidate = `pack_${shopMatch[1]!.toLowerCase()}_${shopMatch[2]!.toLowerCase()}`;
+    return COLLECTION_PACK_ID_SET.has(candidate) ? candidate : null;
+  }
+
+  return null;
+}
+
+/**
+ * Чистая функция сбора всех коллекционных открытий из текущего состояния забега RunState
+ * и опциональных событийных добавок (без мутаций, DOM и Math.random).
+ */
+export function collectRunMetaDiscoveries(
+  state: RunState,
+  extras: RunMetaDiscoveriesExtras = {},
+): RunMetaDiscoveries {
+  const discoveredRelics: RelicId[] = [];
+  const seenRelics = new Set<RelicId>();
+  const discoveredConsumables: ConsumableId[] = [];
+  const seenConsumables = new Set<ConsumableId>();
+  const discoveredCharters: CharterId[] = [];
+  const seenCharters = new Set<CharterId>();
+  const discoveredBosses: BossId[] = [];
+  const seenBosses = new Set<BossId>();
+  const discoveredTags: TagId[] = [];
+  const seenTags = new Set<TagId>();
+  const discoveredMonsters: string[] = [];
+  const seenMonsters = new Set<string>();
+  const discoveredPacks: string[] = [];
+  const seenPacks = new Set<string>();
+  const discoveredEditions: Edition[] = [];
+  const seenEditions = new Set<Edition>();
+
+  const pushEdition = (edition: Edition | undefined): void => {
+    if (edition && edition !== 'base') {
+      pushUniqueValidId(discoveredEditions, seenEditions, edition, EDITION_ID_SET);
+    }
+  };
+
+  for (const relic of state.relics) {
+    pushUniqueValidId(discoveredRelics, seenRelics, relic.id, RELIC_ID_SET);
+    pushEdition(relic.edition);
+  }
+
+  for (const consumable of state.consumables) {
+    pushUniqueValidId(discoveredConsumables, seenConsumables, consumable.id, CONSUMABLE_ID_SET);
+    pushEdition(consumable.edition);
+  }
+  pushUniqueValidId(
+    discoveredConsumables,
+    seenConsumables,
+    state.lastUsedConsumableId,
+    CONSUMABLE_ID_SET,
+  );
+  if (extras.extraConsumableIds) {
+    for (const id of extras.extraConsumableIds) {
+      pushUniqueValidId(discoveredConsumables, seenConsumables, id, CONSUMABLE_ID_SET);
+    }
+  }
+
+  for (const charterId of state.charters) {
+    pushUniqueValidId(discoveredCharters, seenCharters, charterId, CHARTER_ID_SET);
+  }
+
+  for (const slot of state.anteBlinds) {
+    pushUniqueValidId(discoveredBosses, seenBosses, slot.bossId, BOSS_ID_SET);
+    if (slot.status === 'skipped') {
+      pushUniqueValidId(discoveredTags, seenTags, slot.skipTagId, TAG_ID_SET);
+    }
+  }
+
+  for (const tagId of state.pendingTags) {
+    pushUniqueValidId(discoveredTags, seenTags, tagId, TAG_ID_SET);
+  }
+  if (extras.extraTagIds) {
+    for (const tagId of extras.extraTagIds) {
+      pushUniqueValidId(discoveredTags, seenTags, tagId, TAG_ID_SET);
+    }
+  }
+
+  if (Number.isInteger(state.ante) && state.ante >= 2 && state.ante <= 8) {
+    for (const slot of state.anteBlinds) {
+      if (
+        (slot.kind === 'small' || slot.kind === 'big') &&
+        (slot.status === 'defeated' || (slot.status === 'current' && state.phase !== 'blind_select'))
+      ) {
+        const monsterId = `m_ante_${state.ante}_${slot.kind}`;
+        pushUniqueValidId(discoveredMonsters, seenMonsters, monsterId, REGULAR_MONSTER_ID_SET);
+      }
+    }
+  }
+
+  if (state.booster) {
+    const boosterPackId = normalizePackIdForCollection(
+      state.booster.packType,
+      state.booster.packSize,
+    );
+    pushUniqueValidId(discoveredPacks, seenPacks, boosterPackId, COLLECTION_PACK_ID_SET);
+  }
+  if (extras.extraPackIds) {
+    for (const rawPackId of extras.extraPackIds) {
+      const normalizedPackId = normalizePackIdForCollection(rawPackId);
+      pushUniqueValidId(discoveredPacks, seenPacks, normalizedPackId, COLLECTION_PACK_ID_SET);
+    }
+  }
+
+  for (const card of state.deck) {
+    pushEdition(card.edition);
+  }
+  if (extras.extraEditions) {
+    for (const edition of extras.extraEditions) {
+      pushEdition(edition);
+    }
+  }
+
+  return {
+    discoveredRelics,
+    discoveredConsumables,
+    discoveredCharters,
+    discoveredBosses,
+    discoveredTags,
+    discoveredMonsters,
+    discoveredPacks,
+    discoveredEditions,
   };
 }

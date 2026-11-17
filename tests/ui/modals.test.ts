@@ -8,6 +8,7 @@ import {
   createInitialMetaSave,
   createInitialRunState,
   createPlayingCard,
+  unlockAllCollection,
   type BossId,
   type CharterId,
   type ConsumableId,
@@ -29,6 +30,7 @@ import {
   type InspectorCallbacks,
 } from '../../src/ui/inspector';
 import {
+  computeMetaStatsSummary,
   renderDeckModal,
   renderHandReferenceModal,
   renderSettingsModal,
@@ -1051,5 +1053,171 @@ describe('Модальные окна (src/ui/modals.ts)', () => {
     expect(openBtn).not.toBeNull();
     openBtn?.click();
     expect(onOpenDebugPanel).toHaveBeenCalledTimes(1);
+  });
+
+  it('синхронизирует сводку открытий в Статистике (computeMetaStatsSummary) со всеми категориями Коллекции (1..143, до 100%)', () => {
+    const ru = createTranslator('ru');
+
+    // Новый профиль: открыта 1 стартовая колода из 143 всех открываемых сущностей
+    const freshMeta = createInitialMetaSave(1000, { lang: 'ru' });
+    const freshSummary = computeMetaStatsSummary(freshMeta);
+    expect(freshSummary.discoveredCount).toBe(1);
+    expect(freshSummary.totalDiscoverable).toBe(143);
+    expect(freshSummary.discoveryPercent).toBe(1);
+
+    const freshModal = renderSettingsModal({
+      settings: freshMeta.settings,
+      meta: freshMeta,
+      initialTab: 'stats',
+      translator: ru,
+      onChangeSettings: vi.fn(),
+      onClose: vi.fn(),
+    });
+    assertCleanLocalizedElement(freshModal);
+    expect(freshModal.querySelector('[data-stats-panel]')?.textContent).toContain('1% (1/143)');
+
+    // Учитываются новые категории Коллекции (талоны, монстры кроме 2 стартовых, сундуки, издания кроме base)
+    const partialMeta: MetaSave = {
+      ...freshMeta,
+      discoveredTags: ['tag_uncommon', 'tag_rare'],
+      discoveredMonsters: ['m_ante_1_small', 'm_ante_1_big', 'm_ante_2_small'],
+      discoveredPacks: ['pack_arcana_normal', 'pack_celestial_normal'],
+      discoveredEditions: ['base', 'foil', 'holo'],
+      stats: {
+        ...freshMeta.stats,
+        totalMoneySpent: 350,
+        totalShopRerolls: 12,
+        totalCelestialsUsed: 7,
+      },
+    };
+    const partialSummary = computeMetaStatsSummary(partialMeta);
+    // 1 (колода) + 2 (талона) + 1 (монстр поверх 2 базовых) + 2 (сундука) + 2 (издания поверх base) = 8
+    expect(partialSummary.discoveredCount).toBe(8);
+    expect(partialSummary.totalDiscoverable).toBe(143);
+    expect(partialSummary.totalMoneySpent).toBe(350);
+    expect(partialSummary.totalShopRerolls).toBe(12);
+    expect(partialSummary.totalCelestialsUsed).toBe(7);
+
+    // Полное открытие всех сущностей не превышает 100% (143/143)
+    const fullMeta = unlockAllCollection(freshMeta);
+    const fullSummary = computeMetaStatsSummary(fullMeta);
+    expect(fullSummary.discoveredCount).toBe(143);
+    expect(fullSummary.totalDiscoverable).toBe(143);
+    expect(fullSummary.discoveryPercent).toBe(100);
+
+    const fullModal = renderSettingsModal({
+      settings: fullMeta.settings,
+      meta: fullMeta,
+      initialTab: 'stats',
+      translator: ru,
+      onChangeSettings: vi.fn(),
+      onClose: vi.fn(),
+    });
+    assertCleanLocalizedElement(fullModal);
+    expect(fullModal.querySelector('[data-stats-panel]')?.textContent).toContain('100% (143/143)');
+  });
+
+  it('помечает сыгранные на этаже (playedThisAnte) и ослабленные (debuffed) карты в окне «Состав колоды» (вкл. каменные карты и тултипы) без запрещённых слов', () => {
+    for (const lang of ['ru', 'en'] as const) {
+      const translator = createTranslator(lang);
+      const baseRun = createTestState();
+      const stoneCardId = baseRun.deck[3]!.id;
+      const modifiedDeck: PlayingCard[] = baseRun.deck.map((c, idx) => {
+        if (idx === 0) return { ...c, playedThisAnte: true };
+        if (idx === 1) return { ...c, debuffed: true };
+        if (idx === 2) return { ...c, playedThisAnte: true, debuffed: true };
+        if (idx === 3) {
+          return { ...c, enhancement: 'stone', playedThisAnte: true, debuffed: true };
+        }
+        return c;
+      });
+      const run: RunState = {
+        ...baseRun,
+        deck: modifiedDeck,
+      };
+
+      const modal = renderDeckModal(run, translator, vi.fn());
+      // Переключаемся на вкладку «Полная колода», чтобы проверить все карты колоды
+      modal.querySelector<HTMLButtonElement>('[data-deck-tab="full"]')?.click();
+
+      assertCleanLocalizedElement(modal);
+
+      const playedCards = modal.querySelectorAll<HTMLElement>(
+        '.card-frame.is-played-this-ante[data-played-this-ante="true"]',
+      );
+      // playedSuitCard + bothSuitCard + stoneCard = 3
+      expect(playedCards.length).toBe(3);
+
+      const debuffedCards = modal.querySelectorAll<HTMLElement>(
+        '.card-frame.is-debuffed[data-debuffed="true"]',
+      );
+      // debuffedSuitCard + bothSuitCard + stoneCard = 3
+      expect(debuffedCards.length).toBe(3);
+
+      const playedBadges = modal.querySelectorAll<HTMLElement>(
+        '[data-deck-badge="played-this-ante"]',
+      );
+      expect(playedBadges.length).toBe(3);
+      for (const badge of playedBadges) {
+        expect(badge.textContent).toBe(translator.t('ui.deckModal.playedThisAnteBadge'));
+      }
+
+      const debuffBadges = modal.querySelectorAll<HTMLElement>('[data-deck-badge="debuffed"]');
+      expect(debuffBadges.length).toBe(3);
+      for (const badge of debuffBadges) {
+        expect(badge.textContent).toBe(translator.t('ui.hud.debuffedBadge'));
+      }
+
+      // Проверяем каменную карту в секции stoneCards
+      const stoneCardEl = modal.querySelector<HTMLElement>(
+        `.deck-stone-row [data-card-id="${stoneCardId}"]`,
+      );
+      expect(stoneCardEl).not.toBeNull();
+      expect(stoneCardEl?.classList.contains('is-played-this-ante')).toBe(true);
+      expect(stoneCardEl?.classList.contains('is-debuffed')).toBe(true);
+      expect(
+        stoneCardEl?.querySelector('[data-deck-badge="played-this-ante"]')?.textContent,
+      ).toBe(translator.t('ui.deckModal.playedThisAnteBadge'));
+      expect(stoneCardEl?.querySelector('[data-deck-badge="debuffed"]')?.textContent).toBe(
+        translator.t('ui.hud.debuffedBadge'),
+      );
+
+      // Проверяем тултипы сыгранной и каменной карт (подсказка playedThisAnteHint + отсутствие запрещённых слов)
+      for (const cardEl of Array.from(playedCards)) {
+        const tooltip = getTooltipData(cardEl);
+        expect(tooltip).toBeDefined();
+        expect(tooltip?.description).toContain(translator.t('ui.deckModal.playedThisAnteHint'));
+        expect(
+          tooltip?.badges?.some(
+            (b) => b.label === translator.t('ui.deckModal.playedThisAnteBadge'),
+          ),
+        ).toBe(true);
+        const tooltipText = `${tooltip?.title ?? ''} ${tooltip?.subtitle ?? ''} ${tooltip?.description ?? ''} ${(tooltip?.badges ?? []).map((b) => b.label).join(' ')}`;
+        for (const pattern of FORBIDDEN_TEXT_PATTERNS) {
+          expect(tooltipText).not.toMatch(pattern);
+        }
+      }
+
+      for (const cardEl of Array.from(debuffedCards)) {
+        const tooltip = getTooltipData(cardEl);
+        expect(tooltip).toBeDefined();
+        expect(
+          tooltip?.badges?.some((b) => b.label === translator.t('ui.hud.debuffedBadge')),
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('modals.css допускает :hover только под @media (hover: hover) and (pointer: fine)', async () => {
+    const fsModule = 'node:fs';
+    const { readFileSync } = (await import(/* @vite-ignore */ fsModule)) as {
+      readFileSync: (file: string, encoding: 'utf8') => string;
+    };
+    const css = readFileSync('src/ui/modals.css', 'utf8');
+    const withoutFineHover = css.replace(
+      /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)\s*\{[\s\S]*?\}\s*\}/g,
+      '',
+    );
+    expect(withoutFineHover).not.toMatch(/:hover\b/);
   });
 });

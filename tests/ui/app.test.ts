@@ -2517,4 +2517,327 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
       mounted.destroy();
     });
   });
+
+  describe('Story 6.1 & 6.4: авто-учёт коллекции, статистика привилегий и повтор расклада', () => {
+    it('автоматически учитывает открытия коллекции и накопительную статистику в лавке (покупка+применение тома, издание, грамота, реролл, сундук)', async () => {
+      const nowMs = 2_000_000;
+      const base = createInitialRunState('b_red', 'SHOP_META');
+      const shopBase = dispatch(base, { type: 'SELECT_BLIND' }).nextState;
+      const jupiter = createConsumableInstance('c_jupiter', 'shop_jup');
+      const foilRelic = createRelicInstance('j_blueprint', 'shop_bp', 'foil');
+
+      const shopState: RunState = {
+        ...shopBase,
+        phase: 'shop',
+        round: 1,
+        dollars: 50,
+        shop: {
+          offers: [
+            {
+              uid: 'off_cel',
+              kind: 'consumable',
+              consumable: jupiter,
+              cost: 3,
+              baseCost: 3,
+              sold: false,
+            },
+            {
+              uid: 'off_foil',
+              kind: 'relic',
+              relic: foilRelic,
+              cost: 6,
+              baseCost: 6,
+              sold: false,
+            },
+          ],
+          voucher: {
+            uid: 'v_grab',
+            charterId: 'v_grabber',
+            cost: 10,
+            baseCost: 10,
+            sold: false,
+          },
+          packs: [
+            {
+              uid: 'pack_arc',
+              packId: 'arcana_normal',
+              type: 'arcana',
+              size: 'normal',
+              cost: 4,
+              baseCost: 4,
+              totalCards: 3,
+              chooseCount: 1,
+              purchased: false,
+            },
+          ],
+          rerollCost: 5,
+          tempRerollCost: null,
+          rerollsUsedThisShop: 0,
+        },
+      };
+
+      const meta = createInitialMetaSave(nowMs, {
+        lang: 'ru',
+        animationSpeed: 4,
+        tutorialCompleted: true,
+      });
+      const save = createPlayerSaveData(meta, serializeRunStateToSnapshot(shopState, 1, nowMs), 1, nowMs);
+      const mock = createMockBridge({ initialSave: save });
+
+      mounted = mountBaliteApp(root, {
+        bridge: mock.bridge,
+        initialNowMs: () => nowMs,
+      });
+      await mounted.readyPromise;
+
+      // До покупки в лавке на неоткрытых слотах отображаются бейджи «Новое!»
+      expect(
+        root.querySelector('[data-offer-uid="off_cel"] [data-new-badge="true"]')?.textContent,
+      ).toBe('Новое!');
+      expect(
+        root.querySelector('[data-offer-uid="off_foil"] [data-new-badge="true"]')?.textContent,
+      ).toBe('Новое!');
+      expect(
+        root.querySelector('[data-charter-id="v_grabber"] [data-new-badge="true"]')?.textContent,
+      ).toBe('Новое!');
+      expect(
+        root.querySelector('[data-pack-uid="pack_arc"] [data-new-badge="true"]')?.textContent,
+      ).toBe('Новое!');
+
+      // 1. Покупка + немедленное применение небесного тома c_jupiter (3 з.)
+      root.querySelector<HTMLElement>('[data-offer-uid="off_cel"]')?.click();
+      root.querySelector<HTMLButtonElement>('.inspector-backdrop [data-action="buy-and-use"]')?.click();
+
+      let nextMeta = mounted.getSaveData().meta;
+      expect(nextMeta.discoveredConsumables).toContain('c_jupiter');
+      expect(nextMeta.stats.totalCelestialsUsed).toBe(1);
+      expect(nextMeta.stats.totalMoneySpent).toBe(3);
+
+      // 2. Покупка реликвии с изданием foil (6 з.)
+      root.querySelector<HTMLElement>('[data-offer-uid="off_foil"]')?.click();
+      root.querySelector<HTMLButtonElement>('.inspector-backdrop [data-action="buy"]')?.click();
+
+      nextMeta = mounted.getSaveData().meta;
+      expect(nextMeta.discoveredRelics).toContain('j_blueprint');
+      expect(nextMeta.discoveredEditions).toContain('foil');
+      expect(nextMeta.stats.totalMoneySpent).toBe(9);
+
+      // 3. Покупка грамоты v_grabber (10 з.)
+      root.querySelector<HTMLElement>('[data-charter-id="v_grabber"]')?.click();
+      root.querySelector<HTMLButtonElement>('.inspector-backdrop [data-action="buy-charter"]')?.click();
+
+      nextMeta = mounted.getSaveData().meta;
+      expect(nextMeta.discoveredCharters).toContain('v_grabber');
+      expect(nextMeta.stats.totalMoneySpent).toBe(19);
+
+      // 4. Обновление витрины (реролл 5 з.)
+      findButtonByText(root, 'Обновить')?.click();
+
+      nextMeta = mounted.getSaveData().meta;
+      expect(nextMeta.stats.totalShopRerolls).toBe(1);
+      expect(nextMeta.stats.totalMoneySpent).toBe(24);
+
+      // 5. Открытие сундука arcana_normal (4 з.) -> pack_arcana_normal в коллекции
+      root.querySelector<HTMLElement>('[data-pack-uid="pack_arc"]')?.click();
+      root.querySelector<HTMLButtonElement>('.inspector-backdrop [data-action="open-pack"]')?.click();
+
+      nextMeta = mounted.getSaveData().meta;
+      expect(nextMeta.discoveredPacks).toContain('pack_arcana_normal');
+      expect(nextMeta.stats.totalMoneySpent).toBe(28);
+    });
+
+    it('фиксирует открытия при USE_CONSUMABLE, PICK_BOOSTER_ITEM (небесный том) и SKIP_BLIND (знак пропуска)', async () => {
+      const nowMs = 3_000_000;
+
+      // 1. USE_CONSUMABLE в бою (c_pluto) -> discoveredConsumables + totalCelestialsUsed
+      const base = createInitialRunState('b_red', 'TRACK_ACTIONS');
+      const playingBase = dispatch(base, { type: 'SELECT_BLIND' }).nextState;
+      const pluto = createConsumableInstance('c_pluto', 'inv_pluto');
+      const playingWithCons: RunState = {
+        ...playingBase,
+        consumables: [pluto],
+      };
+
+      const meta = createInitialMetaSave(nowMs, {
+        lang: 'ru',
+        animationSpeed: 4,
+        tutorialCompleted: true,
+      });
+      const savePlaying = createPlayerSaveData(
+        meta,
+        serializeRunStateToSnapshot(playingWithCons, 1, nowMs),
+        1,
+        nowMs,
+      );
+      const mockPlaying = createMockBridge({ initialSave: savePlaying });
+
+      mounted = mountBaliteApp(root, {
+        bridge: mockPlaying.bridge,
+        initialNowMs: () => nowMs,
+      });
+      await mounted.readyPromise;
+
+      root.querySelector<HTMLElement>('[data-consumable-uid="inv_pluto"]')?.click();
+      root.querySelector<HTMLButtonElement>('.inspector-backdrop [data-action="use"]')?.click();
+
+      expect(mounted.getSaveData().meta.discoveredConsumables).toContain('c_pluto');
+      expect(mounted.getSaveData().meta.stats.totalCelestialsUsed).toBe(1);
+
+      mounted.destroy();
+      mounted = null;
+
+      // 2. PICK_BOOSTER_ITEM в бустере (c_venus) -> бейдж Новое! до выбора, учёт после выбора
+      const venus = createConsumableInstance('c_venus', 'boost_venus');
+      const boosterState: RunState = {
+        ...playingBase,
+        phase: 'booster',
+        booster: {
+          packId: 'p_celestial_normal_1',
+          packType: 'celestial',
+          packSize: 'normal',
+          remainingPicks: 1,
+          drawnHandCardIds: [],
+          fromTag: false,
+          choices: [
+            {
+              uid: 'ch_venus',
+              kind: 'consumable',
+              consumable: venus,
+              picked: false,
+            },
+          ],
+        },
+      };
+      const saveBooster = createPlayerSaveData(
+        meta,
+        serializeRunStateToSnapshot(boosterState, 1, nowMs),
+        1,
+        nowMs,
+      );
+      const mockBooster = createMockBridge({ initialSave: saveBooster });
+
+      mounted = mountBaliteApp(root, {
+        bridge: mockBooster.bridge,
+        initialNowMs: () => nowMs,
+      });
+      await mounted.readyPromise;
+
+      expect(
+        root.querySelector('[data-choice-uid="ch_venus"] [data-new-badge="true"]')?.textContent,
+      ).toBe('Новое!');
+      root.querySelector<HTMLButtonElement>('[data-choice-uid="ch_venus"] button')?.click();
+
+      expect(mounted.getSaveData().meta.discoveredConsumables).toContain('c_venus');
+      expect(mounted.getSaveData().meta.discoveredPacks).toContain('pack_celestial_normal');
+      expect(mounted.getSaveData().meta.stats.totalCelestialsUsed).toBe(1);
+
+      mounted.destroy();
+      mounted = null;
+
+      // 3. SKIP_BLIND на экране выбора заказа -> skipTagId попадает в discoveredTags
+      const blindSelectState = createInitialRunState('b_red', 'TRACK_SKIP');
+      const expectedTagId = blindSelectState.anteBlinds[0].skipTagId;
+      expect(expectedTagId).not.toBeNull();
+
+      const saveBlindSelect = createPlayerSaveData(
+        meta,
+        serializeRunStateToSnapshot(blindSelectState, 1, nowMs),
+        1,
+        nowMs,
+      );
+      const mockSkip = createMockBridge({ initialSave: saveBlindSelect });
+
+      mounted = mountBaliteApp(root, {
+        bridge: mockSkip.bridge,
+        initialNowMs: () => nowMs,
+      });
+      await mounted.readyPromise;
+
+      root.querySelector<HTMLButtonElement>('[data-blind-kind="small"] [data-action="skip-blind"]')?.click();
+
+      expect(mounted.getSaveData().meta.discoveredTags).toContain(expectedTagId);
+    });
+
+    it('кнопка Повторить расклад перезапускает забег с тем же seed и deckId из victory (без рекламы) и из game_over (с рекламой)', async () => {
+      const nowMs = 4_000_000;
+
+      // 1. Победа -> Повторить расклад без показа рекламы
+      const winBase = createInitialRunState('b_blue', 'REPLAY_WIN_99');
+      const winState: RunState = {
+        ...winBase,
+        phase: 'victory',
+      };
+      const winMeta = createInitialMetaSave(nowMs, {
+        lang: 'ru',
+        animationSpeed: 4,
+        unlockedDecks: ['b_red', 'b_blue'],
+        tutorialCompleted: true,
+      });
+      const winSave = createPlayerSaveData(
+        winMeta,
+        serializeRunStateToSnapshot(winState, 1, nowMs),
+        1,
+        nowMs,
+      );
+      const mockWin = createMockBridge({ initialSave: winSave });
+
+      mounted = mountBaliteApp(root, {
+        bridge: mockWin.bridge,
+        initialNowMs: () => nowMs,
+        adCooldownMs: 180_000,
+      });
+      await mounted.readyPromise;
+
+      const winReplayBtn = root.querySelector<HTMLButtonElement>('[data-action="replay-seed"]');
+      expect(winReplayBtn?.textContent).toBe('Повторить расклад (тот же сид)');
+      winReplayBtn?.click();
+
+      expect(mockWin.bridge.showInterstitial).not.toHaveBeenCalled();
+      expect(mounted.getState().phase).toBe('blind_select');
+      expect(mounted.getState().seed).toBe('REPLAY_WIN_99');
+      expect(mounted.getState().deckId).toBe('b_blue');
+      expect(mounted.getSaveData().meta.stats.runsStarted).toBe(1);
+
+      mounted.destroy();
+      mounted = null;
+
+      // 2. Поражение -> Повторить расклад вызывает showInterstitial по логической паузе и сохраняет тот же сид/колоду
+      const lossBase = createInitialRunState('b_yellow', 'REPLAY_LOSS_55');
+      const lossState: RunState = {
+        ...lossBase,
+        phase: 'game_over',
+      };
+      const lossMeta = createInitialMetaSave(nowMs, {
+        lang: 'ru',
+        animationSpeed: 4,
+        unlockedDecks: ['b_red', 'b_blue', 'b_yellow'],
+        tutorialCompleted: true,
+      });
+      const lossSave = createPlayerSaveData(
+        lossMeta,
+        serializeRunStateToSnapshot(lossState, 1, nowMs),
+        1,
+        nowMs,
+      );
+      const mockLoss = createMockBridge({ initialSave: lossSave });
+
+      mounted = mountBaliteApp(root, {
+        bridge: mockLoss.bridge,
+        initialNowMs: () => nowMs,
+        adCooldownMs: 180_000,
+      });
+      await mounted.readyPromise;
+
+      const lossReplayBtn = root.querySelector<HTMLButtonElement>('[data-action="replay-seed"]');
+      expect(lossReplayBtn).not.toBeNull();
+      lossReplayBtn?.click();
+      await flushMicrotasks();
+
+      expect(mockLoss.bridge.showInterstitial).toHaveBeenCalledTimes(1);
+      expect(mounted.getState().phase).toBe('blind_select');
+      expect(mounted.getState().seed).toBe('REPLAY_LOSS_55');
+      expect(mounted.getState().deckId).toBe('b_yellow');
+      expect(mounted.getSaveData().meta.stats.runsStarted).toBe(1);
+    });
+  });
 });

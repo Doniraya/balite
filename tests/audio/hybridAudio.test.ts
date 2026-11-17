@@ -183,9 +183,10 @@ describe('sampleRegistry и createHybridBaliteAudio', () => {
     });
   });
 
-  it('автоматически регистрирует подключённый bgm.mp3 из src/assets/audio/', () => {
+  it('автоматически регистрирует подключённые bgm.mp3 и dialogue.ogg из src/assets/audio/', () => {
     expect(AUDIO_SAMPLE_REGISTRY.bgm).toMatch(/bgm.*\.mp3$/);
     expect(AUDIO_SAMPLE_KEYS).toContain('dialogue');
+    expect(AUDIO_SAMPLE_REGISTRY.dialogue).toMatch(/dialogue.*\.ogg$/);
     const allowedKeys = new Set<string>(AUDIO_SAMPLE_KEYS);
     for (const key of Object.keys(AUDIO_SAMPLE_REGISTRY)) {
       expect(allowedKeys.has(key)).toBe(true);
@@ -234,6 +235,7 @@ describe('sampleRegistry и createHybridBaliteAudio', () => {
           mult_hit: '/audio/mult_hit.ogg',
           relic_trigger: '/audio/relic_trigger.ogg',
           button: '/audio/button.ogg',
+          dialogue: '/audio/dialogue.ogg',
         },
         fetchFn: fetchSpy as unknown as typeof fetch,
         randomFn: () => 1, // Максимальная положительная микро-вариация (+2%)
@@ -247,7 +249,7 @@ describe('sampleRegistry и createHybridBaliteAudio', () => {
     await flushMicrotasks();
 
     const ctx = instances[0]!;
-    expect(fetchSpy).toHaveBeenCalledTimes(5);
+    expect(fetchSpy).toHaveBeenCalledTimes(6);
 
     // После загрузки bgm процедурные осцилляторы остановлены, а bgm зациклен через musicGain
     for (const osc of ctx.oscillators) {
@@ -274,10 +276,12 @@ describe('sampleRegistry и createHybridBaliteAudio', () => {
     expect(ctx.bufferSources[beforeSamples + 3]!.playbackRate.value).toBeGreaterThan(1);
     expect(ctx.bufferSources[beforeSamples + 4]!.playbackRate.value).toBeGreaterThan(1);
 
-    // Микро-вариация ±2% на клике (при randomFn() === 1 -> 1.02)
+    // Микро-вариация ±2% на клике и диалоге Миры (при randomFn() === 1 -> 1.02)
     const beforeBtn = ctx.bufferSources.length;
     audio.playButton();
+    audio.playDialogue();
     expect(ctx.bufferSources[beforeBtn]!.playbackRate.value).toBeCloseTo(1.02, 3);
+    expect(ctx.bufferSources[beforeBtn + 1]!.playbackRate.value).toBeCloseTo(1.02, 3);
 
     // Мгновенный мьют при рекламе останавливает BGM и глушит SFX, а onAdEnd возобновляет BGM
     platformAudio.onAdStart();

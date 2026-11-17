@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { createPlayingCard, createStandardDeck } from '../../src/engine/cards';
+import {
+  COLLECTION_ENHANCEMENTS,
+  COLLECTION_SEALS,
+  hasAnyUnseenCollectionItems,
+  resetCollection,
+  unlockAllCollection,
+} from '../../src/engine/collection';
 import { createInitialHandLevels, getHandLevelStats } from '../../src/engine/handEval';
 import { createRngState, nextFloat, nextInt } from '../../src/engine/prng';
 import {
   advanceActiveRunTracker,
+  countMetaDiscoveries,
   createActiveRunTracker,
   createCompactFallbackSave,
   createInitialMetaSave,
@@ -1254,5 +1262,279 @@ describe('миграция RunStats, activeRunTracker и getRunEndSummary', () =
     const sanitizedLegacy = sanitizePlayerSaveData(legacyRaw);
     expect(sanitizedLegacy.activeRun).not.toBeNull();
     expect(restoreRunStateFromSnapshot(sanitizedLegacy.activeRun!).handSortMode).toBe('rank');
+  });
+});
+
+describe('Story 6.1 & 6.2: накопительная статистика, countMetaDiscoveries и сжатие unlockAllCollection', () => {
+  it('накапливает totalMoneySpent, totalShopRerolls и totalCelestialsUsed в updateMetaStatsFromRunState, sanitize и merge', () => {
+    const baseMeta = createInitialMetaSave(1000);
+    const run = createRichRunState();
+
+    const step1 = updateMetaStatsFromRunState(baseMeta.stats, run, {
+      dollarsSpentDelta: 12,
+      shopRerollsDelta: 2,
+      celestialsUsedDelta: 1,
+    });
+    expect(step1.totalMoneySpent).toBe(12);
+    expect(step1.totalShopRerolls).toBe(2);
+    expect(step1.totalCelestialsUsed).toBe(1);
+
+    // Последующий вызов без дельт не сбрасывает накопительную статистику
+    const step2 = updateMetaStatsFromRunState(step1, run, { handPlayed: true });
+    expect(step2.totalMoneySpent).toBe(12);
+    expect(step2.totalShopRerolls).toBe(2);
+    expect(step2.totalCelestialsUsed).toBe(1);
+
+    // Отрицательные/NaN дельты игнорируются, дробные округляются вниз
+    const step3 = updateMetaStatsFromRunState(step2, run, {
+      dollarsSpentDelta: -50,
+      shopRerollsDelta: Number.NaN,
+      celestialsUsedDelta: 2.9,
+    });
+    expect(step3.totalMoneySpent).toBe(12);
+    expect(step3.totalShopRerolls).toBe(2);
+    expect(step3.totalCelestialsUsed).toBe(3);
+
+    // Санитизация фильтрует невалидные и нулевые значения
+    const sanitizedInvalid = sanitizePlayerSaveData({
+      revision: 1,
+      updatedAt: 2000,
+      meta: {
+        ...baseMeta,
+        stats: {
+          ...baseMeta.stats,
+          totalMoneySpent: -10,
+          totalShopRerolls: 0,
+          totalCelestialsUsed: 4.7,
+        },
+      },
+    });
+    expect(sanitizedInvalid.meta?.stats.totalMoneySpent).toBeUndefined();
+    expect(sanitizedInvalid.meta?.stats.totalShopRerolls).toBeUndefined();
+    expect(sanitizedInvalid.meta?.stats.totalCelestialsUsed).toBe(4);
+
+    // Merge берёт Math.max по всем трём накопительным счётчикам
+    const local = createPlayerSaveData(
+      {
+        ...baseMeta,
+        stats: {
+          ...baseMeta.stats,
+          totalMoneySpent: 320,
+          totalShopRerolls: 7,
+          totalCelestialsUsed: 15,
+        },
+      },
+      null,
+      5,
+      5000,
+    );
+    const cloud = createPlayerSaveData(
+      {
+        ...baseMeta,
+        stats: {
+          ...baseMeta.stats,
+          totalMoneySpent: 190,
+          totalShopRerolls: 14,
+          totalCelestialsUsed: 9,
+        },
+      },
+      null,
+      4,
+      4000,
+    );
+    const merged = mergePlayerSaveData(local, cloud);
+    expect(merged.meta?.stats.totalMoneySpent).toBe(320);
+    expect(merged.meta?.stats.totalShopRerolls).toBe(14);
+    expect(merged.meta?.stats.totalCelestialsUsed).toBe(15);
+  });
+
+  it('countMetaDiscoveries учитывает все 8 категорий с дедупликацией и исключением стартовых/невалидных записей', () => {
+    const base = createInitialMetaSave(1000);
+    expect(countMetaDiscoveries(base)).toBe(0);
+    expect(countMetaDiscoveries(resetCollection(base))).toBe(0);
+
+    // Обратная совместимость: вызов только с 4 обязательными полями
+    expect(
+      countMetaDiscoveries({
+        discoveredRelics: ['j_joker', 'j_joker'],
+        discoveredConsumables: ['c_mercury'],
+        discoveredCharters: ['v_hone'],
+        discoveredBosses: ['bl_hook'],
+      }),
+    ).toBe(4);
+
+    // Расширенный подсчёт с тегами, монстрами (кроме ante 1), паками (только валидными) и изданиями (кроме base)
+    const extended: MetaSave = {
+      ...base,
+      discoveredRelics: ['j_joker', 'j_sly', 'j_joker'],
+      discoveredConsumables: ['c_mercury', 'c_fool'],
+      discoveredCharters: ['v_hone'],
+      discoveredBosses: ['bl_hook'],
+      discoveredTags: ['tag_double', 'tag_skip', 'tag_double'],
+      discoveredMonsters: ['m_ante_1_small', 'm_ante_1_big', 'm_ante_2_small', 'm_ante_3_big'],
+      discoveredPacks: [
+        'pack_arcana_normal',
+        'pack_buffoon_mega',
+        'pack_spectral_normal',
+        'invalid_pack',
+      ],
+      discoveredEditions: ['base', 'foil', 'negative', 'foil'],
+    };
+    // 2 + 2 + 1 + 1 + 2 + 2 + 2 + 2 = 14
+    expect(countMetaDiscoveries(extended)).toBe(14);
+
+    const unlocked = unlockAllCollection(base);
+    // 40 реликвий + 37 расходников + 12 грамот + 10 боссов + 10 тегов + 14 монстров (16 - 2 стартовых) + 12 паков + 4 издания (5 - base) = 139
+    expect(countMetaDiscoveries(unlocked)).toBe(139);
+
+    const trackerAfter = advanceActiveRunTracker(base, extended, true);
+    expect(trackerAfter.newDiscoveries).toBe(14);
+  });
+
+  it('сжимает 100% открытую Коллекцию (unlockAllCollection) в createCompactFallbackSave <= 2500 байт с 100% lossless round-trip', () => {
+    const base = createInitialMetaSave(1700000000000, {
+      lang: 'ru',
+      animationSpeed: 2,
+      crtMode: 'original',
+      musicVolume: 0.75,
+      sfxVolume: 0.5,
+      tutorialCompleted: true,
+      tutorialStep: 21,
+    });
+    const fullCollection = unlockAllCollection(base);
+    const allCounts = Object.fromEntries(HAND_TYPES.map((hand, idx) => [hand, (idx + 1) * 5]));
+    const fullMeta: MetaSave = {
+      ...fullCollection,
+      stats: {
+        runsStarted: 42,
+        runsWon: 17,
+        highestAnte: 11,
+        highestRound: 33,
+        bestHandScore: 987654,
+        maxDollars: 520,
+        bestWinStreak: 6,
+        currentWinStreak: 4,
+        totalHandsPlayed: 410,
+        handPlayCounts: allCounts,
+        totalMoneySpent: 3250,
+        totalShopRerolls: 74,
+        totalCelestialsUsed: 63,
+      },
+      activeRunTracker: {
+        baselineBestHandScore: 987654,
+        baselineHighestAnte: 11,
+        baselineHighestRound: 33,
+        newDiscoveries: 12,
+      },
+    };
+    const snapshot = serializeRunStateToSnapshot(createRichRunState(), 25, 1700000055555);
+    const fullSave = createPlayerSaveData(fullMeta, snapshot, 25, 1700000055555);
+
+    // Без сжатия даже meta-часть с unlockAllCollection превышает 4000 байт
+    const plainMetaOnly = createPlayerSaveData(fullMeta, null, 25, 1700000055555);
+    expect(utf8ByteLength(JSON.stringify(plainMetaOnly))).toBeGreaterThan(4000);
+
+    const compact = createCompactFallbackSave(fullSave);
+    expect(compact.activeRun).toBeNull();
+    expect(compact.revision).toBe(25);
+    expect(compact.updatedAt).toBe(1700000055555);
+
+    const serializedDirect = trySerializeWithinLimit(compact, 4000);
+    expect(serializedDirect).not.toBeNull();
+    expect(utf8ByteLength(serializedDirect!)).toBeLessThanOrEqual(4000);
+    expect(utf8ByteLength(serializedDirect!)).toBeLessThanOrEqual(2500);
+
+    const serializedViaFallback = trySerializeWithinLimit(fullSave, 4000, createCompactFallbackSave);
+    expect(serializedViaFallback).toBe(serializedDirect);
+
+    // Полный lossless round-trip через sanitizePlayerSaveData
+    const parsedRaw = JSON.parse(serializedDirect!) as unknown;
+    const restored = sanitizePlayerSaveData(parsedRaw);
+    expect(restored.revision).toBe(25);
+    expect(restored.updatedAt).toBe(1700000055555);
+    expect(restored.activeRun).toBeNull();
+    expect(restored.meta).toEqual({
+      ...fullMeta,
+      revision: 25,
+      updatedAt: 1700000055555,
+      settings: {
+        ...fullMeta.settings,
+        tutorialCompleted: true,
+        tutorialStep: 21,
+      },
+    });
+    expect(countMetaDiscoveries(restored.meta!)).toBe(139);
+    expect(hasAnyUnseenCollectionItems(restored.meta!)).toBe(false);
+  });
+
+  it('сохраняет lossless round-trip для частичных открытий, enhancements/seals в seen, нестандартных строк и merge со сжатым fallback', () => {
+    const base = createInitialMetaSave(2000);
+    // Создаём сейв размером > 1800 байт с частичным набором и нестандартными seen-элементами
+    const unlocked = unlockAllCollection(base);
+    const partialMeta: MetaSave = {
+      ...base,
+      unlockedDecks: ['b_blue', 'b_black'],
+      discoveredRelics: unlocked.discoveredRelics.slice(0, 32),
+      discoveredConsumables: unlocked.discoveredConsumables.slice(0, 28),
+      discoveredCharters: ['v_overstock_norm', 'v_directors_cut'],
+      discoveredBosses: ['bl_hook', 'bl_final_bell'],
+      discoveredTags: [],
+      discoveredMonsters: ['m_ante_2_small', 'm_ante_8_big'],
+      discoveredPacks: ['pack_arcana_normal', 'pack_buffoon_mega'],
+      discoveredEditions: ['base', 'negative'],
+      seenCollectionItems: [
+        'j_joker',
+        ...COLLECTION_ENHANCEMENTS,
+        ...COLLECTION_SEALS,
+        'custom_legacy_seen_id',
+        ...unlocked.discoveredRelics,
+        ...unlocked.discoveredConsumables,
+      ],
+      stats: {
+        ...base.stats,
+        totalMoneySpent: 500,
+      },
+    };
+    const save = createPlayerSaveData(partialMeta, null, 10, 3000);
+    const compact = createCompactFallbackSave(save);
+    const json = trySerializeWithinLimit(compact, 4000);
+    expect(json).not.toBeNull();
+    expect(utf8ByteLength(json!)).toBeLessThanOrEqual(2500);
+
+    const sanitized = sanitizePlayerSaveData(JSON.parse(json!) as unknown);
+    expect(sanitized.meta?.unlockedDecks).toEqual(['b_blue', 'b_black']);
+    expect(new Set(sanitized.meta?.discoveredRelics)).toEqual(new Set(partialMeta.discoveredRelics));
+    expect(new Set(sanitized.meta?.discoveredConsumables)).toEqual(
+      new Set(partialMeta.discoveredConsumables),
+    );
+    expect(sanitized.meta?.discoveredCharters).toEqual(['v_overstock_norm', 'v_directors_cut']);
+    expect(sanitized.meta?.discoveredBosses).toEqual(['bl_hook', 'bl_final_bell']);
+    expect(sanitized.meta?.discoveredTags).toEqual([]);
+    expect(sanitized.meta?.discoveredMonsters).toEqual(['m_ante_2_small', 'm_ante_8_big']);
+    expect(sanitized.meta?.discoveredPacks).toEqual(['pack_arcana_normal', 'pack_buffoon_mega']);
+    expect(sanitized.meta?.discoveredEditions).toEqual(['base', 'negative']);
+    expect(new Set(sanitized.meta?.seenCollectionItems)).toEqual(
+      new Set(partialMeta.seenCollectionItems),
+    );
+    expect(sanitized.meta?.stats.totalMoneySpent).toBe(500);
+
+    // mergePlayerSaveData корректно объединяет локальный сейв со сжатым облачным fallback
+    const local = createPlayerSaveData(
+      {
+        ...base,
+        discoveredRelics: ['j_vagabond'],
+        stats: { ...base.stats, totalMoneySpent: 900, totalShopRerolls: 5 },
+      },
+      null,
+      11,
+      4000,
+    );
+    const merged = mergePlayerSaveData(local, JSON.parse(json!) as Partial<PlayerSaveData>);
+    expect(merged.meta?.unlockedDecks).toEqual(['b_red', 'b_blue', 'b_black']);
+    expect(merged.meta?.discoveredRelics).toContain('j_vagabond');
+    expect(merged.meta?.discoveredRelics).toContain('j_joker');
+    expect(merged.meta?.discoveredBosses).toEqual(['bl_hook', 'bl_final_bell']);
+    expect(merged.meta?.stats.totalMoneySpent).toBe(900);
+    expect(merged.meta?.stats.totalShopRerolls).toBe(5);
   });
 });

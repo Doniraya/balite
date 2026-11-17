@@ -1052,6 +1052,31 @@ export interface MetaStats {
   readonly currentWinStreak: number;
   readonly totalHandsPlayed: number;
   readonly handPlayCounts: Readonly<Partial<Record<HandType, number>>>;
+  /** Накопительная сумма потраченного золота за все забеги. */
+  readonly totalMoneySpent?: number;
+  /** Накопительное число реролов магазина за все забеги. */
+  readonly totalShopRerolls?: number;
+  /** Накопительное число использованных Астральных сфер за все забеги. */
+  readonly totalCelestialsUsed?: number;
+}
+
+/**
+ * Компактное битовое представление открытий и просмотренных элементов коллекции для облачного fallback.
+ */
+export interface CompactCollectionSave {
+  readonly d?: string;
+  readonly r?: string;
+  readonly c?: string;
+  readonly v?: string;
+  readonly b?: string;
+  readonly t?: string;
+  readonly m?: string;
+  readonly mx?: readonly string[];
+  readonly p?: string;
+  readonly px?: readonly string[];
+  readonly e?: string;
+  readonly s?: string;
+  readonly sx?: readonly string[];
 }
 
 /**
@@ -1082,6 +1107,8 @@ export interface MetaSave {
   readonly discoveredPacks?: readonly string[];
   readonly discoveredEditions?: readonly Edition[];
   readonly seenCollectionItems?: readonly string[];
+  /** Компактное битовое представление коллекции для укладывания в лимит 4000 байт. */
+  readonly compactCollection?: CompactCollectionSave;
   readonly stats: MetaStats;
   readonly activeRunTracker?: ActiveRunTracker;
   readonly tutorialCompleted?: boolean;

@@ -116,6 +116,7 @@ export const RU_DICTIONARY: LocaleDictionary = {
       continueRun: 'Продолжить забег',
       newRun: 'Новый забег',
       continueEndless: 'Бесконечный режим',
+      replaySeed: 'Повторить расклад (тот же сид)',
       playAgain: 'Играть снова',
       toDeckSelect: 'Выбор колоды',
       copy: 'Копия',
@@ -135,6 +136,8 @@ export const RU_DICTIONARY: LocaleDictionary = {
       seedPlaceholder: 'Введите код или оставьте пустым',
       unlocked: 'Открыта',
       locked: 'Заблокирована',
+      unlockHintNext: 'Победите в забеге, чтобы открыть эту колоду',
+      unlockHintRemaining: 'Победите в забегах (осталось побед: {count})',
     },
     blindSelect: {
       title: 'Заказы {ante}-го этажа',
@@ -174,6 +177,7 @@ export const RU_DICTIONARY: LocaleDictionary = {
       notEnoughGold: 'Недостаточно золота',
       free: 'Бесплатно',
       charterEmpty: 'Привилегия ранга уже куплена',
+      newBadge: 'Новое!',
     },
     booster: {
       picksLeft: 'Осталось выбрать: {count}',
@@ -290,6 +294,8 @@ export const RU_DICTIONARY: LocaleDictionary = {
       discardPile: 'В сбросе ({count})',
       inHand: 'В руке ({count})',
       totalCards: 'Всего карт: {count}',
+      playedThisAnteBadge: 'Сыграна',
+      playedThisAnteHint: 'Уже сыграна на этом этаже',
     },
     runEnd: {
       victoryTitle: 'Победа!',

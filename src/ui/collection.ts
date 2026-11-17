@@ -77,7 +77,7 @@ function getPackChooseCount(_type: PackType, size: PackSize): number {
 /**
  * Форматирует условие открытия заблокированного ваучера Т2 с текущим прогрессом.
  */
-function formatVoucherCondition(
+export function formatVoucherCondition(
   key: string,
   meta: MetaSave,
   translator: Translator,
@@ -85,13 +85,13 @@ function formatVoucherCondition(
   let current = '$0';
   switch (key) {
     case 'spend2500':
-      current = '$0';
+      current = `$${meta.stats?.totalMoneySpent ?? 0}`;
       break;
     case 'reroll50':
-      current = '0/50';
+      current = `${meta.stats?.totalShopRerolls ?? 0}/50`;
       break;
     case 'use50Celestials':
-      current = '0/50';
+      current = `${meta.stats?.totalCelestialsUsed ?? 0}/50`;
       break;
     case 'play250Hands':
       current = `${meta.stats?.totalHandsPlayed ?? 0}/250`;

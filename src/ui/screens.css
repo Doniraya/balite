@@ -750,6 +750,11 @@
   box-shadow: 0 0 0 2px rgba(244, 197, 82, 0.32);
 }
 
+.deck-option:disabled {
+  opacity: 0.78;
+  cursor: not-allowed;
+}
+
 .deck-option__top {
   display: flex;
   align-items: center;
@@ -773,6 +778,13 @@
   font-size: clamp(12px, 2.5vw, 14px);
   color: var(--screen-text);
   opacity: 0.95;
+}
+
+.deck-option__unlock-hint {
+  font-size: clamp(11px, 2.2vw, 12.5px);
+  font-weight: 700;
+  color: var(--screen-gold-rich);
+  line-height: 1.25;
 }
 
 .seed-bar {
@@ -1388,6 +1400,7 @@
 }
 
 .shop-slot-btn {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1455,6 +1468,7 @@
 }
 
 .booster-choice {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1467,6 +1481,25 @@
   border-radius: 10px;
   border: 1px solid var(--screen-border);
   background: rgba(14, 31, 24, 0.92);
+}
+
+.discovery-new-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 5;
+  pointer-events: none;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid #fef08a;
+  background: linear-gradient(135deg, #f5b942 0%, #ea580c 100%);
+  color: #1c1104;
+  font-size: clamp(9.5px, min(2vw, 1.15dvh), 11px);
+  font-weight: 900;
+  line-height: 1.15;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
 }
 
 .booster-choice.is-picked {
@@ -1640,11 +1673,12 @@
 
 .run-end-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: clamp(8px, 1.2vw, 14px);
 }
 
 .run-end-actions .ui-btn {
-  flex: 1;
+  flex: 1 1 180px;
   min-height: 52px;
   font-size: clamp(16px, 1.5vw, 22px);
   font-weight: 800;
@@ -2454,6 +2488,13 @@
 
   .shop-slot-btn__price {
     font-size: clamp(14px, 1.25vw, 18px);
+  }
+
+  .discovery-new-badge {
+    top: 6px;
+    right: 6px;
+    padding: 3px 8px;
+    font-size: clamp(11px, 0.95vw, 13px);
   }
 
   /* Карточка итога забега по центру на ПК */

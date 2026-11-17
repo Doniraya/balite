@@ -334,7 +334,7 @@
 
 /* Модальное окно подробного состава колоды (по эталону koloda.png) */
 .modal-sheet--deck {
-  width: min(100%, 1060px);
+  width: min(100%, 1180px);
   max-height: min(94vh, 1140px);
   background: rgba(34, 46, 52, 0.97);
   border-color: rgba(203, 213, 225, 0.55);
@@ -369,7 +369,7 @@
 
 .deck-modal-layout {
   display: grid;
-  grid-template-columns: minmax(250px, 310px) minmax(0, 1fr);
+  grid-template-columns: minmax(240px, 290px) minmax(0, 1fr);
   gap: 14px;
   align-items: start;
 }
@@ -579,7 +579,7 @@
 .deck-fan-row {
   display: inline-flex;
   align-items: center;
-  --card-compact-width: clamp(46px, 5vw, 62px);
+  --card-compact-width: clamp(58px, 5.1vw, 66px);
 }
 
 .deck-fan-row .card-frame {
@@ -587,26 +587,146 @@
 }
 
 .deck-fan-row .card-frame + .card-frame {
-  margin-left: calc(-14px - var(--deck-fan-extra, 0px));
+  margin-left: calc(-6px - var(--deck-fan-extra, 0px));
 }
 
+/* Вне стопки добора затемняем только подложку и арт карты, оставляя рамку и статус-бейджи яркими */
 .deck-fan-row .card-frame.is-out-of-draw {
-  opacity: 0.42;
-  filter: grayscale(0.45);
+  opacity: 1;
+  filter: none;
+  background: #0d151c;
+}
+
+.deck-fan-row .card-frame.is-out-of-draw .card-frame__layer-enhancement,
+.deck-fan-row .card-frame.is-out-of-draw .card-frame__layer-art {
+  opacity: 0.36;
+  filter: grayscale(0.55) brightness(0.88);
+}
+
+.deck-fan-row .card-frame.is-out-of-draw .card-frame__layer-chrome {
+  opacity: 0.78;
+}
+
+.deck-fan-row .card-frame.is-out-of-draw.is-played-this-ante .card-frame__layer-chrome,
+.deck-fan-row .card-frame.is-out-of-draw.is-debuffed .card-frame__layer-chrome {
+  opacity: 0.92;
+}
+
+/* Визуальная пометка карт, уже сыгранных на текущем этаже, и ослабленных карт в окне колоды */
+.deck-fan-row .card-frame.is-played-this-ante {
+  border-color: #f59e0b;
+  box-shadow:
+    0 4px 10px rgba(4, 7, 15, 0.55),
+    0 0 0 1px rgba(245, 158, 11, 0.75),
+    inset 0 0 0 1px rgba(245, 158, 11, 0.35);
+}
+
+.deck-fan-row .card-frame.is-debuffed {
+  border-color: #ef4444;
+  box-shadow:
+    0 4px 10px rgba(4, 7, 15, 0.6),
+    0 0 0 1px rgba(239, 68, 68, 0.8),
+    inset 0 0 0 1px rgba(185, 28, 28, 0.45);
+}
+
+.deck-fan-row .card-frame.is-debuffed .card-frame__corner--top,
+.deck-fan-row .card-frame.is-played-this-ante .card-frame__corner--top {
+  z-index: 6;
+  padding: 1px 2px;
+  border-radius: 4px;
+  background: rgba(251, 247, 237, 0.95);
+}
+
+.deck-fan-row .card-frame .card-frame__debuff-overlay {
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 28px 2px 3px;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(15, 23, 42, 0.32) 0px,
+      rgba(15, 23, 42, 0.32) 5px,
+      rgba(185, 28, 28, 0.28) 5px,
+      rgba(185, 28, 28, 0.28) 10px
+    );
+}
+
+.deck-fan-row .deck-card-badge,
+.deck-fan-row .card-frame.is-compact .card-frame__enhancement-badge {
+  left: 1px;
+  right: 1px;
+  padding: 1px 2px;
+  font-size: 6.8px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  text-align: center;
+}
+
+.deck-fan-row .deck-card-badge {
+  position: absolute;
+  z-index: 5;
+  display: block;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  box-sizing: border-box;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.65);
+}
+
+.deck-fan-row .deck-card-badge--played-ante {
+  bottom: 3px;
+  background: rgba(120, 53, 15, 0.94);
+  border: 1px solid rgba(253, 230, 138, 0.8);
+  color: #fef3c7;
+}
+
+.deck-fan-row .deck-card-badge--debuffed {
+  bottom: 3px;
+  background: rgba(127, 29, 29, 0.95);
+  border: 1px solid rgba(254, 202, 202, 0.8);
+  color: #fef2f2;
+}
+
+.deck-fan-row .card-frame.is-played-this-ante.is-debuffed .deck-card-badge--played-ante {
+  bottom: 16px;
+}
+
+/* Поднимаем бейдж улучшения выше статусных бейджей колоды, чтобы они не перекрывались */
+.deck-fan-row .card-frame.is-played-this-ante .card-frame__enhancement-badge,
+.deck-fan-row .card-frame.is-debuffed .card-frame__enhancement-badge {
+  bottom: 16px;
+}
+
+.deck-fan-row .card-frame.is-played-this-ante.is-debuffed .card-frame__enhancement-badge {
+  bottom: 29px;
 }
 
 .deck-stone-row {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  overflow-x: auto;
   padding-top: 6px;
   border-top: 1px dashed rgba(148, 163, 184, 0.3);
 }
 
 .deck-stone-row__label {
+  flex-shrink: 0;
   font-size: 12px;
   font-weight: 700;
   color: #cbd5e1;
+}
+
+/* На каменных картах нет верхнего угла масти/ранга, поэтому при наличии статусов переносим тип карты вверх */
+.deck-stone-row .deck-fan-row .card-frame.is-played-this-ante .card-frame__enhancement-badge,
+.deck-stone-row .deck-fan-row .card-frame.is-debuffed .card-frame__enhancement-badge,
+.deck-stone-row .deck-fan-row .card-frame.is-played-this-ante.is-debuffed .card-frame__enhancement-badge {
+  top: 3px;
+  bottom: auto;
 }
 
 .modal-btn--deck-back {
@@ -624,11 +744,31 @@
   }
 
   .deck-fan-row {
-    --card-compact-width: 44px;
+    --card-compact-width: 58px;
   }
 
   .deck-fan-row .card-frame + .card-frame {
-    margin-left: calc(-18px - var(--deck-fan-extra, 0px));
+    margin-left: calc(-8px - var(--deck-fan-extra, 0px));
+  }
+
+  .deck-fan-row .deck-card-badge,
+  .deck-fan-row .card-frame.is-compact .card-frame__enhancement-badge {
+    font-size: 6.5px;
+    letter-spacing: -0.03em;
+    padding: 1px 2px;
+  }
+
+  .deck-fan-row .card-frame.is-played-this-ante.is-debuffed .deck-card-badge--played-ante {
+    bottom: 14px;
+  }
+
+  .deck-fan-row .card-frame.is-played-this-ante .card-frame__enhancement-badge,
+  .deck-fan-row .card-frame.is-debuffed .card-frame__enhancement-badge {
+    bottom: 15px;
+  }
+
+  .deck-fan-row .card-frame.is-played-this-ante.is-debuffed .card-frame__enhancement-badge {
+    bottom: 27px;
   }
 }
 
@@ -882,6 +1022,11 @@
 
   .run-info-back-btn:hover {
     filter: brightness(1.08);
+  }
+
+  .deck-fan-row .card-frame:hover {
+    z-index: 8;
+    transform: translateY(-4px);
   }
 }
 

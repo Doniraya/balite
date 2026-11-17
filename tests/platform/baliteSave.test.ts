@@ -1,15 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createStandardDeck } from '../../src/engine/cards';
+import { unlockAllCollection } from '../../src/engine/collection';
 import { createInitialHandLevels } from '../../src/engine/handEval';
 import { createRngState } from '../../src/engine/prng';
 import {
+  countMetaDiscoveries,
   createCompactFallbackSave,
   createInitialMetaSave,
   createPlayerSaveData,
+  sanitizePlayerSaveData,
   SAVE_SCHEMA_VERSION,
   serializeRunStateToSnapshot,
 } from '../../src/engine/save';
-import type { PlayerSaveData, RunState } from '../../src/engine/types';
+import { HAND_TYPES, type PlayerSaveData, type RunState } from '../../src/engine/types';
 import {
   BALITE_CLOUD_DEBOUNCE_MS,
   BALITE_MAX_STORAGE_BYTES,
@@ -466,5 +469,116 @@ describe('baliteSave и createBalitePlatformBridge', () => {
 
     bridge.audio.dispose();
     tinyBridge.audio.dispose();
+  });
+
+  it('при 100% открытой Коллекции (unlockAllCollection) и полной статистике укладывает compactFallback в <= 2500 байт (лимит 4000) и полностью восстанавливает открытия', async () => {
+    window.history.replaceState({}, '', '/?platform=vk');
+
+    let vkStoredValue = '';
+    vkBridgeMock.send.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+      if (method === 'VKWebAppStorageSet') {
+        vkStoredValue = String(params?.value ?? '');
+        return { result: true };
+      }
+      if (method === 'VKWebAppStorageGet') {
+        return {
+          keys: vkStoredValue ? [{ key: 'balite_save_v1', value: vkStoredValue }] : [],
+        };
+      }
+      return {};
+    });
+
+    const bridge = createBalitePlatformBridge({
+      localBackupKey: 'balite_vk_unlock_all_test',
+      cloudDebounceMs: 0,
+    });
+    await bridge.init();
+
+    const baseMeta = createInitialMetaSave(9000, {
+      lang: 'ru',
+      animationSpeed: 2,
+      crtMode: 'light',
+      tutorialCompleted: true,
+      tutorialStep: 21,
+    });
+    const unlockedMeta = unlockAllCollection(baseMeta);
+    const allHandCounts = Object.fromEntries(HAND_TYPES.map((hand, idx) => [hand, idx + 3]));
+    const richMeta = {
+      ...unlockedMeta,
+      stats: {
+        ...unlockedMeta.stats,
+        runsStarted: 25,
+        runsWon: 8,
+        highestAnte: 10,
+        highestRound: 30,
+        bestHandScore: 145000,
+        maxDollars: 450,
+        bestWinStreak: 5,
+        currentWinStreak: 3,
+        totalHandsPlayed: 310,
+        handPlayCounts: allHandCounts,
+        totalMoneySpent: 2800,
+        totalShopRerolls: 60,
+        totalCelestialsUsed: 55,
+      },
+    };
+
+    const snapshot = serializeRunStateToSnapshot(createOversizedRunState(), 19, 9000);
+    const fullSave: PlayerSaveData = createPlayerSaveData(richMeta, snapshot, 19, 9000);
+
+    const compactSave = createCompactFallbackSave(fullSave);
+    const serializedCompact = trySerializeWithinLimit(compactSave, BALITE_MAX_STORAGE_BYTES);
+    expect(serializedCompact).not.toBeNull();
+    expect(utf8ByteLength(serializedCompact!)).toBeLessThanOrEqual(BALITE_MAX_STORAGE_BYTES);
+    expect(utf8ByteLength(serializedCompact!)).toBeLessThanOrEqual(2500);
+
+    // После санитизации все открытия 100% коллекции полностью восстанавливаются
+    const sanitizedCompact = sanitizePlayerSaveData(JSON.parse(serializedCompact!) as unknown);
+    expect(countMetaDiscoveries(sanitizedCompact.meta!)).toBe(139);
+    expect(sanitizedCompact.meta?.unlockedDecks).toEqual(unlockedMeta.unlockedDecks);
+    expect(sanitizedCompact.meta?.discoveredRelics).toEqual(unlockedMeta.discoveredRelics);
+    expect(sanitizedCompact.meta?.discoveredConsumables).toEqual(unlockedMeta.discoveredConsumables);
+    expect(sanitizedCompact.meta?.discoveredCharters).toEqual(unlockedMeta.discoveredCharters);
+    expect(sanitizedCompact.meta?.discoveredBosses).toEqual(unlockedMeta.discoveredBosses);
+    expect(sanitizedCompact.meta?.discoveredTags).toEqual(unlockedMeta.discoveredTags);
+    expect(sanitizedCompact.meta?.discoveredMonsters).toEqual(unlockedMeta.discoveredMonsters);
+    expect(sanitizedCompact.meta?.discoveredPacks).toEqual(unlockedMeta.discoveredPacks);
+    expect(sanitizedCompact.meta?.discoveredEditions).toEqual(unlockedMeta.discoveredEditions);
+    expect(sanitizedCompact.meta?.seenCollectionItems).toEqual(unlockedMeta.seenCollectionItems);
+    expect(sanitizedCompact.meta?.stats.totalMoneySpent).toBe(2800);
+    expect(sanitizedCompact.meta?.stats.totalShopRerolls).toBe(60);
+    expect(sanitizedCompact.meta?.stats.totalCelestialsUsed).toBe(55);
+
+    // Сохранение через мост в облако VK проходит успешно в рамках 4000 байт
+    await expect(persistBaliteSave(bridge, fullSave)).resolves.toBe(true);
+    expect(utf8ByteLength(vkStoredValue)).toBeLessThanOrEqual(BALITE_MAX_STORAGE_BYTES);
+    expect(utf8ByteLength(vkStoredValue)).toBeLessThanOrEqual(2500);
+
+    // На чистом устройстве из облачного сейва VK восстанавливается вся 100% Коллекция
+    localStorage.clear();
+    const freshDeviceBridge = createBalitePlatformBridge({
+      localBackupKey: 'balite_vk_unlock_all_fresh_device',
+    });
+    await freshDeviceBridge.init();
+    const loadedFromCloud = await loadBaliteSave(freshDeviceBridge);
+    expect(loadedFromCloud.revision).toBe(19);
+    expect(loadedFromCloud.activeRun).toBeNull();
+    expect(countMetaDiscoveries(loadedFromCloud.meta)).toBe(139);
+    expect(loadedFromCloud.meta.unlockedDecks).toEqual(unlockedMeta.unlockedDecks);
+    expect(loadedFromCloud.meta.discoveredRelics).toEqual(unlockedMeta.discoveredRelics);
+    expect(loadedFromCloud.meta.discoveredConsumables).toEqual(unlockedMeta.discoveredConsumables);
+    expect(loadedFromCloud.meta.discoveredCharters).toEqual(unlockedMeta.discoveredCharters);
+    expect(loadedFromCloud.meta.discoveredBosses).toEqual(unlockedMeta.discoveredBosses);
+    expect(loadedFromCloud.meta.discoveredTags).toEqual(unlockedMeta.discoveredTags);
+    expect(loadedFromCloud.meta.discoveredMonsters).toEqual(unlockedMeta.discoveredMonsters);
+    expect(loadedFromCloud.meta.discoveredPacks).toEqual(unlockedMeta.discoveredPacks);
+    expect(loadedFromCloud.meta.discoveredEditions).toEqual(unlockedMeta.discoveredEditions);
+    expect(loadedFromCloud.meta.seenCollectionItems).toEqual(unlockedMeta.seenCollectionItems);
+    expect(loadedFromCloud.meta.stats.totalMoneySpent).toBe(2800);
+    expect(loadedFromCloud.meta.stats.totalShopRerolls).toBe(60);
+    expect(loadedFromCloud.meta.stats.totalCelestialsUsed).toBe(55);
+
+    bridge.audio.dispose();
+    freshDeviceBridge.audio.dispose();
   });
 });

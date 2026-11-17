@@ -22,8 +22,10 @@ import {
 } from '../../src/engine/types';
 import { createTranslator } from '../../src/i18n';
 import {
+  AVAILABLE_RELIC_SPRITES,
   attachCardTilt,
   getRelicSpriteUrl,
+  hasRelicSprite,
   renderEntityCardFrame,
   renderPlayingCardFrame,
 } from '../../src/ui/cardFrame';
@@ -338,9 +340,11 @@ describe('Слоёный каркас карт CardFrame (TDD)', () => {
       );
       expect(el1.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 120 168');
       expect(el1.querySelector('.card-frame__fx--foil')).not.toBeNull();
+      expect(AVAILABLE_RELIC_SPRITES.size).toBe(0);
+      expect(hasRelicSprite('j_joker')).toBe(false);
       const relicSprite = el1.querySelector<HTMLImageElement>('.card-frame__relic-sprite');
-      expect(relicSprite).not.toBeNull();
-      expect(relicSprite?.src).toContain('sprites/relics/j_joker.webp');
+      expect(relicSprite).toBeNull();
+      expect(el1.querySelector('.card-frame__layer-art svg.card-frame__art-svg')).not.toBeNull();
       expect(getRelicSpriteUrl('j_joker')).toBe('./sprites/relics/j_joker.webp');
 
       const el2 = renderEntityCardFrame({
@@ -688,6 +692,8 @@ describe('Слоёный каркас карт CardFrame (TDD)', () => {
           relic: createRelicInstance(relicId, `id_${relicId}`),
           translator: ru,
         });
+        expect(hasRelicSprite(relicId)).toBe(false);
+        expect(el.querySelector('.card-frame__relic-sprite')).toBeNull();
         expect(el.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 120 168');
         expect(el.querySelector('.card-frame__title')?.textContent).toBe(
           ru.getRelicText(relicId).name,

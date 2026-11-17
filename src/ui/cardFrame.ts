@@ -20,6 +20,19 @@ import type { Translator } from '../i18n';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /**
+ * Белый список идентификаторов Навыков (Реликвий), для которых в public/sprites/relics/
+ * реально присутствуют растровые .webp-спрайты (защита от 404-запросов в браузере).
+ */
+export const AVAILABLE_RELIC_SPRITES: ReadonlySet<RelicId> = new Set<RelicId>();
+
+/**
+ * Проверяет, существует ли локальный растровый спрайт для указанного Навыка (Реликвии).
+ */
+export function hasRelicSprite(relicId: RelicId): boolean {
+  return AVAILABLE_RELIC_SPRITES.has(relicId);
+}
+
+/**
  * Возвращает относительный путь к пиксель-арт спрайту Навыка (Реликвии / Джокера).
  */
 export function getRelicSpriteUrl(relicId: RelicId): string {
@@ -1612,8 +1625,8 @@ export function renderEntityCardFrame(options: EntityCardFrameOptions): HTMLElem
       titleText = translator.getRelicText(options.relic.id).name;
       layers.chrome.appendChild(createHtmlEl('span', 'card-frame__rarity-badge', rarityLabel));
 
-      const spriteUrl = getRelicSpriteUrl(options.relic.id);
-      if (spriteUrl) {
+      if (hasRelicSprite(options.relic.id)) {
+        const spriteUrl = getRelicSpriteUrl(options.relic.id);
         const img = createHtmlEl('img', 'card-frame__relic-sprite') as HTMLImageElement;
         img.src = spriteUrl;
         img.alt = '';
