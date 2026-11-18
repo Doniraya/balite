@@ -58,6 +58,8 @@ export interface CardAnimatorOptions {
   readonly cancelFrame?: (id: number) => void;
   /** Источник времени в миллисекундах для первого кадра. */
   readonly now?: () => number;
+  /** Вызывается при старте каскадного вылета каждой карты из колоды или из руки. */
+  readonly onCardDeal?: (index: number, zone: 'hand' | 'play') => void;
 }
 
 /**
@@ -67,6 +69,7 @@ export interface AnimateFromSnapshotOptions {
   readonly speed?: AnimationSpeed;
   readonly animateDepartures?: boolean;
   readonly animateDeal?: boolean;
+  readonly dealInitialDelaySeconds?: number;
   readonly triggerCardIds?: readonly string[];
 }
 
@@ -105,6 +108,9 @@ interface ActiveLiveFlight {
   readonly el: HTMLElement;
   readonly baseFanY: number;
   readonly baseFanDeg: number;
+  delaySeconds: number;
+  readonly flightTempo: number;
+  onLaunch?: () => void;
   state: MoveableState;
 }
 
@@ -113,6 +119,9 @@ interface ActiveGhostFlight {
   readonly cardId: string;
   readonly el: HTMLElement;
   readonly startDistance: number;
+  delaySeconds: number;
+  readonly flightTempo: number;
+  onLaunch?: () => void;
   state: MoveableState;
 }
 
@@ -229,14 +238,16 @@ function applyGhostTransform(flight: ActiveGhostFlight): void {
   if (flight.startDistance > 1) {
     const remaining = Math.hypot(t.x - vt.x, t.y - vt.y);
     const progress = clamp(1 - remaining / flight.startDistance, 0, 1);
-    const opacity = progress < 0.65 ? 1 : clamp(1 - (progress - 0.65) / 0.35, 0.08, 1);
+    const opacity = progress < 0.55 ? 1 : clamp(1 - (progress - 0.55) / 0.35, 0, 1);
     flight.el.style.opacity = opacity.toFixed(3);
   }
 }
 
 function clearLiveElementFlight(el: HTMLElement): void {
   el.style.transform = '';
+  el.style.opacity = '';
   delete el.dataset.flightActive;
+  delete el.dataset.flightHidden;
 }
 
 /**
@@ -263,12 +274,14 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
     });
   const nowFn =
     options.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
+  const onCardDeal = options.onCardDeal;
 
   let destroyed = false;
   let rafId: number | null = null;
   let lastFrameMs: number | null = null;
   let activeSpeed: AnimationSpeed = getSpeed();
   let flights: ActiveFlight[] = [];
+  let juiceStepCounter = 0;
 
   const stopScheduler = (): void => {
     if (rafId !== null) {
@@ -312,7 +325,39 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
         continue;
       }
 
-      flight.state = stepMoveable(flight.state, dtSeconds, speed, reduced);
+      if (flight.delaySeconds > 0 && !reduced) {
+        flight.delaySeconds -= dtSeconds;
+        if (flight.delaySeconds > 0) {
+          nextFlights.push(flight);
+          continue;
+        }
+        const remDt = Math.max(1 / 240, -flight.delaySeconds);
+        flight.delaySeconds = 0;
+        if (flight.kind === 'live') {
+          delete flight.el.dataset.flightHidden;
+          if (flight.el.style.opacity === '0') {
+            flight.el.style.opacity = '';
+          }
+        }
+        if (flight.onLaunch) {
+          flight.onLaunch();
+          flight.onLaunch = undefined;
+        }
+        flight.state = stepMoveable(flight.state, remDt, speed * flight.flightTempo, reduced);
+      } else {
+        if (flight.kind === 'live') {
+          delete flight.el.dataset.flightHidden;
+          if (flight.el.style.opacity === '0') {
+            flight.el.style.opacity = '';
+          }
+        }
+        if (flight.onLaunch) {
+          flight.onLaunch();
+          flight.onLaunch = undefined;
+        }
+        flight.state = stepMoveable(flight.state, dtSeconds, speed * flight.flightTempo, reduced);
+      }
+
       if (flight.state.settled) {
         cleanupFlight(flight);
       } else {
@@ -386,11 +431,15 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
 
     const animateDeal = animateOptions.animateDeal !== false;
     const animateDepartures = animateOptions.animateDepartures !== false;
+    const baseDealDelay = Math.max(0, animateOptions.dealInitialDelaySeconds ?? 0);
     const triggerSet = new Set(animateOptions.triggerCardIds ?? []);
 
     const currentSlots = container.querySelectorAll<HTMLElement>(TRACKED_CARD_SELECTOR);
     const currentCardIds = new Set<string>();
     const dealSourceRect = snapshot.deckRect ?? findDeckRect(container);
+    let dealOrder = 0;
+    let playOrder = 0;
+    let ghostOrder = 0;
 
     currentSlots.forEach((slotEl) => {
       const cardId = slotEl.dataset.cardId;
@@ -410,6 +459,10 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
       let dScale = 1;
       let dR = 0;
       let shouldJuice = triggerSet.has(cardId);
+      let delaySeconds = 0;
+      let flightTempo = 1;
+      let hideUntilLaunch = false;
+      let onLaunch: (() => void) | undefined;
 
       if (prev) {
         if (isNonZeroRect(prev.rect) && isNonZeroRect(toRect)) {
@@ -426,6 +479,10 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
         dR = prev.fanAngleRad - toFanAngleRad;
         if (prev.zone === 'hand' && rawZone === 'play') {
           shouldJuice = true;
+          const order = playOrder++;
+          delaySeconds = (order * 0.08) / activeSpeed;
+          flightTempo = 0.72;
+          onLaunch = onCardDeal ? () => onCardDeal(order, 'play') : undefined;
         }
       } else if (
         rawZone === 'hand' &&
@@ -440,6 +497,14 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
             ? clamp(dealSourceRect.width / toRect.width, 0.45, 1.4)
             : 0.72;
         dR = -toFanAngleRad;
+        const order = dealOrder++;
+        delaySeconds = (baseDealDelay + order * 0.11) / activeSpeed;
+        flightTempo = 0.52;
+        hideUntilLaunch = delaySeconds > 0;
+        onLaunch =
+          (order > 0 || baseDealDelay > 0) && onCardDeal
+            ? () => onCardDeal(order, 'hand')
+            : undefined;
       }
 
       const hasSignificantDelta =
@@ -460,7 +525,8 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
       });
       moveableState = setTarget(moveableState, { x: 0, y: 0, scale: 1, r: 0 });
       if (shouldJuice) {
-        moveableState = juiceUp(moveableState, 0.1, 0, false);
+        const autoRot = (juiceStepCounter++ % 2 === 0 ? 1 : -1) * 0.085;
+        moveableState = juiceUp(moveableState, 0.18, autoRot, false);
       }
 
       const liveFlight: ActiveLiveFlight = {
@@ -469,9 +535,16 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
         el: slotEl,
         baseFanY,
         baseFanDeg,
+        delaySeconds,
+        flightTempo,
+        onLaunch,
         state: moveableState,
       };
       slotEl.dataset.flightActive = 'true';
+      if (hideUntilLaunch) {
+        slotEl.dataset.flightHidden = 'true';
+        slotEl.style.opacity = '0';
+      }
       applyLiveTransform(liveFlight);
       flights.push(liveFlight);
     });
@@ -510,11 +583,14 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
         });
         ghostState = setTarget(ghostState, targetTransform);
 
+        const order = ghostOrder++;
         const ghostFlight: ActiveGhostFlight = {
           kind: 'ghost',
           cardId: entry.cardId,
           el: ghost,
           startDistance: Math.hypot(targetTransform.x, targetTransform.y),
+          delaySeconds: (order * 0.03) / activeSpeed,
+          flightTempo: 0.95,
           state: ghostState,
         };
         applyGhostTransform(ghostFlight);
@@ -533,6 +609,13 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
     if (destroyed || prefersReducedMotion()) return false;
     const active = flights.find((f) => f.kind === 'live' && f.cardId === cardId);
     if (!active || active.kind !== 'live') return false;
+    if (active.delaySeconds > 0) {
+      active.delaySeconds = 0;
+      delete active.el.dataset.flightHidden;
+      active.el.style.opacity = '';
+      active.onLaunch?.();
+      active.onLaunch = undefined;
+    }
     active.state = juiceUp(active.state, scaleDelta, rotDelta, false);
     applyLiveTransform(active);
     ensureLoopRunning();
@@ -545,7 +628,10 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
     }
 
     const scaleDelta = juiceOptions?.scaleDelta ?? 0.24;
-    const rotDelta = juiceOptions?.rotDelta ?? 0;
+    const rotDelta =
+      juiceOptions?.rotDelta !== undefined
+        ? juiceOptions.rotDelta
+        : (juiceStepCounter++ % 2 === 0 ? 1 : -1) * Math.max(0.055, scaleDelta * 0.35);
 
     if (flights.length === 0 || juiceOptions?.speed !== undefined) {
       activeSpeed = juiceOptions?.speed ?? getSpeed();
@@ -555,6 +641,13 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
       (f): f is ActiveLiveFlight => f.kind === 'live' && f.el === target,
     );
     if (existing) {
+      if (existing.delaySeconds > 0) {
+        existing.delaySeconds = 0;
+        delete existing.el.dataset.flightHidden;
+        existing.el.style.opacity = '';
+        existing.onLaunch?.();
+        existing.onLaunch = undefined;
+      }
       existing.state = juiceUp(existing.state, scaleDelta, rotDelta, false);
       target.dataset.flightActive = 'true';
       applyLiveTransform(existing);
@@ -581,6 +674,8 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
       el: target,
       baseFanY,
       baseFanDeg,
+      delaySeconds: 0,
+      flightTempo: 1,
       state,
     };
 

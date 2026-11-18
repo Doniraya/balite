@@ -1263,4 +1263,177 @@ describe('Модальные окна (src/ui/modals.ts)', () => {
     );
     expect(withoutFineHover).not.toMatch(/:hover\b/);
   });
+
+  it('отображает рекорд заказа дня в Статистике и кнопку таблицы рекордов только для платформы vk', () => {
+    const ru = createTranslator('ru');
+    const baseMeta = createInitialMetaSave(1000, { lang: 'ru' });
+    const meta: MetaSave = {
+      ...baseMeta,
+      stats: {
+        ...baseMeta.stats,
+        dailyBestDate: '2026-11-17',
+        dailyBestScore: 7650,
+      },
+    };
+    const onOpenLeaderboard = vi.fn();
+
+    const vkStatsModal = renderSettingsModal({
+      settings: meta.settings,
+      meta,
+      initialTab: 'stats',
+      platformId: 'vk',
+      onOpenLeaderboard,
+      translator: ru,
+      onChangeSettings: vi.fn(),
+      onClose: vi.fn(),
+    });
+    assertCleanLocalizedElement(vkStatsModal);
+    expect(vkStatsModal.querySelector('[data-stats-panel]')?.textContent).toContain('7650');
+    const lbBtn = vkStatsModal.querySelector<HTMLButtonElement>('[data-action="open-vk-leaderboard"]');
+    expect(lbBtn).not.toBeNull();
+    lbBtn?.click();
+    expect(onOpenLeaderboard).toHaveBeenCalledTimes(1);
+
+    const yandexStatsModal = renderSettingsModal({
+      settings: meta.settings,
+      meta,
+      initialTab: 'stats',
+      platformId: 'yandex',
+      onOpenLeaderboard,
+      translator: ru,
+      onChangeSettings: vi.fn(),
+      onClose: vi.fn(),
+    });
+    expect(yandexStatsModal.querySelector('[data-action="open-vk-leaderboard"]')).toBeNull();
+  });
+
+  it('отображает кнопку добавления ярлыка на рабочий стол только при canShowShortcutPrompt=true и !shortcutPrompted, вызывая onAddShortcut по клику', () => {
+    const ru = createTranslator('ru');
+    const baseMeta = createInitialMetaSave(1000, { lang: 'ru' });
+    const onAddShortcut = vi.fn();
+
+    // 1. При canShowShortcutPrompt: true и !shortcutPrompted кнопка отображается во вкладке настроек
+    const visibleModal = renderSettingsModal({
+      settings: baseMeta.settings,
+      meta: baseMeta,
+      initialTab: 'settings',
+      canShowShortcutPrompt: true,
+      onAddShortcut,
+      translator: ru,
+      onChangeSettings: vi.fn(),
+      onClose: vi.fn(),
+    });
+    assertCleanLocalizedElement(visibleModal);
+    const shortcutBtn = visibleModal.querySelector<HTMLButtonElement>('[data-action="add-shortcut"]');
+    expect(shortcutBtn).not.toBeNull();
+    expect(shortcutBtn?.textContent).toBe(ru.t('ui.actions.addShortcut'));
+    shortcutBtn?.click();
+    expect(onAddShortcut).toHaveBeenCalledTimes(1);
+
+    // 2. Если canShowShortcutPrompt: false — кнопка скрыта
+    const hiddenModal = renderSettingsModal({
+      settings: baseMeta.settings,
+      meta: baseMeta,
+      initialTab: 'settings',
+      canShowShortcutPrompt: false,
+      onAddShortcut,
+      translator: ru,
+      onChangeSettings: vi.fn(),
+      onClose: vi.fn(),
+    });
+    expect(hiddenModal.querySelector('[data-action="add-shortcut"]')).toBeNull();
+
+    // 3. Если shortcutPrompted: true — кнопка скрыта даже при canShowShortcutPrompt: true
+    const promptedSettings: GameSettings = {
+      ...baseMeta.settings,
+      shortcutPrompted: true,
+    };
+    const promptedModal = renderSettingsModal({
+      settings: promptedSettings,
+      meta: baseMeta,
+      initialTab: 'settings',
+      canShowShortcutPrompt: true,
+      onAddShortcut,
+      translator: ru,
+      onChangeSettings: vi.fn(),
+      onClose: vi.fn(),
+    });
+    expect(promptedModal.querySelector('[data-action="add-shortcut"]')).toBeNull();
+
+    // 4. Если колбэк onAddShortcut не передан — кнопка скрыта
+    const noCallbackModal = renderSettingsModal({
+      settings: baseMeta.settings,
+      meta: baseMeta,
+      initialTab: 'settings',
+      canShowShortcutPrompt: true,
+      translator: ru,
+      onChangeSettings: vi.fn(),
+      onClose: vi.fn(),
+    });
+    expect(noCallbackModal.querySelector('[data-action="add-shortcut"]')).toBeNull();
+  });
+
+  it('Эпик 8: вкладка «Настроить колоду» рендерит 5 карт предпросмотра, переключает палитру мастей и рубашку колоды', () => {
+    const ru = createTranslator('ru');
+    const baseMeta = createInitialMetaSave(1000, { lang: 'ru' });
+    const onChangeSettings = vi.fn();
+    const onTabChange = vi.fn();
+
+    const modal = renderSettingsModal({
+      settings: baseMeta.settings,
+      meta: baseMeta,
+      translator: ru,
+      onChangeSettings,
+      onTabChange,
+      onClose: vi.fn(),
+    });
+    assertCleanLocalizedElement(modal);
+
+    const customizeBtn = modal.querySelector<HTMLButtonElement>('[data-hub-action="customize-deck"]');
+    expect(customizeBtn).not.toBeNull();
+    expect(customizeBtn?.textContent).toBe(ru.t('ui.settings.hubCustomizeDeck'));
+    customizeBtn?.click();
+
+    expect(onTabChange).toHaveBeenLastCalledWith('customize_deck');
+    assertCleanLocalizedElement(modal);
+
+    const panel = modal.querySelector('[data-customize-deck-panel="true"]');
+    expect(panel).not.toBeNull();
+    expect(modal.querySelector('[data-preview-card="back"]')).not.toBeNull();
+    expect(modal.querySelector('[data-preview-suit="spades"]')).not.toBeNull();
+    expect(modal.querySelector('[data-preview-suit="hearts"]')).not.toBeNull();
+    expect(modal.querySelector('[data-preview-suit="clubs"]')).not.toBeNull();
+    expect(modal.querySelector('[data-preview-suit="diamonds"]')).not.toBeNull();
+
+    const sheet = modal.querySelector<HTMLElement>('.modal-sheet');
+    expect(sheet?.dataset.suitPalette).toBe('standard');
+    expect(sheet?.dataset.cardBack).toBe('default');
+
+    // Переключение на высококонтрастную палитру мастей
+    const highContrastBtn = modal.querySelector<HTMLButtonElement>(
+      '[data-suit-palette-option="high_contrast"]',
+    );
+    expect(highContrastBtn).not.toBeNull();
+    highContrastBtn?.click();
+    expect(sheet?.dataset.suitPalette).toBe('high_contrast');
+    expect(onChangeSettings).toHaveBeenCalledWith({ suitPalette: 'high_contrast' });
+    expect(modal.querySelector('[data-suit-palette-desc="true"]')?.textContent).toBe(
+      ru.t('ui.settings.suitPaletteDescHighContrast'),
+    );
+
+    // Переключение рубашки колоды на b_red
+    const redBackBtn = modal.querySelector<HTMLButtonElement>('[data-card-back-option="b_red"]');
+    expect(redBackBtn).not.toBeNull();
+    redBackBtn?.click();
+    expect(sheet?.dataset.cardBack).toBe('b_red');
+    expect(redBackBtn?.classList.contains('is-active')).toBe(true);
+    expect(onChangeSettings).toHaveBeenCalledWith({ cardBack: 'b_red' });
+
+    // Возврат в хаб и повторное открытие сохраняет выбранные значения в активном окне
+    modal.querySelector<HTMLButtonElement>('[data-action="hub-back"]')?.click();
+    expect(onTabChange).toHaveBeenLastCalledWith('hub');
+    modal.querySelector<HTMLButtonElement>('[data-hub-action="customize-deck"]')?.click();
+    expect(sheet?.dataset.suitPalette).toBe('high_contrast');
+    expect(sheet?.dataset.cardBack).toBe('b_red');
+  });
 });

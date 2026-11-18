@@ -228,6 +228,7 @@ export function renderCollectionModal(options: CollectionModalOptions): HTMLElem
 
   let activeMeta: MetaSave = options.meta;
   let currentCategory: CollectionCategory | null = options.initialCategory ?? null;
+  let lastRenderedCategory: CollectionCategory | null | undefined = undefined;
   let currentPage = 0;
   let deckCarouselIndex = 0;
   const cleanups: Array<() => void> = [];
@@ -1127,8 +1128,19 @@ export function renderCollectionModal(options: CollectionModalOptions): HTMLElem
    * Главный диспетчер перерисовки контента модального окна.
    */
   const renderView = (): void => {
+    const categoryChanged =
+      lastRenderedCategory !== undefined && lastRenderedCategory !== currentCategory;
+    lastRenderedCategory = currentCategory;
+
     runCleanups();
     sheet.replaceChildren();
+
+    if (categoryChanged) {
+      // Перезапускаем выезд панели снизу вверх при переходе между хабом и категорией
+      sheet.style.animation = 'none';
+      void sheet.offsetWidth;
+      sheet.style.animation = '';
+    }
 
     if (currentCategory === null) {
       renderHubView();

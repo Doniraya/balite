@@ -76,10 +76,10 @@ const PALETTES: Record<FlameSide, FlamePalette> = {
   },
 };
 
-const OVERLAY_PAD_TOP = 16;
+const OVERLAY_PAD_TOP = 22;
 const OVERLAY_PAD_X = 8;
 const OVERLAY_PAD_BOTTOM = 4;
-const PARTICLES_PER_SIDE = 12;
+const PARTICLES_PER_SIDE = 16;
 const STOP_THRESHOLD = 0.005;
 
 /**
@@ -138,9 +138,9 @@ function createParticlePool(): FlameParticle[] {
         xOffset: spread * 0.86,
         progress: t,
         speed: 0.95 + ((i * 3) % 5) * 0.16,
-        radius: 6 + ((i * 5) % 6),
+        radius: 7 + ((i * 5) % 7),
         swayPhase: i * 1.37,
-        swayAmp: 2.2 + (i % 3) * 1.1,
+        swayAmp: 2.6 + (i % 3) * 1.3,
       });
     }
   }
@@ -337,7 +337,7 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
     ctx.globalCompositeOperation = 'lighter';
 
     const baseLineY = heightCss - OVERLAY_PAD_BOTTOM - 2;
-    const travelHeight = (14 + intensity * 22);
+    const travelHeight = 18 + intensity * 28;
 
     for (const particle of particles) {
       const zone = zones[particle.side];
@@ -350,7 +350,7 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
       const sway = Math.sin(flameTimer * 3.4 + particle.swayPhase + life * 4) * particle.swayAmp;
       const x = zone.xCenter + particle.xOffset * zone.width * (1 - life * 0.35) + sway;
       const y = baseLineY - life * travelHeight;
-      const r = particle.radius * (0.55 + intensity * 0.65) * (1 - life * 0.55);
+      const r = particle.radius * (0.62 + intensity * 0.72) * (1 - life * 0.52);
       if (r <= 0.5) continue;
 
       const grad = ctx.createRadialGradient(x, y, 0, x, y, r);

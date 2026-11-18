@@ -30,6 +30,8 @@ export class YandexAdapter<TSave extends Record<string, unknown> = Record<string
   private player: YSDK.Player | null = null;
   private adBusy = false;
   private readySent = false;
+  private reviewRequestedInSession = false;
+  private canReviewVerified = false;
 
   constructor(ctx: AdapterContext<TSave>) {
     this.ctx = ctx;
@@ -216,6 +218,86 @@ export class YandexAdapter<TSave extends Record<string, unknown> = Record<string
       }
     } catch {
       // Ошибка лидерборда не должна блокировать игровой цикл
+    }
+  }
+
+  async getServerTime(): Promise<number> {
+    try {
+      const serverTimeFn = this.ysdk?.serverTime;
+      if (typeof serverTimeFn === 'function') {
+        const ts = serverTimeFn.call(this.ysdk);
+        if (typeof ts === 'number' && Number.isFinite(ts) && ts > 0) {
+          return Math.floor(ts);
+        }
+      }
+    } catch {
+      // Откат на локальное время
+    }
+    return Date.now();
+  }
+
+  async canRequestReview(): Promise<boolean> {
+    if (this.reviewRequestedInSession) return false;
+    const canReviewFn = this.ysdk?.feedback?.canReview;
+    if (typeof canReviewFn !== 'function') return false;
+    try {
+      const res = await withTimeout(
+        canReviewFn.call(this.ysdk!.feedback),
+        3000,
+        'ysdk.feedback.canReview',
+      );
+      const allowed = Boolean(res?.value);
+      this.canReviewVerified = allowed;
+      return allowed;
+    } catch {
+      return false;
+    }
+  }
+
+  async requestReview(): Promise<boolean> {
+    if (this.reviewRequestedInSession) return false;
+    const feedback = this.ysdk?.feedback;
+    if (!feedback || typeof feedback.requestReview !== 'function') return false;
+    try {
+      if (!this.canReviewVerified) {
+        const allowed = await this.canRequestReview();
+        if (!allowed) return false;
+      }
+      this.reviewRequestedInSession = true;
+      const res = await withTimeout(
+        feedback.requestReview(),
+        10000,
+        'ysdk.feedback.requestReview',
+      );
+      return Boolean(res?.feedbackSent);
+    } catch {
+      return false;
+    }
+  }
+
+  async canShowShortcutPrompt(): Promise<boolean> {
+    const canShowFn = this.ysdk?.shortcut?.canShowPrompt;
+    if (typeof canShowFn !== 'function') return false;
+    try {
+      const res = await withTimeout(
+        canShowFn.call(this.ysdk!.shortcut),
+        3000,
+        'ysdk.shortcut.canShowPrompt',
+      );
+      return Boolean(res?.canShow);
+    } catch {
+      return false;
+    }
+  }
+
+  async showShortcutPrompt(): Promise<boolean> {
+    const shortcut = this.ysdk?.shortcut;
+    if (!shortcut || typeof shortcut.showPrompt !== 'function') return false;
+    try {
+      const res = await withTimeout(shortcut.showPrompt(), 15000, 'ysdk.shortcut.showPrompt');
+      return res?.outcome === 'accepted';
+    } catch {
+      return false;
     }
   }
 

@@ -1538,3 +1538,155 @@ describe('Story 6.1 & 6.2: накопительная статистика, coun
     expect(merged.meta?.stats.totalShopRerolls).toBe(5);
   });
 });
+
+describe('Эпик 7: reviveUsed, adRerollUsed, dailyBestDate/Score и reviewPrompted/shortcutPrompted', () => {
+  it('сохраняет и объединяет поля Эпика 7 без потери и с соблюдением лимита <= 2200 символов при 100% коллекции', () => {
+    const base = createInitialMetaSave(1700000000000);
+    const dailyRun: RunState = {
+      ...createRichRunState(),
+      seed: 'DAILY-20261117',
+      reviveUsed: true,
+      shop: {
+        ...createRichRunState().shop!,
+        adRerollUsed: true,
+      },
+      stats: {
+        ...createRichRunState().stats,
+        bestHandScore: 24500,
+      },
+    };
+
+    const nextStats = updateMetaStatsFromRunState(base.stats, dailyRun, { runWon: true });
+    expect(nextStats.dailyBestDate).toBe('2026-11-17');
+    expect(nextStats.dailyBestScore).toBe(24500);
+
+    // Более старый ежедневный сид не перезаписывает рекорд более свежего дня
+    const olderDaily: RunState = {
+      ...dailyRun,
+      seed: 'DAILY-20261116',
+      stats: { ...dailyRun.stats, bestHandScore: 99999 },
+    };
+    const afterOlder = updateMetaStatsFromRunState(nextStats, olderDaily, { runWon: true });
+    expect(afterOlder.dailyBestDate).toBe('2026-11-17');
+    expect(afterOlder.dailyBestScore).toBe(24500);
+
+    // Обычный не-daily сид не меняет dailyBest*
+    const normalRun: RunState = {
+      ...dailyRun,
+      seed: 'NORMAL-SEED',
+      stats: { ...dailyRun.stats, bestHandScore: 500000 },
+    };
+    const afterNormal = updateMetaStatsFromRunState(afterOlder, normalRun, { runWon: true });
+    expect(afterNormal.dailyBestDate).toBe('2026-11-17');
+    expect(afterNormal.dailyBestScore).toBe(24500);
+
+    // Round-trip RunSnapshot для reviveUsed и adRerollUsed
+    const snap = serializeRunStateToSnapshot(dailyRun, 5, 1700000010000);
+    expect(snap.reviveUsed).toBe(true);
+    expect(snap.shop?.adRerollUsed).toBe(true);
+    const restoredRun = restoreRunStateFromSnapshot(snap);
+    expect(restoredRun.reviveUsed).toBe(true);
+    expect(restoredRun.shop?.adRerollUsed).toBe(true);
+
+    // Merge настроек и dailyBest при слиянии двух сохранений
+    const localSave = createPlayerSaveData(
+      {
+        ...unlockAllCollection(base),
+        settings: { ...base.settings, reviewPrompted: true },
+        stats: { ...afterNormal, dailyBestDate: '2026-11-17', dailyBestScore: 24500 },
+      },
+      snap,
+      5,
+      1700000010000,
+    );
+    const cloudSave = createPlayerSaveData(
+      {
+        ...base,
+        settings: { ...base.settings, shortcutPrompted: true },
+        stats: { ...base.stats, dailyBestDate: '2026-11-17', dailyBestScore: 31000 },
+      },
+      null,
+      4,
+      1700000005000,
+    );
+
+    const merged = mergePlayerSaveData(localSave, cloudSave);
+    expect(merged.meta?.settings.reviewPrompted).toBe(true);
+    expect(merged.meta?.settings.shortcutPrompted).toBe(true);
+    expect(merged.meta?.stats.dailyBestDate).toBe('2026-11-17');
+    expect(merged.meta?.stats.dailyBestScore).toBe(31000);
+
+    // Сжатый fallback с 100% коллекцией и полями Эпика 7 укладывается в 2200 байт
+    const compact = createCompactFallbackSave(merged as PlayerSaveData);
+    const serialized = trySerializeWithinLimit(compact, 2200);
+    expect(serialized).not.toBeNull();
+    expect(utf8ByteLength(serialized!)).toBeLessThanOrEqual(2200);
+  });
+
+  it('Эпик 8: санитизирует, сохраняет, сбрасывает в дефолт и объединяет suitPalette и cardBack в пределах <= 2200 байт', () => {
+    const base = createInitialMetaSave(1700000000000, {
+      suitPalette: 'high_contrast',
+      cardBack: 'b_blue',
+    });
+    expect(base.settings.suitPalette).toBe('high_contrast');
+    expect(base.settings.cardBack).toBe('b_blue');
+
+    // Невалидные значения отбрасываются, дефолтные не засоряют сериализацию
+    const invalidSanitized = sanitizePlayerSaveData({
+      version: 1,
+      revision: 2,
+      updatedAt: 1700000001000,
+      meta: {
+        ...base,
+        settings: {
+          ...base.settings,
+          suitPalette: 'neon_invalid',
+          cardBack: 'unknown_back',
+        },
+      },
+    });
+    expect(invalidSanitized.meta?.settings.suitPalette).toBeUndefined();
+    expect(invalidSanitized.meta?.settings.cardBack).toBeUndefined();
+
+    const defaultSanitized = sanitizePlayerSaveData({
+      version: 1,
+      revision: 3,
+      updatedAt: 1700000002000,
+      meta: {
+        ...base,
+        settings: {
+          ...base.settings,
+          suitPalette: 'standard',
+          cardBack: 'default',
+        },
+      },
+    });
+    expect(defaultSanitized.meta?.settings.suitPalette).toBeUndefined();
+    expect(defaultSanitized.meta?.settings.cardBack).toBeUndefined();
+
+    // При слиянии более свежая настройка побеждает
+    const olderSave = createPlayerSaveData(
+      { ...base, settings: { ...base.settings, suitPalette: 'standard', cardBack: 'b_red' } },
+      null,
+      4,
+      1700000005000,
+    );
+    const newerSave = createPlayerSaveData(
+      {
+        ...unlockAllCollection(base),
+        settings: { ...base.settings, suitPalette: 'high_contrast', cardBack: 'b_blue' },
+      },
+      null,
+      5,
+      1700000010000,
+    );
+    const merged = mergePlayerSaveData(olderSave, newerSave);
+    expect(merged.meta?.settings.suitPalette).toBe('high_contrast');
+    expect(merged.meta?.settings.cardBack).toBe('b_blue');
+
+    const compact = createCompactFallbackSave(merged as PlayerSaveData);
+    const serialized = trySerializeWithinLimit(compact, 2200);
+    expect(serialized).not.toBeNull();
+    expect(utf8ByteLength(serialized!)).toBeLessThanOrEqual(2200);
+  });
+});

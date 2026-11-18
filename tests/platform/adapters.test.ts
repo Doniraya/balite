@@ -207,6 +207,60 @@ describe('YandexAdapter', () => {
     expect(await adapter.savePlayerData(payload)).toBe(true);
     expect(setData).toHaveBeenCalledWith(payload, true);
   });
+
+  it('поддерживает serverTime(), feedback (1 раз за сессию) и shortcut с безопасным откатом', async () => {
+    const canReview = vi.fn().mockResolvedValue({ value: false, reason: 'NO_AUTH' });
+    const requestReview = vi.fn().mockResolvedValue({ feedbackSent: true });
+    const canShowPrompt = vi.fn().mockResolvedValue({ canShow: true });
+    const showPrompt = vi
+      .fn()
+      .mockResolvedValueOnce({ outcome: 'rejected' })
+      .mockResolvedValueOnce({ outcome: 'accepted' });
+    const serverTime = vi
+      .fn()
+      .mockReturnValueOnce(1_760_000_000_123)
+      .mockReturnValueOnce(Number.NaN);
+
+    (globalThis as Record<string, unknown>).YaGames = {
+      init: vi.fn().mockResolvedValue({
+        environment: { i18n: { lang: 'ru' } },
+        features: { LoadingAPI: { ready: vi.fn() }, GameplayAPI: { start: vi.fn(), stop: vi.fn() } },
+        getPlayer: vi.fn().mockResolvedValue(null),
+        on: vi.fn(() => () => {}),
+        serverTime,
+        feedback: { canReview, requestReview },
+        shortcut: { canShowPrompt, showPrompt },
+      }),
+    };
+
+    const { ctx } = makeContext();
+    const adapter = new YandexAdapter(ctx);
+    await adapter.init();
+
+    expect(await adapter.getServerTime()).toBe(1_760_000_000_123);
+    const beforeNow = Date.now();
+    const fallbackNow = await adapter.getServerTime();
+    expect(fallbackNow).toBeGreaterThanOrEqual(beforeNow);
+
+    // При отказе canReview запрос requestReview не отправляется
+    expect(await adapter.canRequestReview()).toBe(false);
+    expect(await adapter.requestReview()).toBe(false);
+    expect(requestReview).not.toHaveBeenCalled();
+
+    // При разрешении canReview срабатывает 1 раз за сессию и блокирует повторный вызов
+    canReview.mockResolvedValue({ value: true });
+    expect(await adapter.canRequestReview()).toBe(true);
+    expect(await adapter.requestReview()).toBe(true);
+    expect(requestReview).toHaveBeenCalledTimes(1);
+    expect(await adapter.canRequestReview()).toBe(false);
+    expect(await adapter.requestReview()).toBe(false);
+    expect(requestReview).toHaveBeenCalledTimes(1);
+
+    // Промпт ярлыка на рабочий стол
+    expect(await adapter.canShowShortcutPrompt()).toBe(true);
+    expect(await adapter.showShortcutPrompt()).toBe(false);
+    expect(await adapter.showShortcutPrompt()).toBe(true);
+  });
 });
 
 describe('VkAdapter', () => {
@@ -312,6 +366,59 @@ describe('VkAdapter', () => {
       'VKWebAppShowLeaderBoardBox',
       expect.anything(),
     );
+  });
+
+  it('предзагружает нативную рекламу через VKWebAppCheckNativeAds, проверяет rewarded и открывает лидерборд по явному вызову', async () => {
+    vkBridgeMock.send.mockImplementation(async (method = '', params?: Record<string, unknown>) => {
+      if (method === 'VKWebAppCheckNativeAds') {
+        return { result: params?.ad_format === 'reward' };
+      }
+      if (method === 'VKWebAppShowLeaderBoardBox') {
+        return { success: true };
+      }
+      return { result: true };
+    });
+
+    const { ctx } = makeContext({ params: { platform: 'vk' } });
+    const adapter = new VkAdapter(ctx);
+    await adapter.init();
+
+    // Предзагрузка обоих форматов при init()
+    expect(vkBridgeMock.send).toHaveBeenCalledWith('VKWebAppCheckNativeAds', {
+      ad_format: 'interstitial',
+    });
+    expect(vkBridgeMock.send).toHaveBeenCalledWith('VKWebAppCheckNativeAds', {
+      ad_format: 'reward',
+    });
+
+    // canShowRewarded проверяет готовность rewarded-рекламы
+    expect(await adapter.canShowRewarded()).toBe(true);
+    vkBridgeMock.send.mockResolvedValueOnce({ result: false });
+    expect(await adapter.canShowRewarded()).toBe(false);
+
+    // Фоновая дозагрузка после показа rewarded
+    vkBridgeMock.send.mockClear();
+    expect(await adapter.showRewarded()).toEqual({ rewarded: true });
+    expect(vkBridgeMock.send).toHaveBeenCalledWith('VKWebAppCheckNativeAds', {
+      ad_format: 'reward',
+    });
+
+    // Явный вызов openLeaderboardBox клэмпит user_result в диапазон [1..10_000_000]
+    expect(await adapter.openLeaderboardBox(0)).toBe(true);
+    expect(vkBridgeMock.send).toHaveBeenCalledWith('VKWebAppShowLeaderBoardBox', {
+      user_result: 1,
+    });
+
+    expect(await adapter.openLeaderboardBox(25_000_000)).toBe(true);
+    expect(vkBridgeMock.send).toHaveBeenCalledWith('VKWebAppShowLeaderBoardBox', {
+      user_result: 10_000_000,
+    });
+
+    // При отсутствии поддержки VKWebAppShowLeaderBoardBox возвращает false
+    vkBridgeMock.supportsAsync.mockResolvedValueOnce(false);
+    vkBridgeMock.send.mockClear();
+    expect(await adapter.openLeaderboardBox(500)).toBe(false);
+    expect(vkBridgeMock.send).not.toHaveBeenCalled();
   });
 });
 

@@ -664,6 +664,8 @@ export interface ShopState {
   readonly rerollCost: number;
   readonly tempRerollCost: number | null;
   readonly rerollsUsedThisShop: number;
+  /** Использовано ли бесплатное обновление прилавка за просмотр рекламы в этом визите. */
+  readonly adRerollUsed?: boolean;
 }
 
 /**
@@ -804,6 +806,8 @@ export interface RunState {
   readonly cashout: CashoutBreakdown | null;
   readonly nextCardUid: number;
   readonly stats: RunStats;
+  /** Использован ли «Второй шанс» (+1 рука за рекламу при поражении) в текущем забеге. */
+  readonly reviveUsed?: boolean;
 }
 
 /**
@@ -842,8 +846,10 @@ export type GameCommand =
     }
   | { readonly type: 'SKIP_BOOSTER' }
   | { readonly type: 'REROLL_SHOP' }
+  | { readonly type: 'FREE_REROLL_SHOP' }
   | { readonly type: 'NEXT_ROUND' }
-  | { readonly type: 'CONTINUE_ENDLESS' };
+  | { readonly type: 'CONTINUE_ENDLESS' }
+  | { readonly type: 'REVIVE_RUN' };
 
 /**
  * Источник изменения баланса золота для журнала событий.
@@ -1019,6 +1025,20 @@ export type AnimationSpeed = 0.5 | 1 | 2 | 4;
 export type CrtMode = 'off' | 'light' | 'original';
 
 /**
+ * Допустимые режимы цветовой палитры мастей игральных карт.
+ */
+export const SUIT_PALETTES = ['standard', 'high_contrast'] as const;
+export type SuitPalette = (typeof SUIT_PALETTES)[number];
+export const DEFAULT_SUIT_PALETTE: SuitPalette = 'standard';
+
+/**
+ * Допустимые стили оформления рубашки колоды.
+ */
+export const CARD_BACK_STYLES = ['default', 'b_red', 'b_blue', 'b_yellow', 'b_black'] as const;
+export type CardBackStyle = (typeof CARD_BACK_STYLES)[number];
+export const DEFAULT_CARD_BACK_STYLE: CardBackStyle = 'default';
+
+/**
  * Поддерживаемые языки локализации (согласованы с SupportedLang платформенного слоя без прямой зависимости).
  */
 export type EngineLang = 'ru' | 'en';
@@ -1036,6 +1056,14 @@ export interface GameSettings {
   readonly settingsVersion?: number;
   readonly tutorialCompleted?: boolean;
   readonly tutorialStep?: number;
+  /** Был ли уже показан запрос оценки игры (feedback.requestReview). */
+  readonly reviewPrompted?: boolean;
+  /** Было ли уже показано авто-предложение ярлыка на рабочий стол (shortcut.showPrompt). */
+  readonly shortcutPrompted?: boolean;
+  /** Цветовая палитра мастей карт (standard | high_contrast). */
+  readonly suitPalette?: SuitPalette;
+  /** Выбранное оформление рубашки колоды (default | b_red | b_blue | b_yellow | b_black). */
+  readonly cardBack?: CardBackStyle;
 }
 
 /**
@@ -1058,6 +1086,10 @@ export interface MetaStats {
   readonly totalShopRerolls?: number;
   /** Накопительное число использованных Астральных сфер за все забеги. */
   readonly totalCelestialsUsed?: number;
+  /** Дата (YYYY-MM-DD в UTC) последнего лучшего результата в «Ежедневном заказе». */
+  readonly dailyBestDate?: string;
+  /** Лучший счёт за день в «Ежедневном заказе». */
+  readonly dailyBestScore?: number;
 }
 
 /**
@@ -1196,6 +1228,7 @@ export interface RunSnapshot {
   readonly cashout: CashoutBreakdown | null;
   readonly nextCardUid: number;
   readonly stats: RunStats;
+  readonly reviveUsed?: boolean;
 }
 
 /**

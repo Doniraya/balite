@@ -8,17 +8,20 @@ import {
   advanceActiveRunTracker,
   applyDebugCardMods,
   applyDebugVoucher,
+  buildDailyRunSpec,
   canUseConsumable,
   collectRunMetaDiscoveries,
   createInitialMetaSave,
   createInitialRunState,
   createPlayerSaveData,
   dispatch,
+  extractDailyDateKeyFromSeed,
   forceDebugBlindWin,
   forceDebugRunEnd,
   giveDebugConsumable,
   giveDebugRelic,
   hasAnyUnseenCollectionItems,
+  isDailyRunSeed,
   normalizePackIdForCollection,
   resetCollection,
   restoreRunStateFromSnapshot,
@@ -32,6 +35,7 @@ import {
 import type {
   AnimationSpeed,
   BossId,
+  CardBackStyle,
   CharterId,
   ConsumableId,
   ConsumableKind,
@@ -49,6 +53,7 @@ import type {
   RunSnapshot,
   RunState,
   ShopOffer,
+  SuitPalette,
   TagId,
   TraceEvent,
 } from '../engine/types';
@@ -435,7 +440,7 @@ function extractCommandMetaTracking(
       : 0;
 
   const shopRerollsDelta =
-    command.type === 'REROLL_SHOP'
+    command.type === 'REROLL_SHOP' || command.type === 'FREE_REROLL_SHOP'
       ? Math.max(0, nextState.stats.rerollsCount - prevState.stats.rerollsCount)
       : 0;
 
@@ -590,16 +595,19 @@ function normalizeSelectedCardIds(
     return filtered.slice(0, targetMode.max);
   }
 
+  let next = filtered;
   if (state.phase === 'playing') {
     const forcedCard = state.deck.find(
       (card) => accessibleSet.has(card.id) && card.forcedSelection === true,
     );
-    if (forcedCard && !filtered.includes(forcedCard.id)) {
-      return [forcedCard.id, ...filtered].slice(0, 5);
+    if (forcedCard && !next.includes(forcedCard.id)) {
+      next = [forcedCard.id, ...next];
     }
   }
 
-  return filtered.slice(0, 5);
+  const limited = next.slice(0, 5);
+  const selectedSet = new Set(limited);
+  return accessible.filter((id) => selectedSet.has(id));
 }
 
 /**
@@ -670,8 +678,21 @@ export function mountBaliteApp(
     root.dataset.crt = crtMode;
   };
 
+  const syncSuitPaletteCss = (suitPalette: SuitPalette = 'standard'): void => {
+    root.dataset.suitPalette = suitPalette;
+  };
+
+  const syncCardBackCss = (cardBack: CardBackStyle = 'default'): void => {
+    root.dataset.cardBack = cardBack;
+  };
+
   const screenHostEl = document.createElement('div');
   screenHostEl.className = 'stage-screen-host';
+
+  // Слой бесшовных фазовых переходов (уходящие экраны поверх сцены, под полётами карт)
+  const phaseTransitionLayerEl = document.createElement('div');
+  phaseTransitionLayerEl.className = 'phase-transition-layer';
+  phaseTransitionLayerEl.setAttribute('aria-hidden', 'true');
 
   // Слой призрачных перелётов карт поверх сцены (не перехватывает пользовательский ввод)
   const flightLayerEl = document.createElement('div');
@@ -686,7 +707,7 @@ export function mountBaliteApp(
   crtOverlayEl.className = 'crt-overlay';
   crtOverlayEl.setAttribute('aria-hidden', 'true');
 
-  stageEl.append(screenHostEl, flightLayerEl, overlayHostEl);
+  stageEl.append(screenHostEl, phaseTransitionLayerEl, flightLayerEl, overlayHostEl);
   root.append(canvasEl, stageEl, crtOverlayEl);
 
   const backdrop: BackdropController = createBackdropCanvas(canvasEl);
@@ -708,12 +729,15 @@ export function mountBaliteApp(
   syncDocumentLanguage(saveData.meta.settings.lang);
   syncAnimationSpeedCss(saveData.meta.settings.animationSpeed);
   syncCrtModeCss(saveData.meta.settings.crtMode);
+  syncSuitPaletteCss(saveData.meta.settings.suitPalette ?? 'standard');
+  syncCardBackCss(saveData.meta.settings.cardBack ?? 'default');
   const audio: BaliteAudioController =
     options.audio ?? createHybridBaliteAudio(bridge.audio, saveData.meta.settings);
   const cardAnimator = createCardAnimator({
     ...options.cardAnimatorOptions,
     flightLayer: flightLayerEl,
     getSpeed: () => saveData.meta.settings.animationSpeed,
+    onCardDeal: () => audio.playCardDeal(),
   });
   const cardTiltController: CardTiltController = initCardTiltController({
     ...options.cardTiltOptions,
@@ -747,6 +771,131 @@ export function mountBaliteApp(
   let isTransitioningAd = false;
   let lastInterstitialAtMs: number | null = null;
   let completionRecordedForCurrentRun = false;
+  let canShowRewardedCached = true;
+  let rewardedCheckToken = 0;
+  let canShowShortcutCached = false;
+  let shortcutCheckToken = 0;
+  let reviewPromptInFlight = false;
+  let shortcutPromptInFlight = false;
+  let lastServerNowMs: number | null = null;
+  let lastServerSyncLocalMs = initialNow;
+  let currentDailySpec = buildDailyRunSpec(initialNow);
+
+  const refreshDailySpec = (): void => {
+    if (lastServerNowMs !== null) {
+      const elapsedMs = Math.max(0, Math.floor(now()) - lastServerSyncLocalMs);
+      currentDailySpec = buildDailyRunSpec(lastServerNowMs + elapsedMs);
+    } else {
+      currentDailySpec = buildDailyRunSpec(Math.max(0, Math.floor(now())));
+    }
+  };
+
+  const openVkLeaderboardWithBestScore = (): void => {
+    if (destroyed || bridge.getPlatformId() !== 'vk') return;
+    audio.playButton();
+    const bestScore = Math.max(
+      1,
+      Math.floor(Math.max(saveData.meta.stats.bestHandScore, runState.stats.bestHandScore)),
+    );
+    void bridge.openLeaderboardBox(bestScore).catch(() => false);
+  };
+
+  const refreshRewardedAvailability = (): void => {
+    const token = ++rewardedCheckToken;
+    void bridge
+      .canShowRewarded()
+      .then((available) => {
+        if (destroyed || token !== rewardedCheckToken) return;
+        const nextVal = Boolean(available);
+        if (nextVal !== canShowRewardedCached) {
+          canShowRewardedCached = nextVal;
+          if (!showMainMenu && (runState.phase === 'shop' || runState.phase === 'game_over')) {
+            render();
+          }
+        }
+      })
+      .catch(() => undefined);
+  };
+
+  const refreshShortcutAvailability = (): void => {
+    if (destroyed) return;
+    if (saveData.meta.settings.shortcutPrompted) {
+      if (canShowShortcutCached) {
+        canShowShortcutCached = false;
+        if (
+          activeModal === 'settings' &&
+          (activeSettingsTab === 'hub' || activeSettingsTab === 'settings')
+        ) {
+          renderOverlay();
+        }
+      }
+      return;
+    }
+    const token = ++shortcutCheckToken;
+    void bridge
+      .canShowShortcutPrompt()
+      .then((available) => {
+        if (destroyed || token !== shortcutCheckToken) return;
+        const nextVal = Boolean(available) && !saveData.meta.settings.shortcutPrompted;
+        if (nextVal !== canShowShortcutCached) {
+          canShowShortcutCached = nextVal;
+          if (
+            activeModal === 'settings' &&
+            (activeSettingsTab === 'hub' || activeSettingsTab === 'settings')
+          ) {
+            renderOverlay();
+          }
+        }
+      })
+      .catch(() => undefined);
+  };
+
+  const maybePromptReview = async (): Promise<boolean> => {
+    if (
+      destroyed ||
+      reviewPromptInFlight ||
+      saveData.meta.settings.reviewPrompted ||
+      isTutorialActive()
+    ) {
+      return false;
+    }
+    reviewPromptInFlight = true;
+    try {
+      const allowed = await bridge.canRequestReview().catch(() => false);
+      if (!allowed || destroyed || saveData.meta.settings.reviewPrompted) {
+        return false;
+      }
+      handleSettingsPatch({ reviewPrompted: true });
+      await bridge.requestReview().catch(() => false);
+      return true;
+    } finally {
+      reviewPromptInFlight = false;
+    }
+  };
+
+  const maybePromptShortcut = async (): Promise<void> => {
+    if (
+      destroyed ||
+      shortcutPromptInFlight ||
+      saveData.meta.settings.shortcutPrompted ||
+      saveData.meta.stats.runsStarted < 2 ||
+      isTutorialActive()
+    ) {
+      return;
+    }
+    shortcutPromptInFlight = true;
+    try {
+      const allowed = await bridge.canShowShortcutPrompt().catch(() => false);
+      if (!allowed || destroyed || saveData.meta.settings.shortcutPrompted) {
+        return;
+      }
+      handleSettingsPatch({ shortcutPrompted: true });
+      canShowShortcutCached = false;
+      await bridge.showShortcutPrompt().catch(() => false);
+    } finally {
+      shortcutPromptInFlight = false;
+    }
+  };
 
   let selectedCardIds: string[] = [];
   let consumableTargetMode: ConsumableTargetModeState | null = null;
@@ -795,8 +944,10 @@ export function mountBaliteApp(
   let scoreFlame: ScoreFlameController | null = null;
   let scoreFlameContainer: HTMLElement | null = null;
   let lastHudPhase: RunState['phase'] | null = null;
+  let lastBlindIntroKey: string | null = null;
   let exactMultOverride: number | null = null;
   let activeCashoutTimeline: CashoutTimelineController | null = null;
+  let cashoutStartTimerId: ReturnType<typeof setTimeout> | null = null;
   let cashoutStartedKey: string | null = null;
   let cashoutFinishedKey: string | null = null;
   let victoryConfettiKey: string | null = null;
@@ -859,7 +1010,16 @@ export function mountBaliteApp(
     }
   };
 
+  const cancelCashoutStartTimer = (): void => {
+    if (cashoutStartTimerId !== null) {
+      clearScheduledTimeout(cashoutStartTimerId);
+      activeTimers.delete(cashoutStartTimerId);
+      cashoutStartTimerId = null;
+    }
+  };
+
   const destroyCashoutTimeline = (): void => {
+    cancelCashoutStartTimer();
     activeCashoutTimeline?.destroy();
     activeCashoutTimeline = null;
   };
@@ -924,7 +1084,11 @@ export function mountBaliteApp(
       exactMultOverride !== null ? String(exactMultOverride) : String(multRoller.getCurrent());
   };
 
-  const syncCashoutTimeline = (state: RunState, refs: ScreenRefs): void => {
+  const syncCashoutTimeline = (
+    state: RunState,
+    refs: ScreenRefs,
+    enterDelayMs = 0,
+  ): void => {
     if (isAnimating || !refs.cashout) {
       destroyCashoutTimeline();
       if (!isAnimating && state.phase !== 'cashout') {
@@ -966,16 +1130,37 @@ export function mountBaliteApp(
       },
     });
 
-    refs.arenaEl.addEventListener('click', (event) => {
+    const timeline = activeCashoutTimeline;
+    const skipCashoutHandler = (event: Event): void => {
       const target = event.target as Element | null;
       if (target?.closest('button') === cashoutRefs.claimBtnEl) return;
-      if (activeCashoutTimeline && !activeCashoutTimeline.isFinished()) {
-        activeCashoutTimeline.skip();
+      if (cashoutStartTimerId !== null) {
+        cancelCashoutStartTimer();
+        const shell = screenHostEl.querySelector<HTMLElement>('.run-shell');
+        if (shell) {
+          delete shell.dataset.phaseTransition;
+          shell.style.removeProperty('--arena-enter-delay');
+        }
+      }
+      if (!timeline.isFinished()) {
+        timeline.skip();
         cashoutFinishedKey = cashoutRefs.key;
       }
-    });
+    };
+    refs.arenaEl.addEventListener('click', skipCashoutHandler);
 
-    activeCashoutTimeline.start();
+    if (enterDelayMs > 0) {
+      const animSpeed = saveData.meta.settings.animationSpeed;
+      const revealDelayMs = enterDelayMs + Math.round(160 / animSpeed);
+      cashoutStartTimerId = registerTimeout(() => {
+        cashoutStartTimerId = null;
+        if (activeCashoutTimeline === timeline && !timeline.isFinished()) {
+          timeline.start();
+        }
+      }, revealDelayMs);
+    } else {
+      timeline.start();
+    }
   };
 
   let lastScoreFlameIntensity = 0;
@@ -1046,6 +1231,10 @@ export function mountBaliteApp(
     activeTimers.clear();
   };
 
+  const clearPhaseTransition = (): void => {
+    phaseTransitionLayerEl.replaceChildren();
+  };
+
   const cancelActiveAnimation = (): void => {
     animationRunToken += 1;
     activeTraceHandle?.cancel();
@@ -1056,6 +1245,7 @@ export function mountBaliteApp(
     playedCardIds = [];
     shatteredCardIds = [];
     cardAnimator.cancelAll();
+    clearPhaseTransition();
     destroyCashoutTimeline();
     particleCanvas.clear();
   };
@@ -1274,8 +1464,21 @@ export function mountBaliteApp(
     saveData = createPlayerSaveData(nextMeta, nextActiveRun, revision, updatedAt);
 
     if (isTerminal) {
-      const scoreToSend = Math.max(nextMeta.stats.bestHandScore, nextState.stats.bestHandScore);
+      const runBestHandInt = Math.floor(Math.max(0, nextState.stats.bestHandScore));
+      const scoreToSend = Math.floor(
+        Math.max(nextMeta.stats.bestHandScore, runBestHandInt),
+      );
+      const highestAnteToSend = Math.max(nextMeta.stats.highestAnte, nextState.ante);
       void bridge.setLeaderboardScore('best_hand', scoreToSend).catch(() => false);
+      void bridge.setLeaderboardScore('highest_ante', highestAnteToSend).catch(() => false);
+      if (isDailyRunSeed(nextState.seed)) {
+        const seedDateKey = extractDailyDateKeyFromSeed(nextState.seed);
+        const dailyScoreToSend =
+          seedDateKey && seedDateKey === nextMeta.stats.dailyBestDate
+            ? Math.max(nextMeta.stats.dailyBestScore ?? 0, runBestHandInt)
+            : runBestHandInt;
+        void bridge.setLeaderboardScore('daily_score', dailyScoreToSend).catch(() => false);
+      }
       void persistBaliteSave(bridge, saveData, { flush: true }).catch(() => false);
     } else {
       void persistBaliteSave(bridge, saveData, { flush: flags.flush }).catch(() => false);
@@ -1290,6 +1493,9 @@ export function mountBaliteApp(
     el.className = `trace-popup trace-popup--${popup.kind}`;
     el.dataset.popupKind = popup.kind;
     el.textContent = popup.text;
+    popupOffsetStep += 1;
+    const popupRot = (popupOffsetStep % 2 === 0 ? 1 : -1) * (5 + (popupOffsetStep % 3) * 2);
+    el.style.setProperty('--popup-rot', `${popupRot}deg`);
 
     let targetEl: Element | null = null;
     if (popup.targetCardId) {
@@ -1305,7 +1511,15 @@ export function mountBaliteApp(
     }
 
     const layerRect = popupLayerEl.getBoundingClientRect();
-    const targetRect = targetEl?.getBoundingClientRect();
+    let targetRect: DOMRect | undefined;
+    if (targetEl instanceof HTMLElement && targetEl.dataset.flightActive === 'true') {
+      const savedTransform = targetEl.style.transform;
+      targetEl.style.transform = '';
+      targetRect = targetEl.getBoundingClientRect();
+      targetEl.style.transform = savedTransform;
+    } else {
+      targetRect = targetEl?.getBoundingClientRect();
+    }
     if (
       targetRect &&
       layerRect.width > 0 &&
@@ -1313,20 +1527,29 @@ export function mountBaliteApp(
       targetRect.width > 0 &&
       targetRect.height > 0
     ) {
+      const jitterX = ((popupOffsetStep % 3) - 1) * 2.2;
+      const jitterY = (popupOffsetStep % 2) * -3.5;
       const leftPct = Math.max(
         10,
-        Math.min(90, ((targetRect.left + targetRect.width / 2 - layerRect.left) / layerRect.width) * 100),
+        Math.min(
+          90,
+          ((targetRect.left + targetRect.width / 2 - layerRect.left) / layerRect.width) * 100 +
+            jitterX,
+        ),
       );
       const topPct = Math.max(
         12,
-        Math.min(88, ((targetRect.top + targetRect.height * 0.25 - layerRect.top) / layerRect.height) * 100),
+        Math.min(
+          88,
+          ((targetRect.top + targetRect.height * 0.25 - layerRect.top) / layerRect.height) * 100 +
+            jitterY,
+        ),
       );
       el.style.left = `${leftPct.toFixed(1)}%`;
       el.style.top = `${topPct.toFixed(1)}%`;
     } else {
       const offsetX = ((popupOffsetStep % 5) - 2) * 10;
       const offsetY = (popupOffsetStep % 3) * 8;
-      popupOffsetStep += 1;
       el.style.left = `${50 + offsetX}%`;
       el.style.top = `${42 + offsetY}%`;
     }
@@ -1343,12 +1566,20 @@ export function mountBaliteApp(
     }, lifeMs);
   };
 
+  const triggerStageUiJiggle = (): void => {
+    if (destroyed) return;
+    screenHostEl.classList.remove('is-ui-jiggle');
+    void screenHostEl.offsetWidth;
+    screenHostEl.classList.add('is-ui-jiggle');
+  };
+
   const renderOverlay = (): void => {
     hoverTooltip?.hide();
     overlayHostEl.replaceChildren();
     if (destroyed) return;
     if (activeModal !== null || activeInspectTarget !== null) {
       tutorialOverlay.hide();
+      triggerStageUiJiggle();
     }
 
     if (activeModal === 'hand_reference') {
@@ -1404,11 +1635,25 @@ export function mountBaliteApp(
           onClose: closeOverlays,
           onTabChange: (tab) => {
             activeSettingsTab = tab;
+            triggerStageUiJiggle();
           },
           onReturnToMainMenu: () => {
             audio.playButton();
             exitRunToMenu(true);
           },
+          onOpenLeaderboard:
+            bridge.getPlatformId() === 'vk' ? openVkLeaderboardWithBestScore : undefined,
+          canShowShortcutPrompt: canShowShortcutCached,
+          onAddShortcut:
+            canShowShortcutCached && !saveData.meta.settings.shortcutPrompted
+              ? () => {
+                  audio.playButton();
+                  handleSettingsPatch({ shortcutPrompted: true });
+                  canShowShortcutCached = false;
+                  void bridge.showShortcutPrompt().catch(() => false);
+                  renderOverlay();
+                }
+              : undefined,
           onOpenDebugPanel: isDebug
             ? () => {
                 audio.playButton();
@@ -1654,10 +1899,12 @@ export function mountBaliteApp(
 
     if (showMainMenu && !isAnimating) {
       cardAnimator.cancelAll();
+      clearPhaseTransition();
       destroyScoreFlame();
       destroyCashoutTimeline();
       particleCanvas.clear();
       lastHudPhase = null;
+      lastBlindIntroKey = null;
       exactMultOverride = null;
       scoreRoller.snap(0);
       chipsRoller.snap(0);
@@ -1677,6 +1924,7 @@ export function mountBaliteApp(
         {
           onPlay: () => {
             audio.playButton();
+            refreshDailySpec();
             showMainMenu = false;
             render();
           },
@@ -1687,6 +1935,7 @@ export function mountBaliteApp(
             activeSettingsTab = 'hub';
             syncGameplayState();
             renderOverlay();
+            refreshShortcutAvailability();
           },
           onToggleLanguage: () => {
             audio.playButton();
@@ -1713,6 +1962,11 @@ export function mountBaliteApp(
     const viewState = isAnimating && animationDisplayState ? animationDisplayState : runState;
     backdrop.setMood(resolveBackdropMood(viewState));
 
+    const dailyBestScore =
+      saveData.meta.stats.dailyBestDate === currentDailySpec.dateKey
+        ? (saveData.meta.stats.dailyBestScore ?? 0)
+        : 0;
+
     const vm: ScreenViewModel = {
       state: viewState,
       meta: saveData.meta,
@@ -1726,6 +1980,14 @@ export function mountBaliteApp(
       liveScore: isAnimating ? animationLiveScore : null,
       isAnimating,
       isDebug: bridge.isDebugMode(),
+      canShowRewarded: canShowRewardedCached,
+      platformId: bridge.getPlatformId(),
+      dailyRun: {
+        dateKey: currentDailySpec.dateKey,
+        seed: currentDailySpec.seed,
+        deckId: currentDailySpec.deckId,
+        bestScore: dailyBestScore,
+      },
       unlockedDecks: saveData.meta.unlockedDecks,
       selectedDeckId,
       seedInput,
@@ -1735,17 +1997,252 @@ export function mountBaliteApp(
 
     const hasExistingRunShell = screenHostEl.querySelector('.run-shell') !== null;
     const layoutSnapshot = hasExistingRunShell ? cardAnimator.captureSnapshot(screenHostEl) : null;
+    const prevPhaseBeforeRender = lastHudPhase;
+
+    type PhaseTransitionKind =
+      | 'blind-to-playing'
+      | 'playing-to-cashout'
+      | 'playing-to-end'
+      | 'cashout-to-shop'
+      | 'shop-to-blind'
+      | 'shop-to-booster'
+      | 'booster-to-shop';
+
+    let transitionKind: PhaseTransitionKind | null = null;
+    if (!isAnimating && prevPhaseBeforeRender !== null && prevPhaseBeforeRender !== viewState.phase) {
+      if (prevPhaseBeforeRender === 'blind_select' && viewState.phase === 'playing') {
+        transitionKind = 'blind-to-playing';
+      } else if (prevPhaseBeforeRender === 'playing' && viewState.phase === 'cashout') {
+        transitionKind = 'playing-to-cashout';
+      } else if (
+        prevPhaseBeforeRender === 'playing' &&
+        (viewState.phase === 'victory' || viewState.phase === 'game_over')
+      ) {
+        transitionKind = 'playing-to-end';
+      } else if (prevPhaseBeforeRender === 'cashout' && viewState.phase === 'shop') {
+        transitionKind = 'cashout-to-shop';
+      } else if (prevPhaseBeforeRender === 'shop' && viewState.phase === 'blind_select') {
+        transitionKind = 'shop-to-blind';
+      } else if (prevPhaseBeforeRender === 'shop' && viewState.phase === 'booster') {
+        transitionKind = 'shop-to-booster';
+      } else if (prevPhaseBeforeRender === 'booster' && viewState.phase === 'shop') {
+        transitionKind = 'booster-to-shop';
+      }
+    }
+
+    const createPhaseExitClone = (
+      sourceEl: HTMLElement | null,
+      direction: 'up' | 'down',
+      extraClass: string,
+    ): HTMLElement | null => {
+      if (!sourceEl) return null;
+      const stageRect = stageEl.getBoundingClientRect();
+      const rect = sourceEl.getBoundingClientRect();
+      if (
+        stageRect.width <= 0 ||
+        stageRect.height <= 0 ||
+        rect.width <= 0 ||
+        rect.height <= 0
+      ) {
+        return null;
+      }
+
+      const clone = sourceEl.cloneNode(true) as HTMLElement;
+      clone.classList.add(extraClass);
+      clone.setAttribute('aria-hidden', 'true');
+      clone.removeAttribute('id');
+
+      const attrsToStrip = [
+        '[data-blind-kind]',
+        '[data-boss-id]',
+        '[data-action]',
+        '[data-offer-uid]',
+        '[data-pack-uid]',
+        '[data-charter-id]',
+        '[data-deck-id]',
+        '[data-zone]',
+        '[data-card-id]',
+        '[data-relic-uid]',
+        '[data-consumable-uid]',
+      ].join(', ');
+      clone.querySelectorAll<HTMLElement>(attrsToStrip).forEach((node) => {
+        node.removeAttribute('data-blind-kind');
+        node.removeAttribute('data-boss-id');
+        node.removeAttribute('data-action');
+        node.removeAttribute('data-offer-uid');
+        node.removeAttribute('data-pack-uid');
+        node.removeAttribute('data-charter-id');
+        node.removeAttribute('data-deck-id');
+        node.removeAttribute('data-zone');
+        node.removeAttribute('data-card-id');
+        node.removeAttribute('data-relic-uid');
+        node.removeAttribute('data-consumable-uid');
+        node.removeAttribute('id');
+      });
+      clone.querySelectorAll<HTMLElement>('[role], [tabindex]').forEach((node) => {
+        node.removeAttribute('role');
+        node.removeAttribute('tabindex');
+      });
+      clone.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button, input').forEach((ctrl) => {
+        ctrl.disabled = true;
+      });
+
+      const relLeft = rect.left - stageRect.left;
+      const relTop = rect.top - stageRect.top;
+      clone.style.position = 'absolute';
+      clone.style.left = `${relLeft.toFixed(2)}px`;
+      clone.style.top = `${relTop.toFixed(2)}px`;
+      clone.style.width = `${rect.width.toFixed(2)}px`;
+      clone.style.height = `${rect.height.toFixed(2)}px`;
+      clone.style.right = 'auto';
+      clone.style.bottom = 'auto';
+
+      const exitY =
+        direction === 'up'
+          ? -(Math.ceil(rect.bottom - stageRect.top + 44))
+          : Math.ceil(stageRect.bottom - rect.top + 52);
+      clone.style.setProperty('--phase-exit-y', `${exitY}px`);
+      return clone;
+    };
+
+    const exitingClones: HTMLElement[] = [];
+    if (transitionKind !== null) {
+      if (transitionKind === 'blind-to-playing') {
+        const hudExit = createPhaseExitClone(
+          screenHostEl.querySelector<HTMLElement>('.hud-choose-prompt'),
+          'up',
+          'phase-exit-hud-up',
+        );
+        const arenaExit = createPhaseExitClone(
+          screenHostEl.querySelector<HTMLElement>('.blinds-grid'),
+          'down',
+          'phase-exit-blinds-grid',
+        );
+        if (hudExit) exitingClones.push(hudExit);
+        if (arenaExit) exitingClones.push(arenaExit);
+      } else if (transitionKind === 'cashout-to-shop') {
+        const hudExit = createPhaseExitClone(
+          screenHostEl.querySelector<HTMLElement>('.hud-boss-btn'),
+          'up',
+          'phase-exit-hud-up',
+        );
+        const arenaExit = createPhaseExitClone(
+          screenHostEl.querySelector<HTMLElement>('.arena-stage[data-phase="cashout"]'),
+          'down',
+          'phase-exit-arena-down',
+        );
+        if (hudExit) exitingClones.push(hudExit);
+        if (arenaExit) exitingClones.push(arenaExit);
+      } else if (transitionKind === 'shop-to-blind' || transitionKind === 'shop-to-booster') {
+        const hudExit = createPhaseExitClone(
+          screenHostEl.querySelector<HTMLElement>('.hud-shop-sign'),
+          'up',
+          'phase-exit-hud-up',
+        );
+        const arenaExit = createPhaseExitClone(
+          screenHostEl.querySelector<HTMLElement>('.arena-stage[data-phase="shop"]'),
+          'down',
+          'phase-exit-arena-down',
+        );
+        if (hudExit) exitingClones.push(hudExit);
+        if (arenaExit) exitingClones.push(arenaExit);
+      } else if (transitionKind === 'booster-to-shop') {
+        const hudExit = createPhaseExitClone(
+          screenHostEl.querySelector<HTMLElement>('.hud-boss-btn'),
+          'up',
+          'phase-exit-hud-up',
+        );
+        const arenaExit = createPhaseExitClone(
+          screenHostEl.querySelector<HTMLElement>('.arena-stage[data-phase="booster"]'),
+          'down',
+          'phase-exit-arena-down',
+        );
+        if (hudExit) exitingClones.push(hudExit);
+        if (arenaExit) exitingClones.push(arenaExit);
+      }
+      clearPhaseTransition();
+    }
+
+    const animSpeed = saveData.meta.settings.animationSpeed;
+    let arenaEnterDelayMs = 0;
+    if (
+      (transitionKind === 'playing-to-cashout' || transitionKind === 'playing-to-end') &&
+      layoutSnapshot
+    ) {
+      let departingVisualCards = 0;
+      for (const entry of layoutSnapshot.cards.values()) {
+        if (entry.rect.width > 0 || entry.rect.height > 0) {
+          departingVisualCards += 1;
+        }
+      }
+      if (departingVisualCards > 0) {
+        // Ждём полного улёта всех карт в сброс + короткую паузу перед появлением кэшаута/финала
+        arenaEnterDelayMs = Math.max(
+          0,
+          Math.round((420 + Math.min(10, departingVisualCards) * 32) / animSpeed),
+        );
+      }
+    }
 
     screenRefs = renderRunView(screenHostEl, vm, screenHandlers);
     syncScoreFlame(viewState, screenRefs);
     syncHudRollers(viewState, screenRefs);
-    syncCashoutTimeline(viewState, screenRefs);
+
+    const renderedShellEl = screenHostEl.querySelector<HTMLElement>('.run-shell');
+    if (transitionKind !== null) {
+      if (renderedShellEl) {
+        renderedShellEl.dataset.phaseTransition = transitionKind;
+        if (arenaEnterDelayMs > 0) {
+          renderedShellEl.style.setProperty('--arena-enter-delay', `${arenaEnterDelayMs}ms`);
+        }
+      }
+      if (exitingClones.length > 0) {
+        phaseTransitionLayerEl.append(...exitingClones);
+      }
+      const exitCleanupMs =
+        transitionKind === 'playing-to-cashout' || transitionKind === 'playing-to-end'
+          ? arenaEnterDelayMs + Math.max(200, Math.round(520 / animSpeed))
+          : Math.max(240, Math.round(980 / animSpeed));
+      registerTimeout(() => {
+        for (const clone of exitingClones) {
+          clone.remove();
+        }
+        if (renderedShellEl) {
+          delete renderedShellEl.dataset.phaseTransition;
+          renderedShellEl.style.removeProperty('--arena-enter-delay');
+        }
+      }, exitCleanupMs);
+
+      if (transitionKind === 'cashout-to-shop' || transitionKind === 'booster-to-shop') {
+        registerTimeout(() => audio.playDialogue(), Math.max(40, Math.round(400 / animSpeed)));
+        registerTimeout(() => audio.playDialogue(), Math.max(60, Math.round(480 / animSpeed)));
+        registerTimeout(() => {
+          const currentHudBelt = screenHostEl.querySelector<HTMLElement>('.belt--hud');
+          if (currentHudBelt) {
+            cardAnimator.triggerJuice(currentHudBelt, {
+              scaleDelta: 0.015,
+              rotDelta: -0.005,
+              speed: saveData.meta.settings.animationSpeed,
+            });
+          }
+        }, Math.max(80, Math.round(490 / animSpeed)));
+      }
+    }
+
+    syncCashoutTimeline(viewState, screenRefs, arenaEnterDelayMs);
 
     if (!isAnimating && viewState.phase === 'victory') {
       const winKey = `${viewState.seed}:${viewState.ante}:${viewState.score}`;
       if (victoryConfettiKey !== winKey) {
         victoryConfettiKey = winKey;
-        particleCanvas.emitConfetti();
+        if (arenaEnterDelayMs > 0) {
+          registerTimeout(
+            () => particleCanvas.emitConfetti(),
+            arenaEnterDelayMs + Math.round(140 / animSpeed),
+          );
+        } else {
+          particleCanvas.emitConfetti();
+        }
       }
     } else if (viewState.phase === 'deck_select') {
       victoryConfettiKey = null;
@@ -1754,7 +2251,40 @@ export function mountBaliteApp(
     if (layoutSnapshot) {
       cardAnimator.animateFromSnapshot(screenHostEl, layoutSnapshot, {
         speed: saveData.meta.settings.animationSpeed,
+        ...(transitionKind === 'blind-to-playing' ? { dealInitialDelaySeconds: 0.52 } : {}),
       });
+    }
+
+    if (!isAnimating && viewState.phase === 'blind_select') {
+      const blindIntroKey = `${viewState.seed}:${viewState.ante}:${viewState.currentBlindIndex}:${viewState.bossRerollsThisAnte}`;
+      const introDelayMs = transitionKind === 'shop-to-blind' ? 400 : 0;
+      if (renderedShellEl) {
+        renderedShellEl.style.setProperty('--blind-intro-delay', `${introDelayMs}ms`);
+      }
+      if (blindIntroKey !== lastBlindIntroKey) {
+        lastBlindIntroKey = blindIntroKey;
+        const animSpeed = saveData.meta.settings.animationSpeed;
+        const hudBeltEl = screenHostEl.querySelector<HTMLElement>('.belt--hud');
+        if (hudBeltEl) {
+          hudBeltEl.classList.add('is-blind-jiggle');
+        }
+        registerTimeout(() => audio.playDialogue(), Math.max(0, Math.round(introDelayMs / animSpeed)));
+        registerTimeout(() => audio.playDialogue(), Math.max(30, Math.round((introDelayMs + 90) / animSpeed)));
+        registerTimeout(() => audio.playDialogue(), Math.max(60, Math.round((introDelayMs + 180) / animSpeed)));
+        registerTimeout(() => audio.playCardDeal(), Math.max(20, Math.round((introDelayMs + 70) / animSpeed)));
+        registerTimeout(() => {
+          const currentHudBelt = screenHostEl.querySelector<HTMLElement>('.belt--hud');
+          if (currentHudBelt) {
+            cardAnimator.triggerJuice(currentHudBelt, {
+              scaleDelta: 0.018,
+              rotDelta: -0.007,
+              speed: saveData.meta.settings.animationSpeed,
+            });
+          }
+        }, Math.max(40, Math.round((introDelayMs + 220) / animSpeed)));
+      }
+    } else if (!isAnimating) {
+      lastBlindIntroKey = null;
     }
     cardTiltController.refresh();
     syncGameplayState();
@@ -1892,6 +2422,16 @@ export function mountBaliteApp(
         setMultDisplay(mult, false);
         scoreRoller.setTarget(totalScore);
         screenRefs.handTypeEl.textContent = translator.getHandText(handType).name;
+        cardAnimator.triggerJuice(screenRefs.scoreEl, {
+          scaleDelta: 0.24,
+          rotDelta: 0.06,
+          speed: saveData.meta.settings.animationSpeed,
+        });
+        cardAnimator.triggerJuice(screenRefs.handTypeEl, {
+          scaleDelta: 0.18,
+          rotDelta: -0.04,
+          speed: saveData.meta.settings.animationSpeed,
+        });
         setScoreFlameIntensityWithSound(
           computeScoreFlameIntensity(totalScore, chips, mult, targetScore),
         );
@@ -2004,6 +2544,16 @@ export function mountBaliteApp(
       shatteredCardIds = [];
       selectedCardIds = normalizeSelectedCardIds(runState, [], consumableTargetMode);
       render();
+      if (runState.phase === 'victory') {
+        void maybePromptReview().then((reviewShown) => {
+          if (!reviewShown) {
+            void maybePromptShortcut();
+          }
+        });
+      } else if (runState.phase === 'game_over') {
+        refreshRewardedAvailability();
+        void maybePromptShortcut();
+      }
     });
   };
 
@@ -2096,6 +2646,7 @@ export function mountBaliteApp(
       victoryConfettiKey = null;
       cashoutStartedKey = null;
       cashoutFinishedKey = null;
+      lastBlindIntroKey = null;
       particleCanvas.clear();
     }
 
@@ -2108,7 +2659,11 @@ export function mountBaliteApp(
       }
     } else if (command.type === 'BUY_SHOP_OFFER' || command.type === 'BUY_CHARTER') {
       audio.playBuy();
-    } else if (command.type === 'REROLL_SHOP' || command.type === 'REROLL_BOSS') {
+    } else if (
+      command.type === 'REROLL_SHOP' ||
+      command.type === 'FREE_REROLL_SHOP' ||
+      command.type === 'REROLL_BOSS'
+    ) {
       audio.playReroll();
     } else if (usedConsumableKind === null) {
       audio.playButton();
@@ -2127,22 +2682,52 @@ export function mountBaliteApp(
       consumableTargetMode,
     );
     render();
+    if (runState.phase === 'shop' || runState.phase === 'game_over') {
+      refreshRewardedAvailability();
+    }
+    if (
+      command.type === 'CLAIM_CASHOUT' &&
+      prevState.phase === 'cashout' &&
+      prevState.anteBlinds[prevState.currentBlindIndex]?.kind === 'boss' &&
+      runState.phase === 'shop'
+    ) {
+      void maybePromptReview();
+    } else if (runState.phase === 'victory') {
+      void maybePromptReview().then((reviewShown) => {
+        if (!reviewShown) {
+          void maybePromptShortcut();
+        }
+      });
+    } else if (runState.phase === 'game_over') {
+      void maybePromptShortcut();
+    }
   }
 
-  function startNewRunInternal(): void {
+  function startNewRunInternal(overrideOpts?: { deckId?: DeckId; seed?: string }): void {
     cancelActiveAnimation();
     showMainMenu = false;
     const isTutorialRun =
       saveData.meta.settings.tutorialCompleted !== true &&
       saveData.meta.tutorialCompleted !== true;
     const fallbackSeed = isTutorialRun ? 'TUTORIAL' : createRandomSeed();
-    const cleanSeed = seedInput.trim() || fallbackSeed;
-    seedInput = cleanSeed;
+    const resolvedDeckId =
+      overrideOpts?.deckId ??
+      (saveData.meta.unlockedDecks.includes(selectedDeckId)
+        ? selectedDeckId
+        : (saveData.meta.unlockedDecks[0] ?? 'b_red'));
+    if (overrideOpts === undefined && !saveData.meta.unlockedDecks.includes(selectedDeckId)) {
+      selectedDeckId = resolvedDeckId;
+    }
+    const rawSeed = overrideOpts?.seed ?? seedInput;
+    const cleanSeed = rawSeed.trim() || fallbackSeed;
+    if (overrideOpts === undefined) {
+      seedInput = cleanSeed;
+    }
     completionRecordedForCurrentRun = false;
     consumableTargetMode = null;
     selectedCardIds = [];
     closeOverlays();
-    applyGameCommand({ type: 'START_RUN', deckId: selectedDeckId, seed: cleanSeed });
+    applyGameCommand({ type: 'START_RUN', deckId: resolvedDeckId, seed: cleanSeed });
   }
 
   function exitRunToMenu(targetShowMainMenu: boolean): void {
@@ -2151,6 +2736,13 @@ export function mountBaliteApp(
     consumableTargetMode = null;
     selectedCardIds = [];
     closeOverlays();
+
+    if (!saveData.meta.unlockedDecks.includes(selectedDeckId)) {
+      selectedDeckId = saveData.meta.unlockedDecks[0] ?? 'b_red';
+    }
+    if (!targetShowMainMenu) {
+      refreshDailySpec();
+    }
 
     if (isActiveRunPhase(runState.phase)) {
       const { revision, updatedAt } = nextMonotonicRevisionAndTime();
@@ -2190,6 +2782,14 @@ export function mountBaliteApp(
 
     if (patch.crtMode !== undefined) {
       syncCrtModeCss(nextSettings.crtMode);
+    }
+
+    if (patch.suitPalette !== undefined) {
+      syncSuitPaletteCss(nextSettings.suitPalette ?? 'standard');
+    }
+
+    if (patch.cardBack !== undefined) {
+      syncCardBackCss(nextSettings.cardBack ?? 'default');
     }
 
     audio.setSettings(nextSettings);
@@ -2274,6 +2874,10 @@ export function mountBaliteApp(
         completionRecordedForCurrentRun = false;
         consumableTargetMode = null;
         selectedCardIds = [];
+        if (!saveData.meta.unlockedDecks.includes(selectedDeckId)) {
+          selectedDeckId = saveData.meta.unlockedDecks[0] ?? 'b_red';
+        }
+        refreshDailySpec();
         runState = createDeckSelectState(selectedDeckId, createRandomSeed());
         persistSnapshotAndMeta(runState, { keepActiveSnapshot: false, flush: true });
         closeOverlays();
@@ -2326,16 +2930,20 @@ export function mountBaliteApp(
     },
     onStartRun: () => {
       if (runState.phase === 'game_over') {
-        runWithLogicalPauseAd(startNewRunInternal);
+        runWithLogicalPauseAd(() => startNewRunInternal());
         return;
       }
       startNewRunInternal();
     },
     onReplaySeed: (seed, deckId) => {
       const startReplayRun = (): void => {
-        selectedDeckId = deckId;
-        seedInput = seed;
-        startNewRunInternal();
+        if (saveData.meta.unlockedDecks.includes(deckId)) {
+          selectedDeckId = deckId;
+        }
+        if (!isDailyRunSeed(seed)) {
+          seedInput = seed;
+        }
+        startNewRunInternal({ deckId, seed });
       };
       if (runState.phase === 'game_over') {
         runWithLogicalPauseAd(startReplayRun);
@@ -2343,6 +2951,23 @@ export function mountBaliteApp(
       }
       startReplayRun();
     },
+    onStartDailyRun: () => {
+      audio.playButton();
+      refreshDailySpec();
+      const startDaily = (): void => {
+        startNewRunInternal({
+          deckId: currentDailySpec.deckId,
+          seed: currentDailySpec.seed,
+        });
+      };
+      if (runState.phase === 'game_over') {
+        runWithLogicalPauseAd(startDaily);
+        return;
+      }
+      startDaily();
+    },
+    onOpenVkLeaderboard:
+      bridge.getPlatformId() === 'vk' ? openVkLeaderboardWithBestScore : undefined,
     onResumeSavedRun: () => {
       if (!savedRunSnapshot) return;
       audio.playButton();
@@ -2358,10 +2983,92 @@ export function mountBaliteApp(
                   : 'blind_select',
             }
           : restored;
-      selectedDeckId = runState.deckId;
+      selectedDeckId = saveData.meta.unlockedDecks.includes(runState.deckId)
+        ? runState.deckId
+        : (saveData.meta.unlockedDecks[0] ?? 'b_red');
       completionRecordedForCurrentRun = isTerminalRunPhase(runState.phase);
       selectedCardIds = normalizeSelectedCardIds(runState, [], null);
       render();
+      if (runState.phase === 'shop' || runState.phase === 'game_over') {
+        refreshRewardedAvailability();
+      }
+    },
+    onAdRerollShop: () => {
+      if (
+        destroyed ||
+        isAnimating ||
+        isTransitioningAd ||
+        adShowing ||
+        runState.phase !== 'shop' ||
+        !runState.shop ||
+        runState.shop.adRerollUsed
+      ) {
+        return;
+      }
+      const rerollCost = runState.shop.tempRerollCost ?? runState.shop.rerollCost;
+      if (runState.dollars >= rerollCost) {
+        return;
+      }
+
+      isTransitioningAd = true;
+      adShowing = true;
+      syncGameplayState();
+
+      void bridge
+        .showRewarded()
+        .catch(() => ({ rewarded: false }))
+        .then((res) => {
+          adShowing = false;
+          isTransitioningAd = false;
+          if (destroyed) return;
+          syncGameplayState();
+          if (
+            res.rewarded &&
+            runState.phase === 'shop' &&
+            runState.shop &&
+            !runState.shop.adRerollUsed
+          ) {
+            applyGameCommand({ type: 'FREE_REROLL_SHOP' });
+          } else {
+            render();
+          }
+          refreshRewardedAvailability();
+        });
+    },
+    onReviveRun: () => {
+      if (
+        destroyed ||
+        isAnimating ||
+        isTransitioningAd ||
+        adShowing ||
+        runState.phase !== 'game_over' ||
+        runState.reviveUsed === true ||
+        isDailyRunSeed(runState.seed)
+      ) {
+        return;
+      }
+
+      isTransitioningAd = true;
+      adShowing = true;
+      syncGameplayState();
+
+      void bridge
+        .showRewarded()
+        .catch(() => ({ rewarded: false }))
+        .then((res) => {
+          adShowing = false;
+          isTransitioningAd = false;
+          if (destroyed) return;
+          if (res.rewarded && runState.phase === 'game_over' && !runState.reviveUsed) {
+            completionRecordedForCurrentRun = false;
+            applyGameCommand({ type: 'REVIVE_RUN' });
+            backdrop.setMood(resolveBackdropMood(runState));
+          } else {
+            syncGameplayState();
+            render();
+          }
+          refreshRewardedAvailability();
+        });
     },
     onCommand: (command) => {
       if (command.type === 'CLAIM_CASHOUT') {
@@ -2411,7 +3118,12 @@ export function mountBaliteApp(
         selectedCardIds = selectedCardIds.filter((id) => id !== cardId);
       } else if (selectedCardIds.length < 5) {
         audio.playCardSelect();
-        selectedCardIds = [...selectedCardIds, cardId];
+        const handSource =
+          runState.phase === 'booster'
+            ? (runState.booster?.drawnHandCardIds ?? [])
+            : runState.handIds;
+        const nextSet = new Set([...selectedCardIds, cardId]);
+        selectedCardIds = handSource.filter((id) => nextSet.has(id));
         handleTutorialAction('select_card');
       }
       render();
@@ -2532,6 +3244,7 @@ export function mountBaliteApp(
       activeSettingsTab = 'hub';
       syncGameplayState();
       renderOverlay();
+      refreshShortcutAvailability();
     },
     onOpenDebugPanel: bridge.isDebugMode()
       ? () => {
@@ -2589,8 +3302,69 @@ export function mountBaliteApp(
       renderOverlay();
       return;
     }
-    if (event.key === 'Escape' && (activeModal !== null || activeInspectTarget !== null)) {
-      closeOverlays();
+    if (event.key === 'Escape') {
+      if (activeModal !== null || activeInspectTarget !== null) {
+        event.preventDefault();
+        closeOverlays();
+        return;
+      }
+      if (event.defaultPrevented || tutorialOverlay.isVisible) {
+        return;
+      }
+      if (consumableTargetMode !== null) {
+        event.preventDefault();
+        screenHandlers.onCancelConsumableTargets();
+        return;
+      }
+      if (
+        initialized &&
+        !showMainMenu &&
+        !isAnimating &&
+        !isTransitioningAd &&
+        !adShowing &&
+        isActiveRunPhase(runState.phase)
+      ) {
+        event.preventDefault();
+        screenHandlers.onOpenSettings();
+      }
+    }
+  };
+
+  // Сброс выделения карт в руке по правому клику мыши (с сохранением принудительной карты Босса)
+  const handleContextMenu = (event: MouseEvent): void => {
+    if (destroyed) return;
+    handleFirstGesture();
+    const targetEl = event.target instanceof HTMLElement ? event.target : null;
+    if (targetEl && (targetEl.tagName === 'INPUT' || targetEl.tagName === 'TEXTAREA')) {
+      return;
+    }
+    event.preventDefault();
+    if (
+      !initialized ||
+      showMainMenu ||
+      isAnimating ||
+      isTransitioningAd ||
+      adShowing ||
+      activeModal !== null ||
+      activeInspectTarget !== null
+    ) {
+      return;
+    }
+    if (
+      runState.phase !== 'playing' &&
+      runState.phase !== 'booster' &&
+      consumableTargetMode === null
+    ) {
+      return;
+    }
+    const nextSelected = normalizeSelectedCardIds(runState, [], consumableTargetMode);
+    const changed =
+      nextSelected.length !== selectedCardIds.length ||
+      nextSelected.some((id, idx) => id !== selectedCardIds[idx]);
+    if (changed) {
+      selectedCardIds = nextSelected;
+      audio.playCardDeselect();
+      render();
     }
   };
 
@@ -2660,6 +3434,7 @@ export function mountBaliteApp(
     audio.playCardHover();
   };
   screenHostEl.addEventListener('pointerover', handleHandCardPointerOver);
+  root.addEventListener('contextmenu', handleContextMenu);
 
   const gestureEvents = ['pointerdown', 'touchstart', 'click'] as const;
   for (const eventName of gestureEvents) {
@@ -2744,6 +3519,13 @@ export function mountBaliteApp(
         if (destroyed) return;
 
         saveData = loaded;
+        const serverNow = await bridge.getServerTime().catch(() => now());
+        if (destroyed) return;
+        if (typeof serverNow === 'number' && Number.isFinite(serverNow) && serverNow > 0) {
+          lastServerNowMs = Math.floor(serverNow);
+          lastServerSyncLocalMs = Math.floor(now());
+        }
+        refreshDailySpec();
         currentTutorialIndex =
           saveData.meta.settings.tutorialCompleted === true ||
           saveData.meta.tutorialCompleted === true
@@ -2760,6 +3542,8 @@ export function mountBaliteApp(
         syncDocumentLanguage(saveData.meta.settings.lang);
         syncAnimationSpeedCss(saveData.meta.settings.animationSpeed);
         syncCrtModeCss(saveData.meta.settings.crtMode);
+        syncSuitPaletteCss(saveData.meta.settings.suitPalette ?? 'standard');
+        syncCardBackCss(saveData.meta.settings.cardBack ?? 'default');
         mountHoverTooltip();
         audio.setSettings(saveData.meta.settings);
 
@@ -2769,7 +3553,9 @@ export function mountBaliteApp(
         if (saveData.activeRun && saveData.activeRun.phase !== 'deck_select') {
           showMainMenu = false;
           runState = restoreRunStateFromSnapshot(saveData.activeRun);
-          selectedDeckId = runState.deckId;
+          selectedDeckId = saveData.meta.unlockedDecks.includes(runState.deckId)
+            ? runState.deckId
+            : (saveData.meta.unlockedDecks[0] ?? 'b_red');
           completionRecordedForCurrentRun = isTerminalRunPhase(runState.phase);
         } else {
           showMainMenu = true;
@@ -2782,6 +3568,10 @@ export function mountBaliteApp(
         bridge.ready();
         initialized = true;
         syncGameplayState();
+        refreshShortcutAvailability();
+        if (!showMainMenu && (runState.phase === 'shop' || runState.phase === 'game_over')) {
+          refreshRewardedAvailability();
+        }
       } catch {
         if (destroyed) return;
         const detectedLang = bridge.getLanguage();
@@ -2818,6 +3608,7 @@ export function mountBaliteApp(
     multRoller.destroy();
     particleCanvas.destroy();
     cardAnimator.destroy();
+    clearPhaseTransition();
     clearAllTimeouts();
 
     if (gameplayStarted) {
@@ -2829,6 +3620,7 @@ export function mountBaliteApp(
       root.removeEventListener(eventName, handleFirstGesture, { capture: true });
     }
     screenHostEl.removeEventListener('pointerover', handleHandCardPointerOver);
+    root.removeEventListener('contextmenu', handleContextMenu);
     if (typeof window !== 'undefined') {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('resize', handleWindowResize);
@@ -2841,6 +3633,8 @@ export function mountBaliteApp(
     audio.dispose();
     backdrop.destroy();
     delete root.dataset.crt;
+    delete root.dataset.suitPalette;
+    delete root.dataset.cardBack;
     root.replaceChildren();
 
     if (ownsBridge) {

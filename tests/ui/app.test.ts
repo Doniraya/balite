@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dispatchTraceAudioEvent, type BaliteAudioController } from '../../src/audio/synth';
 import {
+  buildDailyRunSpec,
   createConsumableInstance,
   createInitialMetaSave,
   createInitialRunState,
@@ -59,6 +60,13 @@ interface MockBridgeOptions {
   initialSave?: PlayerSaveData | null;
   interstitialResult?: InterstitialResult;
   rewardedResult?: RewardedResult;
+  serverTimeMs?: number;
+  canShowRewarded?: boolean;
+  openLeaderboardResult?: boolean;
+  canRequestReview?: boolean;
+  requestReviewResult?: boolean;
+  canShowShortcutPrompt?: boolean;
+  showShortcutResult?: boolean;
 }
 
 /**
@@ -156,6 +164,22 @@ function createMockBridge(options: MockBridgeOptions = {}) {
       };
     }),
     vibrate: vi.fn(),
+    getServerTime: vi.fn(async () => options.serverTimeMs ?? Date.UTC(2026, 10, 17, 12, 0, 0)),
+    canShowRewarded: vi.fn(async () => options.canShowRewarded ?? true),
+    openLeaderboardBox: vi.fn(async (_score: number) => {
+      callLog.push('openLeaderboardBox');
+      return options.openLeaderboardResult ?? true;
+    }),
+    canRequestReview: vi.fn(async () => options.canRequestReview ?? false),
+    requestReview: vi.fn(async () => {
+      callLog.push('requestReview');
+      return options.requestReviewResult ?? false;
+    }),
+    canShowShortcutPrompt: vi.fn(async () => options.canShowShortcutPrompt ?? false),
+    showShortcutPrompt: vi.fn(async () => {
+      callLog.push('showShortcutPrompt');
+      return options.showShortcutResult ?? false;
+    }),
   };
 
   const emit = (event: PlatformEventName, payload: Record<string, unknown> = {}): void => {
@@ -2879,7 +2903,7 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
       expect(root.querySelector('[data-boot-state="loading"]')).not.toBeNull();
       expect(resolveSecondInit).not.toBeNull();
       resolveSecondInit!();
-      await flushMicrotasks(8);
+      await flushMicrotasks(12);
 
       expect(root.querySelector('[data-boot-state]')).toBeNull();
       expect(root.querySelector('.main-menu')).not.toBeNull();
@@ -2909,6 +2933,789 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
       const relicSlot = root.querySelector<HTMLElement>('.inventory-slot[data-relic-uid="r_drag_1"]');
       expect(handSlot?.style.touchAction).toBe('none');
       expect(relicSlot?.style.touchAction).toBe('none');
+    });
+  });
+
+  describe('Эпик 7: Rewarded-реклама, Ежедневный заказ, отзывы/ярлык и ПК-управление', () => {
+    it('Story 7.1: поддерживает бесплатный реролл в лавке и Второй шанс (+1 рука) за рекламу, но скрывает Второй шанс в Ежедневном заказе', async () => {
+      const nowMs = 5_000_000;
+      const meta = createInitialMetaSave(nowMs, {
+        lang: 'ru',
+        animationSpeed: 4,
+        tutorialCompleted: true,
+      });
+
+      // 1. В лавке при нехватке золота доступна кнопка «Обновить за рекламу» (1 раз за визит)
+      const baseRun = createInitialRunState('b_red', 'STORY_7_1_SHOP');
+      const fighting = dispatch(baseRun, { type: 'SELECT_BLIND' }).nextState;
+      const cashout = dispatch(
+        { ...fighting, score: fighting.targetScore },
+        { type: 'PLAY_HAND', cardIds: fighting.handIds.slice(0, 1) },
+      ).nextState;
+      const inShop = dispatch(cashout, { type: 'CLAIM_CASHOUT' }).nextState;
+      const brokeShop: RunState = {
+        ...inShop,
+        dollars: 0,
+      };
+      const shopSave = createPlayerSaveData(
+        meta,
+        serializeRunStateToSnapshot(brokeShop, 1, nowMs),
+        1,
+        nowMs,
+      );
+      const mockShop = createMockBridge({
+        initialSave: shopSave,
+        rewardedResult: { rewarded: true },
+        canShowRewarded: true,
+      });
+
+      mounted = mountBaliteApp(root, { bridge: mockShop.bridge, initialNowMs: () => nowMs });
+      await mounted.readyPromise;
+      await flushMicrotasks(8);
+
+      const initialOffers = mounted.getState().shop?.offers.map((o) => o.uid);
+      const adRerollBtn = root.querySelector<HTMLButtonElement>('[data-action="ad-reroll-shop"]');
+      expect(adRerollBtn).not.toBeNull();
+      adRerollBtn?.click();
+      await flushMicrotasks(8);
+
+      expect(mockShop.bridge.showRewarded).toHaveBeenCalledTimes(1);
+      expect(mounted.getState().shop?.adRerollUsed).toBe(true);
+      expect(mounted.getState().shop?.offers.map((o) => o.uid)).not.toEqual(initialOffers);
+      expect(root.querySelector('[data-action="ad-reroll-shop"]')).toBeNull();
+
+      mounted.destroy();
+      mounted = null;
+
+      // 2. В обычном забеге при поражении доступен «Второй шанс» (+1 рука, revivedBadge), 1 раз за забег
+      const lostNormal: RunState = {
+        ...fighting,
+        phase: 'game_over',
+        handsLeft: 0,
+        reviveUsed: false,
+      };
+      const lossSave = createPlayerSaveData(
+        meta,
+        serializeRunStateToSnapshot(lostNormal, 1, nowMs),
+        1,
+        nowMs,
+      );
+      const mockRevive = createMockBridge({
+        initialSave: lossSave,
+        rewardedResult: { rewarded: true },
+        canShowRewarded: true,
+      });
+
+      mounted = mountBaliteApp(root, { bridge: mockRevive.bridge, initialNowMs: () => nowMs });
+      await mounted.readyPromise;
+      await flushMicrotasks(8);
+
+      const reviveBtn = root.querySelector<HTMLButtonElement>('[data-action="revive-run"]');
+      expect(reviveBtn).not.toBeNull();
+      reviveBtn?.click();
+      await flushMicrotasks(8);
+
+      expect(mockRevive.bridge.showRewarded).toHaveBeenCalledTimes(1);
+      expect(mounted.getState().phase).toBe('playing');
+      expect(mounted.getState().handsLeft).toBe(1);
+      expect(mounted.getState().reviveUsed).toBe(true);
+
+      mounted.destroy();
+      mounted = null;
+
+      // 3. В Ежедневном заказе «Второй шанс» скрыт и недоступен на экране поражения
+      const dailyBase = createInitialRunState('b_red', 'DAILY-20261117');
+      const dailyLost: RunState = {
+        ...dispatch(dailyBase, { type: 'SELECT_BLIND' }).nextState,
+        phase: 'game_over',
+        handsLeft: 0,
+        reviveUsed: false,
+      };
+      const dailyLossSave = createPlayerSaveData(
+        meta,
+        serializeRunStateToSnapshot(dailyLost, 1, nowMs),
+        1,
+        nowMs,
+      );
+      const mockDailyLoss = createMockBridge({
+        initialSave: dailyLossSave,
+        rewardedResult: { rewarded: true },
+        canShowRewarded: true,
+      });
+
+      mounted = mountBaliteApp(root, { bridge: mockDailyLoss.bridge, initialNowMs: () => nowMs });
+      await mounted.readyPromise;
+      await flushMicrotasks(8);
+
+      expect(root.querySelector('[data-daily-badge="true"]')).not.toBeNull();
+      expect(root.querySelector('[data-action="revive-run"]')).toBeNull();
+    });
+
+    it('Story 7.2: запускает Ежедневный заказ по серверному времени, отправляет best_hand/highest_ante/daily_score и открывает лидерборд VK по клику', async () => {
+      const serverTimeMs = Date.UTC(2026, 10, 17, 15, 30, 0);
+      const expectedDaily = buildDailyRunSpec(serverTimeMs);
+      const meta = createInitialMetaSave(serverTimeMs, {
+        lang: 'ru',
+        animationSpeed: 4,
+        tutorialCompleted: true,
+        unlockedDecks: ['b_red'],
+      });
+      const save = createPlayerSaveData(meta, null, 1, serverTimeMs);
+      const mock = createMockBridge({
+        platformId: 'vk',
+        initialSave: save,
+        serverTimeMs,
+      });
+
+      mounted = mountBaliteApp(root, { bridge: mock.bridge, initialNowMs: () => serverTimeMs });
+      await mounted.readyPromise;
+      await flushMicrotasks(8);
+
+      root.querySelector<HTMLButtonElement>('[data-menu-action="play"]')?.click();
+      const dailyCard = root.querySelector('[data-daily-run-card="true"]');
+      expect(dailyCard).not.toBeNull();
+      expect(dailyCard?.textContent).toContain(expectedDaily.dateKey);
+
+      root.querySelector<HTMLButtonElement>('[data-action="start-daily-run"]')?.click();
+      expect(mounted.getState().phase).toBe('blind_select');
+      expect(mounted.getState().seed).toBe(expectedDaily.seed);
+      expect(mounted.getState().deckId).toBe(expectedDaily.deckId);
+
+      // Завершаем забег (открываем Настройки и имитируем окончание? Перейдём в бой и проиграем с очками > 0)
+      mounted.destroy();
+      mounted = null;
+
+      const fightingDaily = dispatch(
+        createInitialRunState(expectedDaily.deckId, expectedDaily.seed),
+        { type: 'SELECT_BLIND' },
+      ).nextState;
+      const terminalDaily: RunState = {
+        ...fightingDaily,
+        phase: 'game_over',
+        ante: 4,
+        stats: {
+          ...fightingDaily.stats,
+          bestHandScore: 12345,
+        },
+      };
+      const terminalSave = createPlayerSaveData(
+        meta,
+        serializeRunStateToSnapshot(terminalDaily, 2, serverTimeMs),
+        2,
+        serverTimeMs,
+      );
+      const mockVkEnd = createMockBridge({
+        platformId: 'vk',
+        initialSave: terminalSave,
+        serverTimeMs,
+      });
+
+      mounted = mountBaliteApp(root, { bridge: mockVkEnd.bridge, initialNowMs: () => serverTimeMs });
+      await mounted.readyPromise;
+      await flushMicrotasks(8);
+
+      // Переигрываем/завершаем 1 бой или проверяем кнопку лидерборда на экране конца забега
+      const lbBtn = root.querySelector<HTMLButtonElement>('[data-action="open-vk-leaderboard"]');
+      expect(lbBtn).not.toBeNull();
+      // На восстановленном терминальном экране лидерборд не открывается сам, а ждёт явного клика
+      expect(mockVkEnd.bridge.openLeaderboardBox).not.toHaveBeenCalled();
+      lbBtn?.click();
+      expect(mockVkEnd.bridge.openLeaderboardBox).toHaveBeenCalledWith(12345);
+
+      mounted.destroy();
+      mounted = null;
+
+      // Проверяем отправку всех 3 метрик при переходе в game_over после поражения
+      const mockMetrics = createMockBridge({
+        platformId: 'yandex',
+        initialSave: createPlayerSaveData(
+          meta,
+          serializeRunStateToSnapshot(
+            {
+              ...fightingDaily,
+              handsLeft: 1,
+              targetScore: 999_999,
+              ante: 3,
+              stats: { ...fightingDaily.stats, bestHandScore: 4321 },
+            },
+            3,
+            serverTimeMs,
+          ),
+          3,
+          serverTimeMs,
+        ),
+        serverTimeMs,
+      });
+
+      mounted = mountBaliteApp(root, {
+        bridge: mockMetrics.bridge,
+        initialNowMs: () => serverTimeMs,
+      });
+      await mounted.readyPromise;
+      await flushMicrotasks(8);
+
+      const firstCardId = mounted.getState().handIds[0]!;
+      root.querySelector<HTMLElement>(`.hand-card-slot[data-card-id="${firstCardId}"]`)?.click();
+      findButtonByText(root, 'Сыграть')?.click();
+      await flushMicrotasks(12);
+
+      expect(mounted.getState().phase).toBe('game_over');
+      expect(mockMetrics.bridge.setLeaderboardScore).toHaveBeenCalledWith(
+        'best_hand',
+        expect.any(Number),
+      );
+      expect(mockMetrics.bridge.setLeaderboardScore).toHaveBeenCalledWith('highest_ante', 3);
+      expect(mockMetrics.bridge.setLeaderboardScore).toHaveBeenCalledWith(
+        'daily_score',
+        expect.any(Number),
+      );
+    });
+
+    it('Story 7.3: запрашивает оценку после победы над Боссом и предлагает ярлык после 2+ забегов', async () => {
+      const nowMs = 6_000_000;
+      const baseRun = createInitialRunState('b_red', 'STORY_7_3_BOSS');
+      const atBossSelect: RunState = {
+        ...baseRun,
+        currentBlindIndex: 2,
+        anteBlinds: [
+          { ...baseRun.anteBlinds[0], status: 'defeated' },
+          { ...baseRun.anteBlinds[1], status: 'defeated' },
+          { ...baseRun.anteBlinds[2], status: 'current' },
+        ],
+      };
+      const bossFight = dispatch(atBossSelect, { type: 'SELECT_BLIND' }).nextState;
+      const bossCashout = dispatch(
+        { ...bossFight, score: bossFight.targetScore },
+        { type: 'PLAY_HAND', cardIds: bossFight.handIds.slice(0, 1) },
+      ).nextState;
+      expect(bossCashout.phase).toBe('cashout');
+
+      const baseMeta = createInitialMetaSave(nowMs, {
+        lang: 'ru',
+        animationSpeed: 4,
+        tutorialCompleted: true,
+      });
+      const meta = {
+        ...baseMeta,
+        stats: {
+          ...baseMeta.stats,
+          runsStarted: 2,
+        },
+      };
+      const save = createPlayerSaveData(
+        meta,
+        serializeRunStateToSnapshot(bossCashout, 1, nowMs),
+        1,
+        nowMs,
+      );
+      const mock = createMockBridge({
+        platformId: 'yandex',
+        initialSave: save,
+        canRequestReview: true,
+        requestReviewResult: true,
+        canShowShortcutPrompt: true,
+        showShortcutResult: true,
+      });
+
+      mounted = mountBaliteApp(root, { bridge: mock.bridge, initialNowMs: () => nowMs });
+      await mounted.readyPromise;
+      await flushMicrotasks(8);
+
+      // Забираем награду после победы над Боссом -> вызывается requestReview() 1 раз
+      root.querySelector<HTMLButtonElement>('.claim-cashout-btn')?.click();
+      await flushMicrotasks(12);
+
+      expect(mounted.getState().phase).toBe('shop');
+      expect(mock.bridge.requestReview).toHaveBeenCalledTimes(1);
+      expect(mounted.getSaveData().meta.settings.reviewPrompted).toBe(true);
+
+      mounted.destroy();
+      mounted = null;
+
+      // При game_over и runsStarted >= 2 автоматически вызывается showShortcutPrompt() 1 раз
+      const preLoss = dispatch(createInitialRunState('b_red', 'STORY_7_3_SHORTCUT'), {
+        type: 'SELECT_BLIND',
+      }).nextState;
+      const preLossState: RunState = {
+        ...preLoss,
+        handsLeft: 1,
+        targetScore: 999_999,
+      };
+      const shortcutSave = createPlayerSaveData(
+        meta,
+        serializeRunStateToSnapshot(preLossState, 2, nowMs),
+        2,
+        nowMs,
+      );
+      const mockShortcut = createMockBridge({
+        platformId: 'yandex',
+        initialSave: shortcutSave,
+        canRequestReview: false,
+        canShowShortcutPrompt: true,
+        showShortcutResult: true,
+      });
+
+      mounted = mountBaliteApp(root, { bridge: mockShortcut.bridge, initialNowMs: () => nowMs });
+      await mounted.readyPromise;
+      await flushMicrotasks(8);
+
+      const cardId = mounted.getState().handIds[0]!;
+      root.querySelector<HTMLElement>(`.hand-card-slot[data-card-id="${cardId}"]`)?.click();
+      vi.useFakeTimers();
+      findButtonByText(root, 'Сыграть')?.click();
+      await vi.advanceTimersByTimeAsync(4500);
+      await flushMicrotasks(12);
+
+      expect(mounted.getState().phase).toBe('game_over');
+      expect(mockShortcut.bridge.showShortcutPrompt).toHaveBeenCalledTimes(1);
+      expect(mounted.getSaveData().meta.settings.shortcutPrompted).toBe(true);
+    });
+
+    it('Story 7.4: ПКМ сбрасывает выделение карт в бою (удерживая forcedSelection), в сундуке и при выборе целей расходника', async () => {
+      const nowMs = 7_000_000;
+      const meta = createInitialMetaSave(nowMs, {
+        lang: 'ru',
+        animationSpeed: 4,
+        tutorialCompleted: true,
+      });
+
+      // 1. В фазе playing ПКМ снимает обычное выделение, но оставляет карту Босса Орстеда (forcedSelection: true)
+      const baseRun = createInitialRunState('b_red', 'STORY_7_4_RMB');
+      const playing = dispatch(baseRun, { type: 'SELECT_BLIND' }).nextState;
+      const forcedId = playing.handIds[0]!;
+      const normalId = playing.handIds[1]!;
+      const lovers = createConsumableInstance('c_lovers', 'cons_rmb_lovers');
+      const playingWithForced: RunState = {
+        ...playing,
+        deck: playing.deck.map((c) => (c.id === forcedId ? { ...c, forcedSelection: true } : c)),
+        consumables: [lovers],
+      };
+
+      const mockPlaying = createMockBridge({
+        initialSave: createPlayerSaveData(
+          meta,
+          serializeRunStateToSnapshot(playingWithForced, 1, nowMs),
+          1,
+          nowMs,
+        ),
+      });
+
+      mounted = mountBaliteApp(root, { bridge: mockPlaying.bridge, initialNowMs: () => nowMs });
+      await mounted.readyPromise;
+      await flushMicrotasks(8);
+
+      // Принудительная карта выбрана изначально; выбираем вторую карту
+      expect(
+        root.querySelector(`.hand-card-slot[data-card-id="${forcedId}"]`)?.classList.contains('is-selected'),
+      ).toBe(true);
+      root.querySelector<HTMLElement>(`.hand-card-slot[data-card-id="${normalId}"]`)?.click();
+      expect(
+        root.querySelector(`.hand-card-slot[data-card-id="${normalId}"]`)?.classList.contains('is-selected'),
+      ).toBe(true);
+
+      // Клик ПКМ внутри корневого контейнера сбрасывает обычную карту, оставляя принудительную
+      const rmbEvent = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+      root.dispatchEvent(rmbEvent);
+      expect(rmbEvent.defaultPrevented).toBe(true);
+      expect(
+        root.querySelector(`.hand-card-slot[data-card-id="${normalId}"]`)?.classList.contains('is-selected'),
+      ).toBe(false);
+      expect(
+        root.querySelector(`.hand-card-slot[data-card-id="${forcedId}"]`)?.classList.contains('is-selected'),
+      ).toBe(true);
+
+      // 2. В режиме выбора целей расходника ПКМ полностью сбрасывает выбор целей (включая forcedId)
+      root.querySelector<HTMLElement>('[data-consumable-uid="cons_rmb_lovers"]')?.click();
+      root.querySelector<HTMLButtonElement>('.inspector-backdrop [data-action="use"]')?.click();
+      expect(root.querySelector('.target-banner')).not.toBeNull();
+
+      root.querySelector<HTMLElement>(`.hand-card-slot[data-card-id="${forcedId}"]`)?.click();
+      expect(
+        root.querySelector(`.hand-card-slot[data-card-id="${forcedId}"]`)?.classList.contains('is-selected'),
+      ).toBe(true);
+
+      root.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+      expect(root.querySelectorAll('.hand-card-slot.is-selected')).toHaveLength(0);
+
+      mounted.destroy();
+      mounted = null;
+
+      // 3. В фазе booster ПКМ полностью сбрасывает выделение карт в руке сундука
+      const boosterState: RunState = {
+        ...playing,
+        phase: 'booster',
+        booster: {
+          packId: 'p_arcana_normal_1',
+          packType: 'arcana',
+          packSize: 'normal',
+          remainingPicks: 1,
+          drawnHandCardIds: playing.handIds.slice(0, 4),
+          fromTag: false,
+          choices: [
+            {
+              uid: 'ch_lovers_boost',
+              kind: 'consumable',
+              consumable: createConsumableInstance('c_lovers', 'boost_lovers'),
+              picked: false,
+            },
+          ],
+        },
+      };
+      const mockBooster = createMockBridge({
+        initialSave: createPlayerSaveData(
+          meta,
+          serializeRunStateToSnapshot(boosterState, 2, nowMs),
+          2,
+          nowMs,
+        ),
+      });
+
+      mounted = mountBaliteApp(root, { bridge: mockBooster.bridge, initialNowMs: () => nowMs });
+      await mounted.readyPromise;
+      await flushMicrotasks(8);
+
+      const boosterCardId = boosterState.booster!.drawnHandCardIds[0]!;
+      root.querySelector<HTMLElement>(`.hand-card-slot[data-card-id="${boosterCardId}"]`)?.click();
+      expect(root.querySelectorAll('.hand-card-slot.is-selected')).toHaveLength(1);
+
+      root.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+      expect(root.querySelectorAll('.hand-card-slot.is-selected')).toHaveLength(0);
+    });
+
+    it('Story 7.4: Escape работает трёхуровневым каскадом (модалки/инспектор -> отмена целей расходника -> Параметры)', async () => {
+      const nowMs = 8_000_000;
+      const meta = createInitialMetaSave(nowMs, {
+        lang: 'ru',
+        animationSpeed: 4,
+        tutorialCompleted: true,
+      });
+      const baseRun = createInitialRunState('b_red', 'STORY_7_4_ESC');
+      const playing = dispatch(baseRun, { type: 'SELECT_BLIND' }).nextState;
+      const lovers = createConsumableInstance('c_lovers', 'cons_esc_lovers');
+      const stateWithCons: RunState = {
+        ...playing,
+        consumables: [lovers],
+      };
+
+      const mock = createMockBridge({
+        initialSave: createPlayerSaveData(
+          meta,
+          serializeRunStateToSnapshot(stateWithCons, 1, nowMs),
+          1,
+          nowMs,
+        ),
+      });
+
+      mounted = mountBaliteApp(root, { bridge: mock.bridge, initialNowMs: () => nowMs });
+      await mounted.readyPromise;
+      await flushMicrotasks(8);
+
+      // Уровень 1: Escape закрывает открытый инспектор, не отменяя игру и не открывая Параметры
+      root.querySelector<HTMLElement>('[data-consumable-uid="cons_esc_lovers"]')?.click();
+      expect(root.querySelector('.inspector-backdrop')).not.toBeNull();
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+      expect(root.querySelector('.inspector-backdrop')).toBeNull();
+      expect(root.querySelector('[data-modal="settings"]')).toBeNull();
+
+      // Уровень 2: в режиме выбора целей расходника Escape отменяет выбор целей (без открытия Параметров)
+      root.querySelector<HTMLElement>('[data-consumable-uid="cons_esc_lovers"]')?.click();
+      root.querySelector<HTMLButtonElement>('.inspector-backdrop [data-action="use"]')?.click();
+      expect(root.querySelector('.target-banner')).not.toBeNull();
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+      expect(root.querySelector('.target-banner')).toBeNull();
+      expect(root.querySelector('[data-modal="settings"]')).toBeNull();
+
+      // Уровень 3: в активном забеге без модалок и targetMode Escape открывает Параметры, а следующий Escape закрывает их
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+      expect(root.querySelector('[data-modal="settings"]')).not.toBeNull();
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+      expect(root.querySelector('[data-modal="settings"]')).toBeNull();
+    });
+  });
+
+  describe('Эпик 8: Настройка колоды (палитра мастей и рубашка)', () => {
+    it('Story 8.2: применяет suitPalette и cardBack на корневом контейнере, переключает в Параметрах и сохраняет в MetaSave', async () => {
+      const nowMs = 9_000_000;
+      const meta = createInitialMetaSave(nowMs, {
+        lang: 'ru',
+        animationSpeed: 4,
+        tutorialCompleted: true,
+        suitPalette: 'standard',
+        cardBack: 'default',
+      });
+      const baseRun = createInitialRunState('b_red', 'STORY_8_2_CUSTOMIZE');
+      const playing = dispatch(baseRun, { type: 'SELECT_BLIND' }).nextState;
+      const save = createPlayerSaveData(
+        meta,
+        serializeRunStateToSnapshot(playing, 1, nowMs),
+        1,
+        nowMs,
+      );
+      const mock = createMockBridge({ initialSave: save });
+
+      mounted = mountBaliteApp(root, { bridge: mock.bridge, initialNowMs: () => nowMs });
+      await mounted.readyPromise;
+      await flushMicrotasks(8);
+
+      expect(root.dataset.suitPalette).toBe('standard');
+      expect(root.dataset.cardBack).toBe('default');
+
+      // Открываем Параметры -> Настроить колоду
+      findButtonByText(root, 'Настройки')?.click();
+      root.querySelector<HTMLButtonElement>('[data-hub-action="customize-deck"]')?.click();
+      expect(root.querySelector('[data-customize-deck-panel="true"]')).not.toBeNull();
+
+      // Выбираем высококонтрастную палитру и рубашку b_blue
+      root.querySelector<HTMLButtonElement>('[data-suit-palette-option="high_contrast"]')?.click();
+      root.querySelector<HTMLButtonElement>('[data-card-back-option="b_blue"]')?.click();
+
+      expect(root.dataset.suitPalette).toBe('high_contrast');
+      expect(root.dataset.cardBack).toBe('b_blue');
+      expect(mounted.getSaveData().meta.settings.suitPalette).toBe('high_contrast');
+      expect(mounted.getSaveData().meta.settings.cardBack).toBe('b_blue');
+    });
+  });
+
+  describe('Бесшовные фазовые переходы (выбор заказа, бой, кэшаут, магазин)', () => {
+    it('перемещает уходящие элементы HUD вверх, арену вниз и анимирует появление боя и магазина', async () => {
+      const makeRect = (left: number, top: number, width: number, height: number): DOMRect =>
+        ({
+          x: left,
+          y: top,
+          left,
+          top,
+          width,
+          height,
+          right: left + width,
+          bottom: top + height,
+          toJSON: () => ({}),
+        }) as DOMRect;
+
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        if (this.classList.contains('stage-portrait')) {
+          return makeRect(0, 0, 1280, 720);
+        }
+        if (
+          this.classList.contains('hud-choose-prompt') ||
+          this.classList.contains('hud-boss-btn') ||
+          this.classList.contains('hud-shop-sign')
+        ) {
+          return makeRect(20, 12, 320, 220);
+        }
+        if (this.classList.contains('blinds-grid') || this.classList.contains('arena-stage')) {
+          return makeRect(380, 140, 860, 540);
+        }
+        return makeRect(0, 0, 0, 0);
+      });
+
+      const nowMs = 9_500_000;
+      const meta = createInitialMetaSave(nowMs, {
+        lang: 'ru',
+        animationSpeed: 1,
+        tutorialCompleted: true,
+      });
+      const blindRun = createInitialRunState('b_red', 'PHASE_TRANSITION_TEST');
+      const save = createPlayerSaveData(
+        meta,
+        serializeRunStateToSnapshot(blindRun, 1, nowMs),
+        1,
+        nowMs,
+      );
+      const mock = createMockBridge({ initialSave: save });
+
+      vi.useFakeTimers();
+      mounted = mountBaliteApp(root, { bridge: mock.bridge, initialNowMs: () => nowMs });
+      await mounted.readyPromise;
+      await flushMicrotasks(8);
+
+      // 1. Выбор заказа -> Бой: надпись выбора улетает вверх, блайнды — вниз
+      root.querySelector<HTMLButtonElement>('.blind-card__battle-btn')?.click();
+      const shellAfterBlind = root.querySelector<HTMLElement>('.run-shell');
+      expect(shellAfterBlind?.dataset.phaseTransition).toBe('blind-to-playing');
+
+      const layer = root.querySelector<HTMLElement>('.phase-transition-layer');
+      const blindExitHud = layer?.querySelector<HTMLElement>('.phase-exit-hud-up');
+      const blindExitGrid = layer?.querySelector<HTMLElement>('.phase-exit-blinds-grid');
+      expect(blindExitHud).not.toBeNull();
+      expect(blindExitGrid).not.toBeNull();
+      expect(Number.parseFloat(blindExitHud!.style.getPropertyValue('--phase-exit-y'))).toBeLessThan(
+        0,
+      );
+      expect(
+        Number.parseFloat(blindExitGrid!.style.getPropertyValue('--phase-exit-y')),
+      ).toBeGreaterThan(0);
+
+      await vi.advanceTimersByTimeAsync(1050);
+      expect(layer?.childElementCount).toBe(0);
+      expect(shellAfterBlind?.dataset.phaseTransition).toBeUndefined();
+
+      mounted.destroy();
+      mounted = null;
+
+      // 2. Выплата -> Магазин -> Выбор заказа
+      const wonPlaying = dispatch(blindRun, { type: 'SELECT_BLIND' }).nextState;
+      const cashoutState: RunState = {
+        ...wonPlaying,
+        phase: 'cashout',
+        cashout: {
+          blindReward: 3,
+          unusedHandsBonus: 3,
+          interestBonus: 0,
+          relicBonus: 0,
+          tagBonus: 0,
+          totalReward: 6,
+        },
+      };
+      const cashoutSave = createPlayerSaveData(
+        meta,
+        serializeRunStateToSnapshot(cashoutState, 2, nowMs),
+        2,
+        nowMs,
+      );
+      const mockCashout = createMockBridge({ initialSave: cashoutSave });
+
+      mounted = mountBaliteApp(root, { bridge: mockCashout.bridge, initialNowMs: () => nowMs });
+      await mounted.readyPromise;
+      await flushMicrotasks(8);
+
+      root.querySelector<HTMLButtonElement>('.claim-cashout-btn')?.click();
+      const shellShop = root.querySelector<HTMLElement>('.run-shell');
+      expect(shellShop?.dataset.phaseTransition).toBe('cashout-to-shop');
+      expect(root.querySelectorAll('.hud-shop-sign__title-char').length).toBeGreaterThan(3);
+
+      const layer2 = root.querySelector<HTMLElement>('.phase-transition-layer');
+      expect(layer2?.querySelector('.phase-exit-hud-up')).not.toBeNull();
+      expect(layer2?.querySelector('.phase-exit-arena-down')).not.toBeNull();
+
+      await vi.advanceTimersByTimeAsync(1050);
+      expect(layer2?.childElementCount).toBe(0);
+
+      root.querySelector<HTMLButtonElement>('.shop-next-btn')?.click();
+      await flushMicrotasks(8);
+      const shellNextBlind = root.querySelector<HTMLElement>('.run-shell');
+      expect(shellNextBlind?.dataset.phaseTransition).toBe('shop-to-blind');
+      expect(shellNextBlind?.style.getPropertyValue('--blind-intro-delay')).toBe('400ms');
+      expect(layer2?.querySelector('.phase-exit-hud-up')).not.toBeNull();
+      expect(layer2?.querySelector('.phase-exit-arena-down')).not.toBeNull();
+
+      await vi.advanceTimersByTimeAsync(1050);
+      expect(layer2?.childElementCount).toBe(0);
+    });
+
+    it('в конце победного боя дожидается улёта оставшихся карт перед выездом и раскрытием кэшаута', async () => {
+      const makeRect = (left: number, top: number, width: number, height: number): DOMRect =>
+        ({
+          x: left,
+          y: top,
+          left,
+          top,
+          width,
+          height,
+          right: left + width,
+          bottom: top + height,
+          toJSON: () => ({}),
+        }) as DOMRect;
+
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: HTMLElement,
+      ) {
+        if (this.classList.contains('stage-portrait')) {
+          return makeRect(0, 0, 1280, 720);
+        }
+        if (this.dataset.cardId) {
+          return makeRect(420, 460, 88, 124);
+        }
+        return makeRect(0, 0, 0, 0);
+      });
+
+      const nowMs = 9_600_000;
+      const meta = createInitialMetaSave(nowMs, {
+        lang: 'ru',
+        animationSpeed: 1,
+        tutorialCompleted: true,
+      });
+      const baseRun = createInitialRunState('b_red', 'CASHOUT_WAIT_CARDS');
+      const playing = dispatch(baseRun, { type: 'SELECT_BLIND' }).nextState;
+      const ace = createPlayingCard({ id: 'win_ace', rank: 14, suit: 'spades' });
+      const fallbackRanks = [2, 3, 4, 5, 6, 7, 8] as const;
+      const rest = playing.handIds.slice(1).map((id, i) =>
+        createPlayingCard({ id, rank: fallbackRanks[i % fallbackRanks.length] ?? 2, suit: 'hearts' }),
+      );
+      const winningState: RunState = {
+        ...playing,
+        targetScore: 10,
+        deck: [ace, ...rest],
+        handIds: [ace.id, ...rest.map((c) => c.id)],
+        drawPileIds: [],
+      };
+      const save = createPlayerSaveData(
+        meta,
+        serializeRunStateToSnapshot(winningState, 1, nowMs),
+        1,
+        nowMs,
+      );
+      const mock = createMockBridge({ initialSave: save });
+
+      let rollerNowMs = 0;
+      let nextRollerId = 1;
+      const rollerFrames = new Map<number, FrameRequestCallback>();
+      const stepRoller = (dtMs = 16): void => {
+        rollerNowMs += dtMs;
+        const batch = [...rollerFrames.entries()];
+        rollerFrames.clear();
+        for (const [, cb] of batch) cb(rollerNowMs);
+      };
+
+      vi.useFakeTimers();
+      mounted = mountBaliteApp(root, {
+        bridge: mock.bridge,
+        initialNowMs: () => nowMs,
+        numberRollerOptions: {
+          now: () => rollerNowMs,
+          reducedMotion: () => false,
+          requestFrame: (cb) => {
+            const id = nextRollerId++;
+            rollerFrames.set(id, cb);
+            return id;
+          },
+          cancelFrame: (id) => {
+            rollerFrames.delete(id);
+          },
+        },
+      });
+      await mounted.readyPromise;
+      await flushMicrotasks(8);
+
+      root.querySelector<HTMLElement>(`.hand-card-slot[data-card-id="${ace.id}"]`)?.click();
+      findButtonByText(root, 'Сыграть')?.click();
+
+      // Проигрываем TracePlayer до перехода в cashout (960 + 800 + 640 ~ 2400мс)
+      await vi.advanceTimersByTimeAsync(2600);
+      await flushMicrotasks(12);
+
+      expect(mounted.getState().phase).toBe('cashout');
+      const shellCashout = root.querySelector<HTMLElement>('.run-shell');
+      expect(shellCashout?.dataset.phaseTransition).toBe('playing-to-cashout');
+
+      const enterDelayMs = Number.parseInt(
+        shellCashout?.style.getPropertyValue('--arena-enter-delay') ?? '0',
+        10,
+      );
+      expect(enterDelayMs).toBeGreaterThanOrEqual(450);
+
+      // Пока улетают карты, строки кэшаута ещё скрыты и не стакуются поверх улетающих карт
+      stepRoller(32);
+      const firstRowBeforeWait = root.querySelector<HTMLElement>('.cashout-row');
+      expect(firstRowBeforeWait?.dataset.cashoutRevealed).toBe('false');
+
+      // После улёта карт и паузы запускается таймлайн кэшаута и раскрывает первую строку
+      await vi.advanceTimersByTimeAsync(enterDelayMs + 220);
+      stepRoller(32);
+      expect(firstRowBeforeWait?.dataset.cashoutRevealed).toBe('true');
     });
   });
 });

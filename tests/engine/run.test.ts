@@ -904,4 +904,119 @@ describe('Конечный автомат забега Balite (Stage 5B: run.ts 
     ).map((c) => c.id);
     expect(afterCryptid.handIds).toEqual(expectedAfterCryptid);
   });
+
+  it('REVIVE_RUN 1 раз за забег возвращает из game_over в бой с +1 рукой, перетасовкой сброса и учётом правил Босса', () => {
+    const start = createInitialRunState('b_red', 'REVIVE_BOSS_TEST');
+    // Переходим к Боссу Этапа 1 (подменим на bl_manacle для проверки -1 размера руки и bl_final_bell)
+    const manacleSetup: RunState = {
+      ...start,
+      currentBlindIndex: 2,
+      anteBlinds: [
+        { ...start.anteBlinds[0], status: 'defeated' },
+        { ...start.anteBlinds[1], status: 'defeated' },
+        { ...start.anteBlinds[2], kind: 'boss', bossId: 'bl_manacle', status: 'current', targetScore: 1_000_000 },
+      ],
+    };
+
+    const inBoss = dispatch(manacleSetup, { type: 'SELECT_BLIND' }).nextState;
+    expect(inBoss.handSize).toBe(7); // 8 - 1 от bl_manacle
+
+    // Доводим бой до поражения на последней руке при пустой drawPileIds
+    const preLoss: RunState = {
+      ...inBoss,
+      handsLeft: 1,
+      drawPileIds: [],
+      discardPileIds: inBoss.drawPileIds,
+    };
+    const lost = dispatch(preLoss, {
+      type: 'PLAY_HAND',
+      cardIds: preLoss.handIds.slice(0, 1),
+    });
+    expect(lost.nextState.phase).toBe('game_over');
+    expect(lost.nextState.reviveUsed).toBe(false);
+    expect(lost.nextState.handSize).toBe(7);
+
+    // Оживление за рекламу: +1 рука, размер руки по-прежнему 7 (не 6!), сброс дотасован и рука полная (7)
+    const revived = dispatch(lost.nextState, { type: 'REVIVE_RUN' });
+    expect(revived.nextState.phase).toBe('playing');
+    expect(revived.nextState.handsLeft).toBe(1);
+    expect(revived.nextState.reviveUsed).toBe(true);
+    expect(revived.nextState.handSize).toBe(7);
+    expect(revived.nextState.handIds).toHaveLength(7);
+    expect(revived.events.some((e) => e.type === 'PHASE_CHANGED' && e.from === 'game_over' && e.to === 'playing')).toBe(true);
+
+    // После победы финальной рукой size восстанавливается до 8
+    const wonAfterRevive = dispatch(
+      { ...revived.nextState, score: revived.nextState.targetScore },
+      { type: 'PLAY_HAND', cardIds: revived.nextState.handIds.slice(0, 1) },
+    ).nextState;
+    expect(wonAfterRevive.phase).toBe('cashout');
+    expect(wonAfterRevive.handSize).toBe(8);
+
+    // Если игрок проигрывает второй раз в этом же забеге, повторный REVIVE_RUN блокируется
+    const secondLoss: RunState = {
+      ...revived.nextState,
+      score: 0,
+      targetScore: 999_999,
+      handsLeft: 1,
+    };
+    const lostAgain = dispatch(secondLoss, {
+      type: 'PLAY_HAND',
+      cardIds: secondLoss.handIds.slice(0, 1),
+    }).nextState;
+    expect(lostAgain.phase).toBe('game_over');
+    const blockedRevive = dispatch(lostAgain, { type: 'REVIVE_RUN' });
+    expect(blockedRevive.nextState).toBe(lostAgain);
+    expect(blockedRevive.events).toEqual([]);
+
+    // В «Ежедневном заказе гильдии» (DAILY-*) REVIVE_RUN полностью отключён
+    const dailyStart = createInitialRunState('b_red', 'DAILY-20261117');
+    const dailyFighting = dispatch(dailyStart, { type: 'SELECT_BLIND' }).nextState;
+    const dailyLost = dispatch(
+      { ...dailyFighting, handsLeft: 1, targetScore: 999_999 },
+      { type: 'PLAY_HAND', cardIds: dailyFighting.handIds.slice(0, 1) },
+    ).nextState;
+    expect(dailyLost.phase).toBe('game_over');
+    expect(dailyLost.reviveUsed).toBe(false);
+    const blockedDailyRevive = dispatch(dailyLost, { type: 'REVIVE_RUN' });
+    expect(blockedDailyRevive.nextState).toBe(dailyLost);
+    expect(blockedDailyRevive.events).toEqual([]);
+  });
+
+  it('FREE_REROLL_SHOP обновляет прилавок бесплатно 1 раз за визит без роста цены и активирует j_flash', () => {
+    const start = createInitialRunState('b_red', 'FREE_SHOP_REROLL');
+    const fighting = dispatch(start, { type: 'SELECT_BLIND' }).nextState;
+    const cashout = dispatch(
+      { ...fighting, score: fighting.targetScore },
+      { type: 'PLAY_HAND', cardIds: fighting.handIds.slice(0, 1) },
+    ).nextState;
+    const inShop = dispatch(cashout, { type: 'CLAIM_CASHOUT' }).nextState;
+    expect(inShop.phase).toBe('shop');
+    expect(inShop.shop?.adRerollUsed).toBe(false);
+
+    const flashRelic = createRelicInstance('j_flash', 'relic_flash_test');
+    const brokeShopState: RunState = {
+      ...inShop,
+      dollars: 0,
+      relics: [flashRelic],
+    };
+    const oldOfferUids = brokeShopState.shop!.offers.map((o) => o.uid);
+    const oldRerollCost = brokeShopState.shop!.rerollCost;
+    const oldRerollsUsed = brokeShopState.shop!.rerollsUsedThisShop;
+
+    const afterFree = dispatch(brokeShopState, { type: 'FREE_REROLL_SHOP' });
+    expect(afterFree.nextState.dollars).toBe(0);
+    expect(afterFree.nextState.shop?.adRerollUsed).toBe(true);
+    expect(afterFree.nextState.shop?.rerollCost).toBe(oldRerollCost);
+    expect(afterFree.nextState.shop?.rerollsUsedThisShop).toBe(oldRerollsUsed);
+    expect(afterFree.nextState.stats.rerollsCount).toBe(1);
+    expect(afterFree.nextState.shop?.offers.map((o) => o.uid)).not.toEqual(oldOfferUids);
+    expect(afterFree.nextState.relics[0]?.state.mult).toBe(2); // j_flash сработал
+    expect(afterFree.events.some((e) => e.type === 'RELIC_TRIGGER' && e.relicId === 'j_flash')).toBe(true);
+
+    // Повторный бесплатный реролл за тот же визит заблокирован
+    const secondFree = dispatch(afterFree.nextState, { type: 'FREE_REROLL_SHOP' });
+    expect(secondFree.nextState).toBe(afterFree.nextState);
+    expect(secondFree.events).toEqual([]);
+  });
 });

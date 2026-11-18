@@ -360,6 +360,86 @@ export function createPlatformBridge<
     }
   };
 
+  const getServerTime = async (): Promise<number> => {
+    if (typeof adapter.getServerTime === 'function') {
+      try {
+        const ts = await adapter.getServerTime();
+        if (typeof ts === 'number' && Number.isFinite(ts) && ts > 0) {
+          return Math.floor(ts);
+        }
+      } catch {
+        // Откат на локальные часы при ошибке адаптера
+      }
+    }
+    return Date.now();
+  };
+
+  const canShowRewarded = async (): Promise<boolean> => {
+    if (typeof adapter.canShowRewarded === 'function') {
+      try {
+        return Boolean(await adapter.canShowRewarded());
+      } catch {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const openLeaderboardBox = async (score: number): Promise<boolean> => {
+    if (typeof adapter.openLeaderboardBox === 'function') {
+      try {
+        return Boolean(await adapter.openLeaderboardBox(score));
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  };
+
+  const canRequestReview = async (): Promise<boolean> => {
+    if (typeof adapter.canRequestReview === 'function') {
+      try {
+        return Boolean(await adapter.canRequestReview());
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  };
+
+  const requestReview = async (): Promise<boolean> => {
+    if (typeof adapter.requestReview === 'function') {
+      try {
+        return Boolean(await adapter.requestReview());
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  };
+
+  const canShowShortcutPrompt = async (): Promise<boolean> => {
+    if (typeof adapter.canShowShortcutPrompt === 'function') {
+      try {
+        return Boolean(await adapter.canShowShortcutPrompt());
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  };
+
+  const showShortcutPrompt = async (): Promise<boolean> => {
+    if (typeof adapter.showShortcutPrompt === 'function') {
+      try {
+        return Boolean(await adapter.showShortcutPrompt());
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  };
+
   return {
     audio,
     init,
@@ -383,5 +463,12 @@ export function createPlatformBridge<
     savePlayerData,
     flushCloudSave,
     vibrate,
+    getServerTime,
+    canShowRewarded,
+    openLeaderboardBox,
+    canRequestReview,
+    requestReview,
+    canShowShortcutPrompt,
+    showShortcutPrompt,
   };
 }

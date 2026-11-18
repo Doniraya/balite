@@ -42,6 +42,13 @@ function createMockBridge(initialSave?: PlayerSaveData | null): {
     gameplayStop: vi.fn(() => {}),
     vibrate: vi.fn(() => {}),
     subscribe: vi.fn((_listener: PlatformEventListener) => () => {}),
+    getServerTime: vi.fn(async () => Date.UTC(2026, 10, 17, 12, 0, 0)),
+    canShowRewarded: vi.fn(async () => true),
+    openLeaderboardBox: vi.fn(async () => false),
+    canRequestReview: vi.fn(async () => false),
+    requestReview: vi.fn(async () => false),
+    canShowShortcutPrompt: vi.fn(async () => false),
+    showShortcutPrompt: vi.fn(async () => false),
   };
 
   return { bridge, savePlayerData };

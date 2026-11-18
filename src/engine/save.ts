@@ -5,15 +5,19 @@ import {
   COLLECTION_SEALS,
   REGULAR_MONSTER_IDS,
 } from './collection';
+import { extractDailyDateKeyFromSeed } from './daily';
 import { getHandLevelStats } from './handEval';
 import { RNG_STREAM_NAMES, type RngState, type RngStreamName } from './prng';
 import {
   BLIND_KINDS,
   BOSS_IDS,
+  CARD_BACK_STYLES,
   CELESTIAL_IDS,
   CHARTER_IDS,
   CONSUMABLE_KINDS,
   DECK_IDS,
+  DEFAULT_CARD_BACK_STYLE,
+  DEFAULT_SUIT_PALETTE,
   EDITIONS,
   ENHANCEMENTS,
   HAND_TYPES,
@@ -25,6 +29,7 @@ import {
   SCROLL_IDS,
   SEALS,
   SUITS,
+  SUIT_PALETTES,
   TAG_IDS,
   type ActiveRunTracker,
   type AnimationSpeed,
@@ -34,6 +39,7 @@ import {
   type BoosterChoice,
   type BoosterState,
   type BossId,
+  type CardBackStyle,
   type CardFacing,
   type CashoutBreakdown,
   type CelestialId,
@@ -74,6 +80,7 @@ import {
   type ShopState,
   type ShopVoucherOffer,
   type Suit,
+  type SuitPalette,
   type TagId,
 } from './types';
 
@@ -199,6 +206,8 @@ export interface CreateInitialMetaSaveOptions {
   readonly unlockedDecks?: readonly DeckId[];
   readonly tutorialCompleted?: boolean;
   readonly tutorialStep?: number;
+  readonly suitPalette?: SuitPalette;
+  readonly cardBack?: CardBackStyle;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -269,6 +278,14 @@ function isValidCrtMode(value: unknown): value is CrtMode {
   return value === 'off' || value === 'light' || value === 'original';
 }
 
+function isValidSuitPalette(value: unknown): value is SuitPalette {
+  return typeof value === 'string' && (SUIT_PALETTES as readonly string[]).includes(value);
+}
+
+function isValidCardBackStyle(value: unknown): value is CardBackStyle {
+  return typeof value === 'string' && (CARD_BACK_STYLES as readonly string[]).includes(value);
+}
+
 function sanitizeSettings(
   raw: unknown,
   options: { readonly preserveLegacyDoubleSpeed?: boolean } = {},
@@ -312,6 +329,16 @@ function sanitizeSettings(
     typeof rec.tutorialStep === 'number' && Number.isFinite(rec.tutorialStep) && rec.tutorialStep >= 0
       ? Math.floor(rec.tutorialStep)
       : undefined;
+  const reviewPrompted =
+    typeof rec.reviewPrompted === 'boolean' ? rec.reviewPrompted : undefined;
+  const shortcutPrompted =
+    typeof rec.shortcutPrompted === 'boolean' ? rec.shortcutPrompted : undefined;
+  const suitPalette: SuitPalette | undefined = isValidSuitPalette(rec.suitPalette)
+    ? rec.suitPalette
+    : undefined;
+  const cardBack: CardBackStyle | undefined = isValidCardBackStyle(rec.cardBack)
+    ? rec.cardBack
+    : undefined;
 
   return {
     animationSpeed,
@@ -322,6 +349,10 @@ function sanitizeSettings(
     ...(sfxVolume !== undefined ? { sfxVolume } : {}),
     ...(tutorialCompleted !== undefined ? { tutorialCompleted } : {}),
     ...(tutorialStep !== undefined ? { tutorialStep } : {}),
+    ...(reviewPrompted !== undefined ? { reviewPrompted } : {}),
+    ...(shortcutPrompted !== undefined ? { shortcutPrompted } : {}),
+    ...(suitPalette !== undefined && suitPalette !== DEFAULT_SUIT_PALETTE ? { suitPalette } : {}),
+    ...(cardBack !== undefined && cardBack !== DEFAULT_CARD_BACK_STYLE ? { cardBack } : {}),
     settingsVersion: SETTINGS_SCHEMA_VERSION,
   };
 }
@@ -361,6 +392,16 @@ function sanitizeMetaStats(raw: unknown): MetaStats {
   const totalMoneySpent = sanitizeNonNegInt(rec.totalMoneySpent, 0);
   const totalShopRerolls = sanitizeNonNegInt(rec.totalShopRerolls, 0);
   const totalCelestialsUsed = sanitizeNonNegInt(rec.totalCelestialsUsed, 0);
+  const dailyBestDate =
+    typeof rec.dailyBestDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rec.dailyBestDate)
+      ? rec.dailyBestDate
+      : undefined;
+  const dailyBestScore =
+    typeof rec.dailyBestScore === 'number' &&
+    Number.isFinite(rec.dailyBestScore) &&
+    rec.dailyBestScore >= 0
+      ? Math.floor(rec.dailyBestScore)
+      : undefined;
 
   return {
     runsStarted: sanitizeNonNegInt(rec.runsStarted, 0),
@@ -381,6 +422,8 @@ function sanitizeMetaStats(raw: unknown): MetaStats {
     ...(totalMoneySpent > 0 ? { totalMoneySpent } : {}),
     ...(totalShopRerolls > 0 ? { totalShopRerolls } : {}),
     ...(totalCelestialsUsed > 0 ? { totalCelestialsUsed } : {}),
+    ...(dailyBestDate !== undefined ? { dailyBestDate } : {}),
+    ...(dailyBestScore !== undefined ? { dailyBestScore } : {}),
   };
 }
 
@@ -443,6 +486,19 @@ export function updateMetaStatsFromRunState(
     sanitizeNonNegInt(base.totalCelestialsUsed, 0) +
     sanitizeNonNegInt(flags.celestialsUsedDelta, 0);
 
+  const dailySeedDate = extractDailyDateKeyFromSeed(state.seed);
+  const runBestHandScoreInt = Math.floor(runBestHandScore);
+  let dailyBestDate = base.dailyBestDate;
+  let dailyBestScore = base.dailyBestScore;
+  if (dailySeedDate && (runBestHandScoreInt > 0 || flags.runWon || flags.runLost)) {
+    if (!dailyBestDate || dailySeedDate > dailyBestDate) {
+      dailyBestDate = dailySeedDate;
+      dailyBestScore = runBestHandScoreInt;
+    } else if (dailySeedDate === dailyBestDate) {
+      dailyBestScore = Math.max(dailyBestScore ?? 0, runBestHandScoreInt);
+    }
+  }
+
   return {
     runsStarted: base.runsStarted + (flags.runStarted ? 1 : 0),
     runsWon: base.runsWon + (flags.runWon ? 1 : 0),
@@ -457,6 +513,8 @@ export function updateMetaStatsFromRunState(
     ...(totalMoneySpent > 0 ? { totalMoneySpent } : {}),
     ...(totalShopRerolls > 0 ? { totalShopRerolls } : {}),
     ...(totalCelestialsUsed > 0 ? { totalCelestialsUsed } : {}),
+    ...(dailyBestDate !== undefined ? { dailyBestDate } : {}),
+    ...(dailyBestScore !== undefined ? { dailyBestScore } : {}),
   };
 }
 
@@ -614,6 +672,7 @@ export interface RunEndSummary {
     readonly highestAnte: boolean;
     readonly highestRound: boolean;
   };
+  readonly reviveUsed?: boolean;
 }
 
 /**
@@ -665,6 +724,7 @@ export function getRunEndSummary(
       highestAnte: baselineHighestAnte !== null && state.ante > baselineHighestAnte,
       highestRound: baselineHighestRound !== null && state.round > baselineHighestRound,
     },
+    ...(state.reviveUsed ? { reviveUsed: true } : {}),
   };
 }
 
@@ -800,6 +860,7 @@ function cloneShopState(shop: ShopState | null): ShopState | null {
     rerollCost: shop.rerollCost,
     tempRerollCost: shop.tempRerollCost,
     rerollsUsedThisShop: shop.rerollsUsedThisShop,
+    ...(typeof shop.adRerollUsed === 'boolean' ? { adRerollUsed: shop.adRerollUsed } : {}),
   };
 }
 
@@ -891,6 +952,8 @@ export function createInitialMetaSave(
         sfxVolume: options.sfxVolume,
         tutorialCompleted: options.tutorialCompleted,
         tutorialStep: options.tutorialStep,
+        suitPalette: options.suitPalette,
+        cardBack: options.cardBack,
         settingsVersion: SETTINGS_SCHEMA_VERSION,
       },
       { preserveLegacyDoubleSpeed: true },
@@ -1080,6 +1143,7 @@ export function serializeRunStateToSnapshot(
     cashout: state.cashout ? { ...state.cashout } : null,
     nextCardUid: state.nextCardUid,
     stats: { ...state.stats },
+    ...(typeof state.reviveUsed === 'boolean' ? { reviveUsed: state.reviveUsed } : {}),
   };
 }
 
@@ -1170,6 +1234,7 @@ export function restoreRunStateFromSnapshot(snapshot: RunSnapshot): RunState {
     cashout: snapshot.cashout ? { ...snapshot.cashout } : null,
     nextCardUid: snapshot.nextCardUid,
     stats: { ...snapshot.stats },
+    ...(typeof snapshot.reviveUsed === 'boolean' ? { reviveUsed: snapshot.reviveUsed } : {}),
   };
 }
 
@@ -1911,6 +1976,7 @@ function sanitizeShopState(raw: unknown): ShopState | null | undefined {
     rerollCost: raw.rerollCost,
     tempRerollCost: raw.tempRerollCost as number | null,
     rerollsUsedThisShop: raw.rerollsUsedThisShop,
+    ...(typeof raw.adRerollUsed === 'boolean' ? { adRerollUsed: raw.adRerollUsed } : {}),
   };
 }
 
@@ -2233,6 +2299,7 @@ function sanitizeRunSnapshot(
     cashout,
     nextCardUid: raw.nextCardUid as number,
     stats,
+    ...(typeof raw.reviveUsed === 'boolean' ? { reviveUsed: raw.reviveUsed } : {}),
   };
 }
 
@@ -2378,10 +2445,21 @@ function mergeMetaSaves(
   ].filter((s): s is number => typeof s === 'number' && Number.isFinite(s) && s >= 0);
   const tutorialStep = stepCandidates.length > 0 ? Math.max(...stepCandidates) : undefined;
 
+  const reviewPrompted =
+    primary?.settings?.reviewPrompted === true || secondary?.settings?.reviewPrompted === true
+      ? true
+      : (primary?.settings?.reviewPrompted ?? secondary?.settings?.reviewPrompted);
+  const shortcutPrompted =
+    primary?.settings?.shortcutPrompted === true || secondary?.settings?.shortcutPrompted === true
+      ? true
+      : (primary?.settings?.shortcutPrompted ?? secondary?.settings?.shortcutPrompted);
+
   const mergedSettings = {
     ...sanitizeSettings(base.settings),
     ...(tutorialCompleted !== undefined ? { tutorialCompleted } : {}),
     ...(tutorialStep !== undefined ? { tutorialStep } : {}),
+    ...(reviewPrompted !== undefined ? { reviewPrompted } : {}),
+    ...(shortcutPrompted !== undefined ? { shortcutPrompted } : {}),
   };
 
   return {
@@ -2438,10 +2516,36 @@ function mergeMetaSaves(
           sanitizeNonNegInt(base.stats.totalCelestialsUsed, 0),
           sanitizeNonNegInt(other.stats.totalCelestialsUsed, 0),
         );
+        const baseDailyDate = base.stats.dailyBestDate;
+        const otherDailyDate = other.stats.dailyBestDate;
+        const baseDailyScore = sanitizeNonNegInt(base.stats.dailyBestScore, 0);
+        const otherDailyScore = sanitizeNonNegInt(other.stats.dailyBestScore, 0);
+        let dailyBestDate: string | undefined;
+        let dailyBestScore: number | undefined;
+        if (baseDailyDate && otherDailyDate) {
+          if (baseDailyDate === otherDailyDate) {
+            dailyBestDate = baseDailyDate;
+            dailyBestScore = Math.max(baseDailyScore, otherDailyScore);
+          } else if (baseDailyDate > otherDailyDate) {
+            dailyBestDate = baseDailyDate;
+            dailyBestScore = baseDailyScore;
+          } else {
+            dailyBestDate = otherDailyDate;
+            dailyBestScore = otherDailyScore;
+          }
+        } else if (baseDailyDate) {
+          dailyBestDate = baseDailyDate;
+          dailyBestScore = baseDailyScore;
+        } else if (otherDailyDate) {
+          dailyBestDate = otherDailyDate;
+          dailyBestScore = otherDailyScore;
+        }
         return {
           ...(totalMoneySpent > 0 ? { totalMoneySpent } : {}),
           ...(totalShopRerolls > 0 ? { totalShopRerolls } : {}),
           ...(totalCelestialsUsed > 0 ? { totalCelestialsUsed } : {}),
+          ...(dailyBestDate !== undefined ? { dailyBestDate } : {}),
+          ...(dailyBestScore !== undefined ? { dailyBestScore } : {}),
         };
       })(),
     },

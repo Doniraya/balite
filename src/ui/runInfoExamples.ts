@@ -117,6 +117,7 @@ export function createMiniCardElement(
   }
 
   const isRedSuit = card.suit === 'hearts' || card.suit === 'diamonds';
+  cardEl.dataset.suit = card.suit;
   cardEl.classList.add(isRedSuit ? 'run-info-mini-card--red' : 'run-info-mini-card--black');
 
   // Текстовая метка ранга

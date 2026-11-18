@@ -42,6 +42,7 @@ export class VkAdapter<TSave extends Record<string, unknown> = Record<string, un
   private readonly ctx: AdapterContext<TSave>;
   private inited = false;
   private adBusy = false;
+  private supportsCheckNativeAds: boolean | null = null;
   private lifecycleHandler: VKBridgeSubscribeHandler | null = null;
 
   constructor(ctx: AdapterContext<TSave>) {
@@ -74,7 +75,10 @@ export class VkAdapter<TSave extends Record<string, unknown> = Record<string, un
       if (vkBridge.isEmbedded()) {
         await withTimeout(vkBridge.send('VKWebAppInit'), 4000, 'VKWebAppInit');
         this.inited = true;
-        await this.configureViewportAndGestures();
+        await Promise.allSettled([
+          this.configureViewportAndGestures(),
+          this.preloadNativeAds(['interstitial', 'reward']),
+        ]);
       }
     } catch {
       this.inited = false;
@@ -136,6 +140,61 @@ export class VkAdapter<TSave extends Record<string, unknown> = Record<string, un
 
   gameplayStop(): void {}
 
+  private async resolveSupportsCheckNativeAds(): Promise<boolean> {
+    if (this.supportsCheckNativeAds !== null) {
+      return this.supportsCheckNativeAds;
+    }
+    const supported = await vkBridge
+      .supportsAsync('VKWebAppCheckNativeAds')
+      .catch(() => false);
+    this.supportsCheckNativeAds = supported;
+    return supported;
+  }
+
+  private async preloadNativeAds(
+    formats: readonly ('interstitial' | 'reward')[] = ['interstitial', 'reward'],
+  ): Promise<void> {
+    if (!this.inited && !vkBridge.isEmbedded()) return;
+    const supported = await this.resolveSupportsCheckNativeAds();
+    if (!supported) return;
+
+    await Promise.allSettled(
+      formats.map((adFormat) =>
+        withTimeout(
+          vkBridge.send('VKWebAppCheckNativeAds', { ad_format: adFormat }),
+          1500,
+          `VKWebAppCheckNativeAds:${adFormat}`,
+        ).catch(() => null),
+      ),
+    );
+  }
+
+  private triggerBackgroundPreload(adFormat: 'interstitial' | 'reward'): void {
+    if (this.supportsCheckNativeAds !== true) return;
+    if (!this.inited && !vkBridge.isEmbedded()) return;
+    vkBridge.send('VKWebAppCheckNativeAds', { ad_format: adFormat }).catch(() => {});
+  }
+
+  async canShowRewarded(): Promise<boolean> {
+    if (!this.inited && !vkBridge.isEmbedded()) {
+      return true;
+    }
+    try {
+      const canCheck = await this.resolveSupportsCheckNativeAds();
+      if (canCheck) {
+        const res = await withTimeout(
+          vkBridge.send('VKWebAppCheckNativeAds', { ad_format: 'reward' }),
+          2500,
+          'VKWebAppCheckNativeAds:reward',
+        );
+        return Boolean((res as { result?: boolean })?.result);
+      }
+      return await vkBridge.supportsAsync('VKWebAppShowNativeAds').catch(() => false);
+    } catch {
+      return false;
+    }
+  }
+
   private async showNativeAd(
     adFormat: 'interstitial' | 'reward',
   ): Promise<{ supported: boolean; shown: boolean }> {
@@ -167,6 +226,7 @@ export class VkAdapter<TSave extends Record<string, unknown> = Record<string, un
         return { shown: false };
       }
       this.ctx.emit('interstitial_close', { shown });
+      this.triggerBackgroundPreload('interstitial');
       return { shown };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -192,6 +252,7 @@ export class VkAdapter<TSave extends Record<string, unknown> = Record<string, un
       }
       if (shown) this.ctx.emit('rewarded_rewarded', {});
       this.ctx.emit('rewarded_closed', { rewarded: shown });
+      this.triggerBackgroundPreload('reward');
       return { rewarded: shown };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -205,6 +266,28 @@ export class VkAdapter<TSave extends Record<string, unknown> = Record<string, un
   async setLeaderboardScore(_boardName: string, _score: number): Promise<void> {
     // По правилам модерации VK Игр (п. 3.1.9.10) автоматическое открытие
     // системного окна турнирной таблицы (VKWebAppShowLeaderBoardBox) без явного клика запрещено.
+  }
+
+  async openLeaderboardBox(score: number): Promise<boolean> {
+    try {
+      const supported = await vkBridge
+        .supportsAsync('VKWebAppShowLeaderBoardBox')
+        .catch(() => false);
+      if (!supported) {
+        return false;
+      }
+
+      const safeRaw = Number.isFinite(score) ? Math.floor(score) : 1;
+      const clampedScore = Math.min(10_000_000, Math.max(1, safeRaw));
+      const res = await withTimeout(
+        vkBridge.send('VKWebAppShowLeaderBoardBox', { user_result: clampedScore }),
+        15000,
+        'VKWebAppShowLeaderBoardBox',
+      );
+      return Boolean((res as { success?: boolean })?.success ?? true);
+    } catch {
+      return false;
+    }
   }
 
   async loadPlayerData(): Promise<Partial<TSave>> {

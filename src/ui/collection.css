@@ -19,6 +19,8 @@
   overflow-x: hidden;
   user-select: none;
   -webkit-user-select: none;
+  animation: modal-sheet-slide-up calc(360ms / var(--anim-speed, 1))
+    cubic-bezier(0.2, 1.18, 0.32, 1) both;
 }
 
 /* ==========================================================================
@@ -724,5 +726,11 @@
   .collection-tag-slot:hover,
   .collection-blind-token:hover {
     filter: brightness(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-sheet--collection {
+    animation: none;
   }
 }

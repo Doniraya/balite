@@ -246,6 +246,11 @@ export interface UiDictionary {
     readonly rerollBoss: string;
     readonly claimCashout: string;
     readonly rerollShop: string;
+    readonly adRerollShop: string;
+    readonly reviveRun: string;
+    readonly openLeaderboard: string;
+    readonly addShortcut: string;
+    readonly shortcutAdded: string;
     readonly nextRound: string;
     readonly skipPack: string;
     readonly pickItem: string;
@@ -275,6 +280,11 @@ export interface UiDictionary {
     readonly locked: string;
     readonly unlockHintNext: string;
     readonly unlockHintRemaining: string;
+    readonly dailyTitle: string;
+    readonly dailyDate: string;
+    readonly dailyDeck: string;
+    readonly dailyBest: string;
+    readonly startDaily: string;
   };
   readonly blindSelect: {
     readonly title: string;
@@ -326,6 +336,7 @@ export interface UiDictionary {
     readonly hubTitle: string;
     readonly hubSettings: string;
     readonly hubStats: string;
+    readonly hubCustomizeDeck: string;
     readonly hubCredits: string;
     readonly hubMainMenu: string;
     readonly animationSpeed: string;
@@ -346,6 +357,18 @@ export interface UiDictionary {
     readonly crtLight: string;
     readonly crtOriginal: string;
     readonly resetTutorial: string;
+    readonly suitPalette: string;
+    readonly suitPaletteStandard: string;
+    readonly suitPaletteHighContrast: string;
+    readonly suitPaletteDescStandard: string;
+    readonly suitPaletteDescHighContrast: string;
+    readonly cardBack: string;
+    readonly cardBackDefault: string;
+    readonly cardBackRed: string;
+    readonly cardBackBlue: string;
+    readonly cardBackYellow: string;
+    readonly cardBackBlack: string;
+    readonly customizePreviewTitle: string;
   };
   readonly stats: {
     readonly title: string;
@@ -358,6 +381,7 @@ export interface UiDictionary {
     readonly bestWinStreak: string;
     readonly runsStartedWon: string;
     readonly discoveryProgress: string;
+    readonly dailyBest: string;
   };
   readonly credits: {
     readonly title: string;
@@ -443,6 +467,8 @@ export interface UiDictionary {
     readonly defeatedBy: string;
     readonly clearedGuardian: string;
     readonly newRecordBadge: string;
+    readonly revivedBadge: string;
+    readonly dailyRunBadge: string;
     readonly none: string;
   };
   readonly tooltip: {

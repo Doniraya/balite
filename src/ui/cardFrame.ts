@@ -487,7 +487,7 @@ function appendInnerFrame(svg: SVGSVGElement, stroke: string, opacity = 0.25): v
 function createPlayingCardSvg(card: PlayingCard, isFaceDown: boolean): SVGSVGElement {
   if (isFaceDown) {
     const svg = createCardArtSvg('back');
-    appendInnerFrame(svg, '#f5b942', 0.65);
+    appendInnerFrame(svg, 'var(--card-back-accent, #f5b942)', 0.65);
     svg.appendChild(
       createSvgEl('rect', {
         x: 16,
@@ -496,7 +496,7 @@ function createPlayingCardSvg(card: PlayingCard, isFaceDown: boolean): SVGSVGEle
         height: 136,
         rx: 5,
         fill: 'none',
-        stroke: '#93c5fd',
+        stroke: 'var(--card-back-secondary, #93c5fd)',
         'stroke-width': 0.9,
         'stroke-dasharray': '3 3',
         opacity: 0.55,
@@ -508,7 +508,7 @@ function createPlayingCardSvg(card: PlayingCard, isFaceDown: boolean): SVGSVGEle
         cy: 84,
         r: 28,
         fill: 'none',
-        stroke: '#f5b942',
+        stroke: 'var(--card-back-accent, #f5b942)',
         'stroke-width': 1.5,
       }),
     );
@@ -518,7 +518,7 @@ function createPlayingCardSvg(card: PlayingCard, isFaceDown: boolean): SVGSVGEle
         cy: 84,
         r: 18,
         fill: 'rgba(245, 185, 66, 0.14)',
-        stroke: '#93c5fd',
+        stroke: 'var(--card-back-secondary, #93c5fd)',
         'stroke-width': 1,
       }),
     );
@@ -526,14 +526,14 @@ function createPlayingCardSvg(card: PlayingCard, isFaceDown: boolean): SVGSVGEle
     svg.appendChild(
       createSvgEl('path', {
         d: 'M 60 50 L 65 79 L 94 84 L 65 89 L 60 118 L 55 89 L 26 84 L 55 79 Z',
-        fill: '#f5b942',
+        fill: 'var(--card-back-accent, #f5b942)',
         opacity: 0.9,
       }),
     );
     svg.appendChild(
       createSvgEl('path', {
         d: 'M 42 66 L 57 81 L 78 66 L 63 84 L 78 102 L 57 87 L 42 102 L 57 84 Z',
-        fill: '#93c5fd',
+        fill: 'var(--card-back-secondary, #93c5fd)',
         opacity: 0.65,
       }),
     );

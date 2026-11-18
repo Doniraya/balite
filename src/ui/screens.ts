@@ -7,6 +7,7 @@ import {
   getRelicDefinition,
   getRunEndSummary,
   isCollectionItemDiscovered,
+  isDailyRunSeed,
   normalizePackIdForCollection,
   type CollectionCategory,
 } from '../engine';
@@ -90,6 +91,14 @@ export interface ScreenViewModel {
   } | null;
   isAnimating: boolean;
   isDebug?: boolean;
+  canShowRewarded?: boolean;
+  platformId?: string;
+  dailyRun?: {
+    readonly dateKey: string;
+    readonly seed: string;
+    readonly deckId: DeckId;
+    readonly bestScore: number;
+  } | null;
   unlockedDecks: readonly DeckId[];
   selectedDeckId: DeckId;
   seedInput: string;
@@ -130,6 +139,10 @@ export interface ScreenActionHandlers {
   onSkipAnimation: () => void;
   onReturnToDeckSelect: () => void;
   onReplaySeed?: (seed: string, deckId: DeckId) => void;
+  onStartDailyRun?: () => void;
+  onOpenVkLeaderboard?: () => void;
+  onAdRerollShop?: () => void;
+  onReviveRun?: () => void;
   onBackToMainMenu?: () => void;
 }
 
@@ -233,6 +246,59 @@ function createEl<K extends keyof HTMLElementTagNameMap>(
     el.textContent = text;
   }
   return el;
+}
+
+/**
+ * Заполняет контейнер словами и символами с индексом задержки --char-index без потери пробелов в textContent.
+ */
+function appendAnimatedWaveText(
+  container: HTMLElement,
+  text: string,
+  wordClass: string,
+  charClass: string,
+): void {
+  const words = text.split(' ');
+  let charIndex = 0;
+
+  words.forEach((word, wordIdx) => {
+    if (wordIdx > 0) {
+      container.append(document.createTextNode(' '));
+    }
+    if (!word) return;
+
+    const wordEl = createEl('span', wordClass);
+    for (const ch of word) {
+      const charEl = createEl('span', charClass, ch);
+      charEl.style.setProperty('--char-index', String(charIndex));
+      charIndex += 1;
+      wordEl.append(charEl);
+    }
+    container.append(wordEl);
+  });
+}
+
+/**
+ * Создаёт анимированный заголовок выбора Стража с посимвольным появлением (как DynaText).
+ */
+function createAnimatedPromptElement(text: string): HTMLElement {
+  const promptEl = createEl('div', 'hud-choose-prompt');
+  appendAnimatedWaveText(promptEl, text, 'hud-choose-prompt__word', 'hud-choose-prompt__char');
+  return promptEl;
+}
+
+/**
+ * Создаёт плавно покачивающийся волновой заголовок (для названия активного Стража/блайнда).
+ */
+function createAnimatedTitleSpan(text: string, className: string): HTMLElement {
+  const titleEl = createEl('span', className);
+  const wordClass = className.includes('hud-shop-sign')
+    ? 'hud-shop-sign__title-word'
+    : 'hud-boss-btn__title-word';
+  const charClass = className.includes('hud-shop-sign')
+    ? 'hud-shop-sign__title-char'
+    : 'hud-boss-btn__title-char';
+  appendAnimatedWaveText(titleEl, text, wordClass, charClass);
+  return titleEl;
 }
 
 /**
@@ -985,7 +1051,7 @@ function renderHudBelt(
 
   const bossBtn = createEl(
     'button',
-    `hud-boss-btn ${isBossActive ? 'hud-boss-btn--boss' : ''}`.trim(),
+    `hud-boss-btn hud-boss-btn--${activeSlot.kind}`.trim(),
   );
   bossBtn.type = 'button';
   if (inspectableBossId) {
@@ -997,20 +1063,44 @@ function renderHudBelt(
       ),
     );
   }
+
   const bossHeader = createEl('div', 'hud-boss-btn__header');
   bossHeader.append(
+    createAnimatedTitleSpan(blindText.name, 'hud-boss-btn__title'),
+  );
+
+  const bossContent = createEl('div', 'hud-boss-btn__content');
+  const emblemWrap = createEl('div', 'hud-boss-btn__emblem-wrap');
+  emblemWrap.append(
     createBlindEmblem(activeSlot.kind, activeSlot.bossId, state.ante, 'hud-boss-btn__emblem'),
-    createEl('span', 'hud-boss-btn__title', blindText.name),
   );
-  bossBtn.append(
-    bossHeader,
-    createEl('span', 'hud-boss-btn__desc', blindText.description),
+
+  const targetBox = createEl('div', 'hud-boss-btn__target-box');
+  const targetRow = createEl('div', 'hud-boss-btn__target-row');
+  targetRow.append(
+    createEl('span', 'blind-card__score-gem', '◆'),
+    createEl('strong', 'hud-boss-btn__target-number', String(activeSlot.targetScore)),
   );
+  targetBox.append(
+    createEl('span', 'hud-boss-btn__target-caption', translator.t('ui.blindSelect.minScore')),
+    targetRow,
+    createEl(
+      'span',
+      'hud-boss-btn__reward',
+      translator.t('ui.blindSelect.reward', { dollars: activeSlot.reward }),
+    ),
+  );
+  if (blindText.description) {
+    targetBox.append(createEl('span', 'hud-boss-btn__desc', blindText.description));
+  }
   if (isBossActive && state.activeBossDisabled) {
-    bossBtn.append(
+    targetBox.append(
       createEl('span', 'hud-boss-btn__badge', translator.t('ui.hud.abilityDisabled')),
     );
   }
+
+  bossContent.append(emblemWrap, targetBox);
+  bossBtn.append(bossHeader, bossContent);
   setTooltipData(
     bossBtn,
     buildBlindTooltip(
@@ -1024,17 +1114,15 @@ function renderHudBelt(
     ),
   );
 
-  // Заголовок-призыв выбора Стража для левой панели HUD в ПК-версии (phase === 'blind_select')
-  const choosePrompt = createEl(
-    'div',
-    'hud-choose-prompt',
+  // Заголовок-призыв выбора Стража для панели HUD с посимвольным субтитровым появлением
+  const choosePrompt = createAnimatedPromptElement(
     translator.t('ui.blindSelect.chooseNextPrompt'),
   );
 
-  // Вывеска МАГАЗИН для левой панели HUD в широком ПК-режиме (phase === 'shop')
+  // Вывеска МАГАЗИН для левой панели HUD (phase === 'shop') с волновой анимацией букв
   const shopSign = createEl('div', 'hud-shop-sign');
   shopSign.append(
-    createEl('span', 'hud-shop-sign__title', translator.t('ui.hud.shopBannerTitle')),
+    createAnimatedTitleSpan(translator.t('ui.hud.shopBannerTitle'), 'hud-shop-sign__title'),
     createEl('span', 'hud-shop-sign__sub', translator.t('ui.hud.shopBannerSubtitle')),
   );
 
@@ -1395,6 +1483,48 @@ function renderDeckSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void {
     grid.append(btn);
   }
 
+  let dailyCard: HTMLElement | null = null;
+  if (vm.dailyRun) {
+    dailyCard = createEl('section', 'daily-run-card');
+    dailyCard.dataset.dailyRunCard = 'true';
+
+    const dailyInfo = createEl('div', 'daily-run-card__info');
+    const dailyHead = createEl('div', 'daily-run-card__head');
+    dailyHead.append(
+      createEl('strong', 'daily-run-card__title', translator.t('ui.deckSelect.dailyTitle')),
+      createEl(
+        'span',
+        'daily-run-card__date',
+        translator.t('ui.deckSelect.dailyDate', { date: vm.dailyRun.dateKey }),
+      ),
+    );
+
+    const dailyMeta = createEl('div', 'daily-run-card__meta');
+    const dailyDeckName = translator.getDeckText(vm.dailyRun.deckId).name;
+    dailyMeta.append(
+      createEl(
+        'span',
+        'daily-run-card__deck',
+        translator.t('ui.deckSelect.dailyDeck', { deck: dailyDeckName }),
+      ),
+      createEl(
+        'span',
+        'daily-run-card__best',
+        translator.t('ui.deckSelect.dailyBest', { score: vm.dailyRun.bestScore }),
+      ),
+    );
+    dailyInfo.append(dailyHead, dailyMeta);
+
+    const dailyStartBtn = createButton(
+      translator.t('ui.deckSelect.startDaily'),
+      'ui-btn--accent daily-run-card__btn',
+      () => handlers.onStartDailyRun?.(),
+      !handlers.onStartDailyRun,
+    );
+    dailyStartBtn.dataset.action = 'start-daily-run';
+    dailyCard.append(dailyInfo, dailyStartBtn);
+  }
+
   const seedBar = createEl('div', 'seed-bar');
   const seedLabel = createEl('label', 'seed-bar__label', translator.t('ui.deckSelect.seedLabel'));
   seedLabel.htmlFor = 'balite-seed-input';
@@ -1432,7 +1562,11 @@ function renderDeckSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void {
     );
   }
 
-  arenaEl.append(header, grid, seedBar, actions);
+  arenaEl.append(header, grid);
+  if (dailyCard) {
+    arenaEl.append(dailyCard);
+  }
+  arenaEl.append(seedBar, actions);
 }
 
 /**
@@ -1466,9 +1600,10 @@ function renderBlindSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void 
   }
 
   const grid = createEl('div', 'blinds-grid');
-  for (const slot of state.anteBlinds) {
+  state.anteBlinds.forEach((slot, index) => {
     const card = createEl('div', `blind-card blind-card--${slot.status} blind-card--${slot.kind}`);
     card.dataset.blindKind = slot.kind;
+    card.style.setProperty('--blind-index', String(index));
 
     const blindText = translator.getBlindText(slot.kind, slot.bossId, state.ante);
     const statusText = translator.t(`ui.blindSelect.${slot.status}`);
@@ -1598,7 +1733,7 @@ function renderBlindSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void 
 
     card.append(topBar, bodyBlock, footer);
     grid.append(card);
-  }
+  });
 
   arenaEl.append(header, grid);
 }
@@ -1811,6 +1946,20 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
         state.dollars < rerollCost,
       ),
     );
+    if (
+      state.dollars < rerollCost &&
+      !shop.adRerollUsed &&
+      vm.canShowRewarded !== false &&
+      handlers.onAdRerollShop
+    ) {
+      const adRerollBtn = createButton(
+        translator.t('ui.actions.adRerollShop'),
+        'ui-btn--accent ui-btn--compact shop-ad-reroll-btn',
+        () => handlers.onAdRerollShop?.(),
+      );
+      adRerollBtn.dataset.action = 'ad-reroll-shop';
+      headerActions.append(adRerollBtn);
+    }
   }
   header.append(headerActions);
   arenaEl.append(header);
@@ -2177,6 +2326,28 @@ function renderRunEndArena(
       translator.t(isVictory ? 'ui.runEnd.victorySubtitle' : 'ui.runEnd.defeatSubtitle'),
     ),
   );
+  if (state.reviveUsed || isDailyRunSeed(summary.seed)) {
+    const badgesWrap = createEl('div', 'run-end-card__badges');
+    if (isDailyRunSeed(summary.seed)) {
+      const dailyBadge = createEl(
+        'span',
+        'run-end-daily-badge',
+        translator.t('ui.runEnd.dailyRunBadge'),
+      );
+      dailyBadge.dataset.dailyBadge = 'true';
+      badgesWrap.append(dailyBadge);
+    }
+    if (state.reviveUsed) {
+      const revivedBadge = createEl(
+        'span',
+        'run-end-revived-badge',
+        translator.t('ui.runEnd.revivedBadge'),
+      );
+      revivedBadge.dataset.revivedBadge = 'true';
+      badgesWrap.append(revivedBadge);
+    }
+    cardHeader.append(badgesWrap);
+  }
   card.append(cardHeader);
 
   const bestHandLabel = summary.bestHandType
@@ -2328,6 +2499,20 @@ function renderRunEndArena(
       replaySeedBtn,
     );
   } else {
+    if (
+      !state.reviveUsed &&
+      !isDailyRunSeed(summary.seed) &&
+      vm.canShowRewarded !== false &&
+      handlers.onReviveRun
+    ) {
+      const reviveBtn = createButton(
+        translator.t('ui.actions.reviveRun'),
+        'ui-btn--accent run-end-revive-btn',
+        () => handlers.onReviveRun?.(),
+      );
+      reviveBtn.dataset.action = 'revive-run';
+      actions.append(reviveBtn);
+    }
     actions.append(
       createButton(
         translator.t('ui.actions.newRun'),
@@ -2336,6 +2521,15 @@ function renderRunEndArena(
       ),
       replaySeedBtn,
     );
+  }
+  if (vm.platformId === 'vk' && handlers.onOpenVkLeaderboard) {
+    const leaderboardBtn = createButton(
+      translator.t('ui.actions.openLeaderboard'),
+      'ui-btn--accent run-end-leaderboard-btn',
+      () => handlers.onOpenVkLeaderboard?.(),
+    );
+    leaderboardBtn.dataset.action = 'open-vk-leaderboard';
+    actions.append(leaderboardBtn);
   }
   if (handlers.onBackToMainMenu) {
     actions.append(

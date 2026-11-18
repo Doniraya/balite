@@ -21,3 +21,4 @@ export * from './run';
 export * from './deckView';
 export * from './debugTools';
 export * from './collection';
+export * from './daily';

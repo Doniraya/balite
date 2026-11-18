@@ -15,8 +15,10 @@ import {
   TAG_IDS,
   buildDeckViewModel,
   countMetaDiscoveries,
+  createPlayingCard,
   getMostPlayedHand,
   type AnimationSpeed,
+  type CardBackStyle,
   type CrtMode,
   type DeckViewCardEntry,
   type DeckViewMode,
@@ -28,6 +30,7 @@ import {
   type Rank,
   type RunState,
   type Suit,
+  type SuitPalette,
 } from '../engine';
 import {
   getGuildRank,
@@ -50,7 +53,7 @@ import { setTooltipData } from './tooltip';
 /**
  * Активный экран внутри модального хаба «Параметры».
  */
-export type SettingsModalTab = 'hub' | 'settings' | 'stats' | 'credits';
+export type SettingsModalTab = 'hub' | 'settings' | 'stats' | 'customize_deck' | 'credits';
 
 /**
  * Параметры отрисовки модального хаба «Параметры» и вложенных вкладок.
@@ -71,6 +74,9 @@ export interface SettingsModalOptions {
   readonly onReturnToMainMenu?: () => void;
   readonly onTabChange?: (tab: SettingsModalTab) => void;
   readonly onResetTutorial?: () => void;
+  readonly onOpenLeaderboard?: () => void;
+  readonly canShowShortcutPrompt?: boolean;
+  readonly onAddShortcut?: () => void;
   readonly onOpenDebugPanel?: () => void;
   readonly onDebugAction?: (
     action: 'interstitial' | 'rewarded' | 'flush' | 'resetRun',
@@ -104,6 +110,36 @@ const CRT_MODE_OPTIONS: ReadonlyArray<{
   { value: 'off', key: 'ui.settings.crtOff' },
   { value: 'light', key: 'ui.settings.crtLight' },
   { value: 'original', key: 'ui.settings.crtOriginal' },
+];
+
+/**
+ * Допустимые палитры мастей игральных карт.
+ */
+const SUIT_PALETTE_OPTIONS: ReadonlyArray<{
+  readonly value: SuitPalette;
+  readonly key: 'ui.settings.suitPaletteStandard' | 'ui.settings.suitPaletteHighContrast';
+}> = [
+  { value: 'standard', key: 'ui.settings.suitPaletteStandard' },
+  { value: 'high_contrast', key: 'ui.settings.suitPaletteHighContrast' },
+];
+
+/**
+ * Допустимые стили оформления рубашки колоды.
+ */
+const CARD_BACK_OPTIONS: ReadonlyArray<{
+  readonly value: CardBackStyle;
+  readonly key:
+    | 'ui.settings.cardBackDefault'
+    | 'ui.settings.cardBackRed'
+    | 'ui.settings.cardBackBlue'
+    | 'ui.settings.cardBackYellow'
+    | 'ui.settings.cardBackBlack';
+}> = [
+  { value: 'default', key: 'ui.settings.cardBackDefault' },
+  { value: 'b_red', key: 'ui.settings.cardBackRed' },
+  { value: 'b_blue', key: 'ui.settings.cardBackBlue' },
+  { value: 'b_yellow', key: 'ui.settings.cardBackYellow' },
+  { value: 'b_black', key: 'ui.settings.cardBackBlack' },
 ];
 
 /**
@@ -1266,6 +1302,8 @@ export function computeMetaStatsSummary(meta: MetaSave | undefined): MetaStats &
     ...(rawStats.totalCelestialsUsed !== undefined
       ? { totalCelestialsUsed: rawStats.totalCelestialsUsed }
       : {}),
+    ...(rawStats.dailyBestDate !== undefined ? { dailyBestDate: rawStats.dailyBestDate } : {}),
+    ...(rawStats.dailyBestScore !== undefined ? { dailyBestScore: rawStats.dailyBestScore } : {}),
     discoveredCount,
     totalDiscoverable,
     discoveryPercent,
@@ -1293,7 +1331,15 @@ function createHubButton(
 /**
  * Заполняет содержимое вкладки «Статистика» из мета-сохранения.
  */
-function renderStatsTabBody(body: HTMLElement, meta: MetaSave | undefined, translator: Translator): void {
+function renderStatsTabBody(
+  body: HTMLElement,
+  meta: MetaSave | undefined,
+  translator: Translator,
+  options?: {
+    readonly platformId?: string;
+    readonly onOpenLeaderboard?: () => void;
+  },
+): void {
   const summary = computeMetaStatsSummary(meta);
   const topHand = getMostPlayedHand(summary);
   const mostPlayedText = topHand
@@ -1331,6 +1377,10 @@ function renderStatsTabBody(body: HTMLElement, meta: MetaSave | undefined, trans
       label: translator.t('ui.stats.discoveryProgress'),
       value: `${summary.discoveryPercent}% (${summary.discoveredCount}/${summary.totalDiscoverable})`,
     },
+    {
+      label: translator.t('ui.stats.dailyBest'),
+      value: String(summary.dailyBestScore ?? 0),
+    },
   ];
 
   for (const entry of entries) {
@@ -1350,6 +1400,16 @@ function renderStatsTabBody(body: HTMLElement, meta: MetaSave | undefined, trans
   }
 
   body.append(grid);
+
+  if (options?.platformId === 'vk' && options.onOpenLeaderboard) {
+    const leaderboardBtn = document.createElement('button');
+    leaderboardBtn.type = 'button';
+    leaderboardBtn.className = 'modal-btn modal-btn--primary modal-btn--full stats-leaderboard-btn';
+    leaderboardBtn.dataset.action = 'open-vk-leaderboard';
+    leaderboardBtn.textContent = translator.t('ui.actions.openLeaderboard');
+    leaderboardBtn.addEventListener('click', () => options.onOpenLeaderboard?.());
+    body.append(leaderboardBtn);
+  }
 }
 
 /**
@@ -1511,6 +1571,18 @@ function renderSettingsControlsBody(body: HTMLElement, options: SettingsModalOpt
   resetTutorialBtn.dataset.action = 'reset-tutorial';
   body.appendChild(resetTutorialBtn);
 
+  // Кнопка добавления ярлыка на рабочий стол (для Яндекс Игр при доступности в SDK)
+  if (options.canShowShortcutPrompt && !settings.shortcutPrompted && options.onAddShortcut) {
+    const addShortcutBtn = createHubButton(
+      translator.t('ui.actions.addShortcut'),
+      'add-shortcut',
+      'modal-btn--secondary modal-btn--full',
+      () => options.onAddShortcut?.(),
+    );
+    addShortcutBtn.dataset.action = 'add-shortcut';
+    body.appendChild(addShortcutBtn);
+  }
+
   // Отладочные инструменты и DEV-переключатель словаря доступны строго по флагу ?debug вне prod-сборки
   if (!import.meta.env.PROD && options.isDebug === true) {
     if (import.meta.env.DEV && options.onToggleDevOriginalTerms) {
@@ -1545,12 +1617,166 @@ function renderSettingsControlsBody(body: HTMLElement, options: SettingsModalOpt
 }
 
 /**
- * Отрисовывает модальный хаб «Параметры» с вкладками «Настройки», «Статистика», «Титры» и возвратом в Главное меню.
+ * Заполняет содержимое вкладки «Настроить колоду» (палитра мастей, выбор рубашки и живой предпросмотр).
+ */
+function renderCustomizeDeckTabBody(
+  body: HTMLElement,
+  sheet: HTMLElement,
+  translator: Translator,
+  initialSuitPalette: SuitPalette,
+  initialCardBack: CardBackStyle,
+  onSelectSuitPalette: (suitPalette: SuitPalette) => void,
+  onSelectCardBack: (cardBack: CardBackStyle) => void,
+): void {
+  let currentSuitPalette = initialSuitPalette;
+  let currentCardBack = initialCardBack;
+
+  sheet.dataset.suitPalette = currentSuitPalette;
+  sheet.dataset.cardBack = currentCardBack;
+
+  const panel = document.createElement('div');
+  panel.className = 'customize-deck-panel';
+  panel.dataset.customizeDeckPanel = 'true';
+
+  // Живой предпросмотр рубашки и 4 мастей
+  const previewBox = document.createElement('div');
+  previewBox.className = 'customize-deck-preview';
+
+  const previewTitle = document.createElement('div');
+  previewTitle.className = 'customize-deck-preview__title';
+  previewTitle.textContent = translator.t('ui.settings.customizePreviewTitle');
+
+  const previewRow = document.createElement('div');
+  previewRow.className = 'customize-deck-preview__cards';
+
+  const backPreviewCard = renderPlayingCardFrame({
+    card: createPlayingCard({ id: 'preview_back', suit: 'spades', rank: 14, facing: 'back' }),
+    translator,
+    compact: true,
+    faceDown: true,
+  });
+  backPreviewCard.dataset.previewCard = 'back';
+  previewRow.appendChild(backPreviewCard);
+
+  const suitPreviews: ReadonlyArray<{ readonly suit: Suit; readonly rank: Rank }> = [
+    { suit: 'spades', rank: 14 },
+    { suit: 'hearts', rank: 13 },
+    { suit: 'clubs', rank: 12 },
+    { suit: 'diamonds', rank: 11 },
+  ];
+  for (const item of suitPreviews) {
+    const cardEl = renderPlayingCardFrame({
+      card: createPlayingCard({
+        id: `preview_${item.suit}`,
+        suit: item.suit,
+        rank: item.rank,
+      }),
+      translator,
+      compact: true,
+    });
+    cardEl.dataset.previewSuit = item.suit;
+    previewRow.appendChild(cardEl);
+  }
+
+  previewBox.append(previewTitle, previewRow);
+  panel.appendChild(previewBox);
+
+  // Переключатель палитры мастей (Классическая / Высокий контраст)
+  const hintEl = document.createElement('p');
+  hintEl.className = 'customize-deck-hint';
+  hintEl.dataset.suitPaletteDesc = 'true';
+  hintEl.textContent = translator.t(
+    currentSuitPalette === 'high_contrast'
+      ? 'ui.settings.suitPaletteDescHighContrast'
+      : 'ui.settings.suitPaletteDescStandard',
+  );
+
+  const paletteGroup = createSegmentedSettingGroup<SuitPalette>({
+    label: translator.t('ui.settings.suitPalette'),
+    items: SUIT_PALETTE_OPTIONS.map((item) => ({
+      value: item.value,
+      text: translator.t(item.key),
+      dataAttr: 'data-suit-palette-option',
+    })),
+    currentValue: currentSuitPalette,
+    onSelect: (suitPalette) => {
+      currentSuitPalette = suitPalette;
+      sheet.dataset.suitPalette = suitPalette;
+      hintEl.textContent = translator.t(
+        suitPalette === 'high_contrast'
+          ? 'ui.settings.suitPaletteDescHighContrast'
+          : 'ui.settings.suitPaletteDescStandard',
+      );
+      onSelectSuitPalette(suitPalette);
+    },
+  });
+  paletteGroup.appendChild(hintEl);
+  panel.appendChild(paletteGroup);
+
+  // Выбор рубашки колоды
+  const backGroup = document.createElement('div');
+  backGroup.className = 'settings-group';
+
+  const backLabelRow = document.createElement('div');
+  backLabelRow.className = 'settings-label-row';
+  const backLabel = document.createElement('span');
+  backLabel.textContent = translator.t('ui.settings.cardBack');
+  backLabelRow.appendChild(backLabel);
+
+  const backGrid = document.createElement('div');
+  backGrid.className = 'customize-card-back-grid';
+  backGrid.setAttribute('role', 'group');
+  backGrid.setAttribute('aria-label', translator.t('ui.settings.cardBack'));
+
+  const backButtons: Array<{ readonly btn: HTMLButtonElement; readonly value: CardBackStyle }> = [];
+  for (const option of CARD_BACK_OPTIONS) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'customize-card-back-btn';
+    btn.dataset.cardBackOption = option.value;
+    const isActive = option.value === currentCardBack;
+    btn.classList.toggle('is-active', isActive);
+    btn.setAttribute('aria-pressed', String(isActive));
+
+    const swatch = document.createElement('span');
+    swatch.className = `customize-card-back-swatch customize-card-back-swatch--${option.value}`;
+    swatch.setAttribute('aria-hidden', 'true');
+
+    const textEl = document.createElement('span');
+    textEl.className = 'customize-card-back-label';
+    textEl.textContent = translator.t(option.key);
+
+    btn.append(swatch, textEl);
+    btn.addEventListener('click', () => {
+      currentCardBack = option.value;
+      sheet.dataset.cardBack = option.value;
+      for (const entry of backButtons) {
+        const active = entry.value === option.value;
+        entry.btn.classList.toggle('is-active', active);
+        entry.btn.setAttribute('aria-pressed', String(active));
+      }
+      onSelectCardBack(option.value);
+    });
+
+    backButtons.push({ btn, value: option.value });
+    backGrid.appendChild(btn);
+  }
+
+  backGroup.append(backLabelRow, backGrid);
+  panel.appendChild(backGroup);
+
+  body.appendChild(panel);
+}
+
+/**
+ * Отрисовывает модальный хаб «Параметры» с вкладками «Настройки», «Статистика», «Настроить колоду», «Титры» и возвратом в Главное меню.
  */
 export function renderSettingsModal(options: SettingsModalOptions): HTMLElement {
   const { translator, onClose, onReturnToMainMenu, onTabChange } = options;
   const version = options.version ?? APP_VERSION;
   let currentTab: SettingsModalTab = options.initialTab ?? 'hub';
+  let liveSuitPalette: SuitPalette = options.settings.suitPalette ?? 'standard';
+  let liveCardBack: CardBackStyle = options.settings.cardBack ?? 'default';
 
   const { backdrop, sheet, body, footer } = createModalShell(
     translator.t('ui.settings.hubTitle'),
@@ -1567,12 +1793,19 @@ export function renderSettingsModal(options: SettingsModalOptions): HTMLElement 
     currentTab = nextTab;
     onTabChange?.(nextTab);
     renderActiveTab();
+    // Перезапускаем пружинный выезд окна снизу вверх при смене подменю, как в Balatro
+    sheet.style.animation = 'none';
+    void sheet.offsetWidth;
+    sheet.style.animation = '';
   };
 
   const renderActiveTab = (): void => {
     body.replaceChildren();
     footer.replaceChildren();
-    sheet.classList.toggle('settings-hub-sheet--wide', currentTab === 'stats');
+    sheet.classList.toggle(
+      'settings-hub-sheet--wide',
+      currentTab === 'stats' || currentTab === 'customize_deck',
+    );
 
     if (currentTab === 'hub') {
       if (titleEl) {
@@ -1593,6 +1826,12 @@ export function renderSettingsModal(options: SettingsModalOptions): HTMLElement 
           'stats',
           'modal-btn--hub modal-btn--full',
           () => switchTab('stats'),
+        ),
+        createHubButton(
+          translator.t('ui.settings.hubCustomizeDeck'),
+          'customize-deck',
+          'modal-btn--hub modal-btn--full',
+          () => switchTab('customize_deck'),
         ),
         createHubButton(
           translator.t('ui.settings.hubCredits'),
@@ -1634,7 +1873,29 @@ export function renderSettingsModal(options: SettingsModalOptions): HTMLElement 
       if (titleEl) {
         titleEl.textContent = translator.t('ui.stats.title');
       }
-      renderStatsTabBody(body, options.meta, translator);
+      renderStatsTabBody(body, options.meta, translator, {
+        platformId: options.platformId,
+        onOpenLeaderboard: options.onOpenLeaderboard,
+      });
+    } else if (currentTab === 'customize_deck') {
+      if (titleEl) {
+        titleEl.textContent = translator.t('ui.settings.hubCustomizeDeck');
+      }
+      renderCustomizeDeckTabBody(
+        body,
+        sheet,
+        translator,
+        liveSuitPalette,
+        liveCardBack,
+        (suitPalette) => {
+          liveSuitPalette = suitPalette;
+          options.onChangeSettings({ suitPalette });
+        },
+        (cardBack) => {
+          liveCardBack = cardBack;
+          options.onChangeSettings({ cardBack });
+        },
+      );
     } else {
       if (titleEl) {
         titleEl.textContent = translator.t('ui.credits.title');

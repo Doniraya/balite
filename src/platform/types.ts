@@ -71,6 +71,13 @@ export interface PlatformAdapter<
   loadPlayerData(): Promise<Partial<TSave>>;
   savePlayerData(mergedData: TSave): Promise<boolean>;
   vibrate?(style: 'light' | 'medium' | 'heavy'): void;
+  getServerTime?(): Promise<number>;
+  canShowRewarded?(): Promise<boolean>;
+  openLeaderboardBox?(score: number): Promise<boolean>;
+  canRequestReview?(): Promise<boolean>;
+  requestReview?(): Promise<boolean>;
+  canShowShortcutPrompt?(): Promise<boolean>;
+  showShortcutPrompt?(): Promise<boolean>;
 }
 
 export interface PlatformBridgeConfig<
@@ -110,4 +117,11 @@ export interface PlatformBridge<
   /** Принудительно отправляет отложенное облачное сохранение без ожидания таймера */
   flushCloudSave(): Promise<boolean>;
   vibrate(style?: 'light' | 'medium' | 'heavy'): void;
+  getServerTime(): Promise<number>;
+  canShowRewarded(): Promise<boolean>;
+  openLeaderboardBox(score: number): Promise<boolean>;
+  canRequestReview(): Promise<boolean>;
+  requestReview(): Promise<boolean>;
+  canShowShortcutPrompt(): Promise<boolean>;
+  showShortcutPrompt(): Promise<boolean>;
 }

@@ -545,5 +545,186 @@ describe('CardAnimator (пружинные полёты карт поверх Mo
 
       animator.destroy();
     });
+
+    it('добавляет заметный угловой рывок при выделении карты в руке и в triggerJuice без явного rotDelta', () => {
+      const { container, flightLayer } = createStagePair();
+      const scheduler = createManualFrameScheduler();
+      const animator = createCardAnimator({
+        flightLayer,
+        requestFrame: scheduler.requestFrame,
+        cancelFrame: scheduler.cancelFrame,
+        now: scheduler.now,
+        prefersReducedMotion: () => false,
+      });
+
+      // 1. Выделение карты в руке (selected: false -> true)
+      const handBefore = createCardSlot({
+        cardId: 'card_select',
+        zone: 'hand',
+        rect: { left: 200, top: 960, width: 80, height: 112 },
+        selected: false,
+      });
+      container.append(handBefore);
+      const snapshot = animator.captureSnapshot(container);
+
+      const handAfter = createCardSlot({
+        cardId: 'card_select',
+        zone: 'hand',
+        rect: { left: 200, top: 936, width: 80, height: 112 },
+        selected: true,
+      });
+      container.replaceChildren(handAfter);
+
+      const started = animator.animateFromSnapshot(container, snapshot, { speed: 1 });
+      expect(started).toBe(1);
+
+      // На первых кадрах должен появиться ненулевой поворот от упругого juice_up
+      scheduler.step(16);
+      scheduler.step(16);
+      const selectRotMatch = handAfter.style.transform.match(/rotate\((-?[\d.]+)deg\)/);
+      expect(selectRotMatch).not.toBeNull();
+      expect(Math.abs(Number(selectRotMatch![1]))).toBeGreaterThan(0.5);
+
+      scheduler.runUntilIdle(180, 16);
+      expect(handAfter.style.transform).toBe('');
+      expect(handAfter.dataset.flightActive).toBeUndefined();
+
+      // 2. Вызов triggerJuice без явного rotDelta даёт ненулевой поворот и чередует знак
+      const hudScore = document.createElement('span');
+      hudScore.className = 'hud-score-box__value';
+      const hudHand = document.createElement('span');
+      hudHand.className = 'hud-hand-row__name';
+      container.append(hudScore, hudHand);
+
+      expect(animator.triggerJuice(hudScore, { scaleDelta: 0.24 })).toBe(true);
+      expect(animator.triggerJuice(hudHand, { scaleDelta: 0.18 })).toBe(true);
+
+      scheduler.step(16);
+      const rot1Match = hudScore.style.transform.match(/rotate\((-?[\d.]+)deg\)/);
+      const rot2Match = hudHand.style.transform.match(/rotate\((-?[\d.]+)deg\)/);
+      expect(rot1Match).not.toBeNull();
+      expect(rot2Match).not.toBeNull();
+      const rot1 = Number(rot1Match![1]);
+      const rot2 = Number(rot2Match![1]);
+      expect(Math.abs(rot1)).toBeGreaterThan(0.5);
+      expect(Math.abs(rot2)).toBeGreaterThan(0.5);
+      expect(Math.sign(rot1)).toBe(-Math.sign(rot2));
+
+      scheduler.runUntilIdle(180, 16);
+      expect(hudScore.style.transform).toBe('');
+      expect(hudHand.style.transform).toBe('');
+
+      animator.destroy();
+    });
+
+    it('запускает каскадный вылет карт по очереди при доборе из колоды и слева направо в Play Zone с onCardDeal', () => {
+      const { container, flightLayer } = createStagePair();
+      const scheduler = createManualFrameScheduler();
+      const dealEvents: Array<{ index: number; zone: 'hand' | 'play' }> = [];
+      const animator = createCardAnimator({
+        flightLayer,
+        requestFrame: scheduler.requestFrame,
+        cancelFrame: scheduler.cancelFrame,
+        now: scheduler.now,
+        prefersReducedMotion: () => false,
+        onCardDeal: (index, zone) => {
+          dealEvents.push({ index, zone });
+        },
+      });
+
+      // 1. Каскадный добор 3 карт из колоды в руку
+      const deckBefore = createDeckBtn({ left: 600, top: 1120, width: 70, height: 96 });
+      container.append(deckBefore);
+      const dealSnapshot = animator.captureSnapshot(container);
+
+      const deckAfter = createDeckBtn({ left: 600, top: 1120, width: 70, height: 96 });
+      const d1 = createCardSlot({
+        cardId: 'deal_1',
+        zone: 'hand',
+        rect: { left: 80, top: 960, width: 80, height: 112 },
+      });
+      const d2 = createCardSlot({
+        cardId: 'deal_2',
+        zone: 'hand',
+        rect: { left: 180, top: 960, width: 80, height: 112 },
+      });
+      const d3 = createCardSlot({
+        cardId: 'deal_3',
+        zone: 'hand',
+        rect: { left: 280, top: 960, width: 80, height: 112 },
+      });
+      container.replaceChildren(d1, d2, d3, deckAfter);
+
+      const dealCount = animator.animateFromSnapshot(container, dealSnapshot, { speed: 1 });
+      expect(dealCount).toBe(3);
+      const d1Initial = d1.style.transform;
+      const d3Initial = d3.style.transform;
+
+      // Первый шаг (16 мс): 1-я карта уже летит, 3-я ещё ждёт в стопке колоды (delay 220 мс)
+      scheduler.step(16);
+      scheduler.step(16);
+      expect(d1.style.transform).not.toBe(d1Initial);
+      expect(d3.style.transform).toBe(d3Initial);
+      expect(d3.style.opacity).toBe('0');
+      expect(dealEvents).toEqual([]);
+
+      // Спустя ~240 мс стартуют и остальные карты с вызовом onCardDeal для index 1 и 2
+      for (let i = 0; i < 14; i += 1) {
+        scheduler.step(16);
+      }
+      expect(d3.style.transform).not.toBe(d3Initial);
+      expect(d3.style.opacity).toBe('');
+      expect(dealEvents).toEqual([
+        { index: 1, zone: 'hand' },
+        { index: 2, zone: 'hand' },
+      ]);
+
+      scheduler.runUntilIdle(240, 16);
+      expect(animator.getActiveFlightCount()).toBe(0);
+
+      // 2. Каскадный перелёт 2 карт слева направо из руки в Play Zone
+      dealEvents.length = 0;
+      const playSnap = animator.captureSnapshot(container);
+      const p1 = createCardSlot({
+        cardId: 'deal_1',
+        zone: 'play',
+        rect: { left: 240, top: 520, width: 88, height: 122 },
+      });
+      const p2 = createCardSlot({
+        cardId: 'deal_2',
+        zone: 'play',
+        rect: { left: 340, top: 520, width: 88, height: 122 },
+      });
+      container.replaceChildren(p1, p2);
+
+      const playCount = animator.animateFromSnapshot(container, playSnap, {
+        speed: 1,
+        animateDepartures: false,
+      });
+      expect(playCount).toBe(2);
+      const p1Initial = p1.style.transform;
+      const p2Initial = p2.style.transform;
+
+      scheduler.step(16);
+      expect(p1.style.transform).not.toBe(p1Initial);
+      expect(p2.style.transform).toBe(p2Initial);
+      expect(dealEvents).toEqual([{ index: 0, zone: 'play' }]);
+
+      for (let i = 0; i < 6; i += 1) {
+        scheduler.step(16);
+      }
+      expect(p2.style.transform).not.toBe(p2Initial);
+      expect(dealEvents).toEqual([
+        { index: 0, zone: 'play' },
+        { index: 1, zone: 'play' },
+      ]);
+
+      scheduler.runUntilIdle(240, 16);
+      expect(p1.style.transform).toBe('');
+      expect(p2.style.transform).toBe('');
+      expect(animator.getActiveFlightCount()).toBe(0);
+
+      animator.destroy();
+    });
   });
 });

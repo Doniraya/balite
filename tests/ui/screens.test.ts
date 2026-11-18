@@ -570,6 +570,10 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       expect(hud.querySelector('.hud-choose-prompt')?.textContent).toContain(
         'Выберите заказ на доске гильдии',
       );
+      expect(hud.querySelectorAll('.hud-choose-prompt__char').length).toBeGreaterThan(10);
+      expect((arena.querySelector('[data-blind-kind="small"]') as HTMLElement).style.getPropertyValue('--blind-index')).toBe('0');
+      expect((arena.querySelector('[data-blind-kind="big"]') as HTMLElement).style.getPropertyValue('--blind-index')).toBe('1');
+      expect((arena.querySelector('[data-blind-kind="boss"]') as HTMLElement).style.getPropertyValue('--blind-index')).toBe('2');
       expect(arena.querySelector('[data-blind-kind="small"]')).not.toBeNull();
       expect(arena.querySelector('[data-blind-kind="big"]')).not.toBeNull();
       expect(arena.querySelector('[data-blind-kind="boss"]')).not.toBeNull();

@@ -637,10 +637,71 @@ export function createShopState(state: RunState, options: ShopOptions = {}): Dis
         rerollCost,
         tempRerollCost,
         rerollsUsedThisShop: 0,
+        adRerollUsed: false,
       },
     },
     events,
   };
+}
+
+/**
+ * Запускает хук onShopReroll на всех активных Реликвиях (например, Торговая жилка j_flash).
+ */
+function runShopRerollRelicHooks(
+  state: RunState,
+  paidCost: number,
+  registry: RelicRegistryLookup,
+  resolve: ResolveShopRelicTargetFn,
+  events: TraceEvent[],
+): RunState {
+  let current = state;
+
+  for (let slotIndex = 0; slotIndex < current.relics.length; slotIndex += 1) {
+    const resolved = resolve(current.relics, slotIndex, registry);
+    if (!resolved) continue;
+
+    const def = registry(resolved.effectRelic.id);
+    const handler = def?.hooks.onShopReroll as
+      | ((ctx: RelicHookContext) => RelicEffectResult | null | undefined)
+      | undefined;
+    if (!handler) continue;
+
+    const result = handler({
+      hook: 'onShopReroll',
+      state: current,
+      effectRelic: resolved.effectRelic,
+      stateRelic: resolved.stateRelic,
+      relicIndex: slotIndex,
+      isBlueprintCopy: resolved.isBlueprintCopy,
+      rerollCost: paidCost,
+    });
+    if (!result) continue;
+
+    if (result.updatedEffectState) {
+      current = {
+        ...current,
+        relics: current.relics.map((relic) =>
+          relic.uid === resolved.effectRelic.uid
+            ? { ...relic, state: result.updatedEffectState! }
+            : relic,
+        ),
+      };
+    }
+
+    if (result.updatedEffectState || result.locKey) {
+      events.push({
+        type: 'RELIC_TRIGGER',
+        relicUid: resolved.effectRelic.uid,
+        relicId: resolved.effectRelic.id,
+        ...(resolved.isBlueprintCopy ? { copiedByUid: resolved.stateRelic.uid } : {}),
+        hook: 'onShopReroll',
+        ...(result.locKey ? { locKey: result.locKey } : {}),
+        ...(result.locParams ? { locParams: result.locParams } : {}),
+      });
+    }
+  }
+
+  return current;
 }
 
 /**
@@ -708,51 +769,49 @@ export function rerollShopState(
     },
   };
 
-  // Активируем onShopReroll на Реликвиях (например, j_flash получает +2 Множ)
-  for (let slotIndex = 0; slotIndex < current.relics.length; slotIndex += 1) {
-    const resolved = resolve(current.relics, slotIndex, registry);
-    if (!resolved) continue;
+  current = runShopRerollRelicHooks(current, paidCost, registry, resolve, events);
 
-    const def = registry(resolved.effectRelic.id);
-    const handler = def?.hooks.onShopReroll as
-      | ((ctx: RelicHookContext) => RelicEffectResult | null | undefined)
-      | undefined;
-    if (!handler) continue;
+  return {
+    nextState: current,
+    events,
+  };
+}
 
-    const result = handler({
-      hook: 'onShopReroll',
-      state: current,
-      effectRelic: resolved.effectRelic,
-      stateRelic: resolved.stateRelic,
-      relicIndex: slotIndex,
-      isBlueprintCopy: resolved.isBlueprintCopy,
-      rerollCost: paidCost,
-    });
-    if (!result) continue;
-
-    if (result.updatedEffectState) {
-      current = {
-        ...current,
-        relics: current.relics.map((relic) =>
-          relic.uid === resolved.effectRelic.uid
-            ? { ...relic, state: result.updatedEffectState! }
-            : relic,
-        ),
-      };
-    }
-
-    if (result.updatedEffectState || result.locKey) {
-      events.push({
-        type: 'RELIC_TRIGGER',
-        relicUid: resolved.effectRelic.uid,
-        relicId: resolved.effectRelic.id,
-        ...(resolved.isBlueprintCopy ? { copiedByUid: resolved.stateRelic.uid } : {}),
-        hook: 'onShopReroll',
-        ...(result.locKey ? { locKey: result.locKey } : {}),
-        ...(result.locParams ? { locParams: result.locParams } : {}),
-      });
-    }
+/**
+ * Бесплатно обновляет верхнюю полку магазина 1 раз за визит (за просмотр рекламы),
+ * не расходуя золото и не повышая цену платного реролла; вызывает хук onShopReroll (rerollCost = 0).
+ */
+export function freeRerollShopState(
+  state: RunState,
+  optionsOrRegistry: RelicRegistryLookup | ShopOptions = {},
+): DispatchResult {
+  if (!state.shop || state.shop.adRerollUsed) {
+    return { nextState: state, events: [] };
   }
+
+  const options: ShopOptions =
+    typeof optionsOrRegistry === 'function'
+      ? { relicRegistry: optionsOrRegistry }
+      : optionsOrRegistry;
+  const registry = options.relicRegistry ?? getRelicDefinition;
+  const resolve = options.resolveRelicTarget ?? resolveRelicTarget;
+
+  const events: TraceEvent[] = [];
+  const shelfResult = generateTopShelfOffers(state, options, events);
+  let current: RunState = {
+    ...shelfResult.nextState,
+    stats: {
+      ...shelfResult.nextState.stats,
+      rerollsCount: shelfResult.nextState.stats.rerollsCount + 1,
+    },
+    shop: {
+      ...state.shop,
+      offers: shelfResult.offers,
+      adRerollUsed: true,
+    },
+  };
+
+  current = runShopRerollRelicHooks(current, 0, registry, resolve, events);
 
   return {
     nextState: current,

@@ -8,6 +8,11 @@
   --glare-x: 50%;
   --glare-y: 50%;
   --suit-color: #1e293b;
+  --card-back-bg-start: #1b2848;
+  --card-back-bg-end: #0f172a;
+  --card-back-rim: rgba(245, 185, 66, 0.3);
+  --card-back-accent: #f5b942;
+  --card-back-secondary: #93c5fd;
   --rarity-color: rgba(226, 206, 165, 0.55);
   --card-radius: 10px;
   position: relative;
@@ -124,7 +129,7 @@
   filter: saturate(0.42) brightness(0.84);
 }
 
-/* Цвета мастей для высокого контраста на 720x1280 */
+/* Цвета мастей: классическая палитра (standard) */
 .card-frame--suit-spades {
   --suit-color: #1e293b;
 }
@@ -134,11 +139,32 @@
 }
 
 .card-frame--suit-clubs {
-  --suit-color: #157347;
+  --suit-color: #233b3e;
 }
 
 .card-frame--suit-diamonds {
-  --suit-color: #c2610c;
+  --suit-color: #c83e1d;
+}
+
+/* Высококонтрастная палитра мастей (high_contrast) */
+[data-suit-palette='high_contrast'] .card-frame--suit-spades,
+.card-frame--suit-spades[data-suit-palette='high_contrast'] {
+  --suit-color: #0f172a;
+}
+
+[data-suit-palette='high_contrast'] .card-frame--suit-hearts,
+.card-frame--suit-hearts[data-suit-palette='high_contrast'] {
+  --suit-color: #e11d48;
+}
+
+[data-suit-palette='high_contrast'] .card-frame--suit-clubs,
+.card-frame--suit-clubs[data-suit-palette='high_contrast'] {
+  --suit-color: #0077e6;
+}
+
+[data-suit-palette='high_contrast'] .card-frame--suit-diamonds,
+.card-frame--suit-diamonds[data-suit-palette='high_contrast'] {
+  --suit-color: #d97706;
 }
 
 /* Рамки редкости для Реликвий (1: Обычная, 2: Необычная, 3: Редкая) */
@@ -211,8 +237,45 @@
 }
 
 .card-frame__enhancement--back {
-  background: linear-gradient(155deg, #1b2848 0%, #0f172a 100%);
-  box-shadow: inset 0 0 0 3px rgba(245, 185, 66, 0.3);
+  background: linear-gradient(155deg, var(--card-back-bg-start) 0%, var(--card-back-bg-end) 100%);
+  box-shadow: inset 0 0 0 3px var(--card-back-rim);
+}
+
+/* Темы рубашек колоды (выбор игрока в «Настроить колоду») */
+[data-card-back='b_red'] .card-frame.is-face-down,
+.card-frame.is-face-down[data-card-back='b_red'] {
+  --card-back-bg-start: #9f1d35;
+  --card-back-bg-end: #4c0519;
+  --card-back-rim: rgba(253, 164, 175, 0.45);
+  --card-back-accent: #fda4af;
+  --card-back-secondary: #fde047;
+}
+
+[data-card-back='b_blue'] .card-frame.is-face-down,
+.card-frame.is-face-down[data-card-back='b_blue'] {
+  --card-back-bg-start: #1d4ed8;
+  --card-back-bg-end: #0f172a;
+  --card-back-rim: rgba(147, 197, 253, 0.45);
+  --card-back-accent: #93c5fd;
+  --card-back-secondary: #f5b942;
+}
+
+[data-card-back='b_yellow'] .card-frame.is-face-down,
+.card-frame.is-face-down[data-card-back='b_yellow'] {
+  --card-back-bg-start: #b45309;
+  --card-back-bg-end: #451a03;
+  --card-back-rim: rgba(253, 224, 71, 0.45);
+  --card-back-accent: #fde047;
+  --card-back-secondary: #fed7aa;
+}
+
+[data-card-back='b_black'] .card-frame.is-face-down,
+.card-frame.is-face-down[data-card-back='b_black'] {
+  --card-back-bg-start: #1f2937;
+  --card-back-bg-end: #090d16;
+  --card-back-rim: rgba(203, 213, 225, 0.45);
+  --card-back-accent: #cbd5e1;
+  --card-back-secondary: #94a3b8;
 }
 
 .card-frame__enhancement--bonus {

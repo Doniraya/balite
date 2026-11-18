@@ -402,4 +402,49 @@ describe('createPlatformBridge', () => {
     expect(bridgeKz.getLanguage()).toBe('ru');
     bridgeKz.audio.dispose();
   });
+
+  it('делегирует getServerTime, canShowRewarded, openLeaderboardBox, feedback и shortcut с безопасными откатами', async () => {
+    // 1. MockAdapter / платформа без опциональных методов
+    window.history.replaceState({}, '', '/');
+    const mockBridge = createPlatformBridge();
+    await mockBridge.init();
+    expect(await mockBridge.getServerTime()).toBeGreaterThan(0);
+    expect(await mockBridge.canShowRewarded()).toBe(true);
+    expect(await mockBridge.openLeaderboardBox(500)).toBe(false);
+    expect(await mockBridge.canRequestReview()).toBe(false);
+    expect(await mockBridge.requestReview()).toBe(false);
+    expect(await mockBridge.canShowShortcutPrompt()).toBe(false);
+    expect(await mockBridge.showShortcutPrompt()).toBe(false);
+    mockBridge.audio.dispose();
+
+    // 2. YandexAdapter: serverTime, feedback и shortcut через мост
+    window.history.replaceState({}, '', '/?platform=yandex');
+    (globalThis as Record<string, unknown>).YaGames = {
+      init: vi.fn().mockResolvedValue({
+        environment: { i18n: { lang: 'ru' } },
+        features: { LoadingAPI: { ready: vi.fn() }, GameplayAPI: { start: vi.fn(), stop: vi.fn() } },
+        getPlayer: vi.fn().mockResolvedValue(null),
+        on: vi.fn(() => () => {}),
+        serverTime: vi.fn(() => 1_765_000_000_000),
+        feedback: {
+          canReview: vi.fn().mockResolvedValue({ value: true }),
+          requestReview: vi.fn().mockResolvedValue({ feedbackSent: true }),
+        },
+        shortcut: {
+          canShowPrompt: vi.fn().mockResolvedValue({ canShow: true }),
+          showPrompt: vi.fn().mockResolvedValue({ outcome: 'accepted' }),
+        },
+      }),
+    };
+
+    const yandexBridge = createPlatformBridge();
+    await yandexBridge.init();
+    expect(await yandexBridge.getServerTime()).toBe(1_765_000_000_000);
+    expect(await yandexBridge.canShowRewarded()).toBe(true);
+    expect(await yandexBridge.canRequestReview()).toBe(true);
+    expect(await yandexBridge.requestReview()).toBe(true);
+    expect(await yandexBridge.canShowShortcutPrompt()).toBe(true);
+    expect(await yandexBridge.showShortcutPrompt()).toBe(true);
+    yandexBridge.audio.dispose();
+  });
 });

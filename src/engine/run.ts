@@ -1,5 +1,6 @@
 import { createStandardDeck, sortCardsByRank, sortCardsBySuit } from './cards';
 import {
+  applyBossDebuffsToDeck,
   applyBossOnBlindSelect,
   applyDeckStartingParams,
   applyFinalBellSelection,
@@ -15,6 +16,7 @@ import {
   canUseConsumable,
   createConsumableInstance,
 } from './consumables';
+import { isDailyRunSeed } from './daily';
 import { createInitialHandLevels, getBlindAmount } from './handEval';
 import { createRngState, shuffleArray } from './prng';
 import { getRelicDefinition, resolveRelicTarget } from './relics';
@@ -22,6 +24,7 @@ import { SAVE_SCHEMA_VERSION } from './save';
 import { evaluatePlay, evaluateRoundEnd } from './scoring';
 import {
   createShopState,
+  freeRerollShopState,
   generateBoosterState,
   pickPoolConsumable,
   rerollShopState,
@@ -575,6 +578,7 @@ function compactShopForNextRound(state: RunState): ShopState | null {
     rerollCost: state.baseRerollCost,
     tempRerollCost: null,
     rerollsUsedThisShop: 0,
+    adRerollUsed: false,
   };
 }
 
@@ -691,6 +695,7 @@ export function createInitialRunState(deckId: DeckId, seed: string): RunState {
     booster: null,
     cashout: null,
     nextCardUid: deck.length + 1,
+    reviveUsed: false,
     stats: {
       bestHandScore: 0,
       bestHandType: null,
@@ -1652,6 +1657,82 @@ function handleRerollShop(state: RunState): DispatchResult {
 }
 
 /**
+ * Бесплатно обновляет верхнюю полку магазина 1 раз за визит за просмотр рекламы.
+ */
+function handleFreeRerollShop(state: RunState): DispatchResult {
+  if (state.phase !== 'shop' || !state.shop) {
+    return { nextState: state, events: [] };
+  }
+  return freeRerollShopState(state, {
+    relicRegistry: getRelicDefinition,
+    resolveRelicTarget,
+  });
+}
+
+/**
+ * «Второй шанс»: 1 раз за забег возвращает игрока из game_over в текущий бой с +1 рукой.
+ */
+function handleReviveRun(state: RunState): DispatchResult {
+  if (state.phase !== 'game_over' || state.reviveUsed || isDailyRunSeed(state.seed)) {
+    return { nextState: state, events: [] };
+  }
+
+  const events: TraceEvent[] = [];
+  let work: RunState = {
+    ...state,
+    phase: 'playing',
+    previousPhase: null,
+    handsLeft: 1,
+    reviveUsed: true,
+  };
+
+  const slot = work.anteBlinds[work.currentBlindIndex];
+  const activeBoss = slot.kind === 'boss' && !work.activeBossDisabled ? slot.bossId : null;
+  if (activeBoss) {
+    // Повторно накладываем дебаффы Босса на колоду (при game_over они были сняты).
+    // Для bl_manacle -1 handSize при game_over не возвращался, поэтому повторно не вычитаем.
+    work = {
+      ...work,
+      deck: applyBossDebuffsToDeck(work.deck, activeBoss, false),
+    };
+    if (activeBoss === 'bl_water') {
+      work = {
+        ...work,
+        savedBossDiscards: work.discardsLeft,
+        discardsLeft: 0,
+      };
+    }
+  }
+
+  // Перетасовываем сброс в колоду добора, если карт для полной руки не хватает
+  const effectiveHandSize = Math.max(0, work.handSize + work.tempHandSizeBonus);
+  const missingCount = Math.max(0, effectiveHandSize - work.handIds.length);
+  if (work.drawPileIds.length < missingCount && work.discardPileIds.length > 0) {
+    const shuffledDiscard = shuffleArray(work.rngState, 'shuffle', work.discardPileIds);
+    work = {
+      ...work,
+      rngState: shuffledDiscard.nextState,
+      drawPileIds: [...work.drawPileIds, ...shuffledDiscard.value],
+      discardPileIds: [],
+    };
+  }
+
+  work = replenishHandFromDrawPile(work);
+
+  const bellRes = applyFinalBellSelection(work);
+  work = bellRes.nextState;
+  events.push(...bellRes.events);
+
+  events.push({
+    type: 'PHASE_CHANGED',
+    from: 'game_over',
+    to: 'playing',
+  });
+
+  return { nextState: work, events };
+}
+
+/**
  * Завершает фазу магазина и переводит игрока к следующему Стражу (или новому Этапу).
  */
 function handleNextRound(state: RunState): DispatchResult {
@@ -1769,6 +1850,10 @@ export function dispatch(state: RunState, command: GameCommand): DispatchResult 
       return handleSkipBooster(state);
     case 'REROLL_SHOP':
       return handleRerollShop(state);
+    case 'FREE_REROLL_SHOP':
+      return handleFreeRerollShop(state);
+    case 'REVIVE_RUN':
+      return handleReviveRun(state);
     case 'NEXT_ROUND':
       return handleNextRound(state);
     case 'CONTINUE_ENDLESS':
