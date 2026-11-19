@@ -1,4 +1,4 @@
-import { getCardEffectiveRank, isCardSuit, sortCardsByOrder } from './cards';
+import { getCardEffectiveRank, getCardNominal, isCardSuit, sortCardsByOrder } from './cards';
 import {
   HAND_TYPES,
   SUITS,
@@ -303,8 +303,7 @@ function getHighestCards(cards: readonly PlayingCard[]): PlayingCard[] {
  * Числовой вес карты при сравнении в getHighestCards (Stone-карты всегда ниже любой обычной карты).
  */
 function getCardNominalWeight(card: PlayingCard): number {
-  const rank = getCardEffectiveRank(card);
-  return rank === null ? -10000 : rank;
+  return getCardNominal(card, 'rank');
 }
 
 /**
@@ -467,4 +466,28 @@ export function getBlindAmount(ante: number, scaling: 1 | 2 | 3 = 1): number {
 
   const step = 10 ** Math.floor(Math.log10(raw) - 1);
   return raw - (raw % step);
+}
+
+/**
+ * Порог переключения отображения больших чисел в научную нотацию (`G.E_SWITCH_POINT = 1e11`).
+ */
+export const BALATRO_NUMBER_SWITCH_POINT = 100_000_000_000;
+
+/**
+ * Форматирует числа очков и порогов по правилам оригинала Balatro (`number_format`):
+ * начиная с 1e11 переключается на формат `%.3feN`.
+ */
+export function formatBalatroNumber(num: number): string {
+  if (!Number.isFinite(num)) {
+    return String(num);
+  }
+  const abs = Math.abs(num);
+  if (abs >= BALATRO_NUMBER_SWITCH_POINT) {
+    const sign = num < 0 ? '-' : '';
+    const roundedSig = Number(abs.toPrecision(4));
+    const fac = Math.floor(Math.log10(roundedSig));
+    const mantissa = (roundedSig / 10 ** fac).toFixed(3);
+    return `${sign}${mantissa}e${fac}`;
+  }
+  return String(num);
 }

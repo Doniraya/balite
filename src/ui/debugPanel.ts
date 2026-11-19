@@ -9,6 +9,7 @@ import {
   RUNE_IDS,
   SCROLL_IDS,
   SEALS,
+  formatBalatroNumber,
   type CharterId,
   type ConsumableId,
   type DebugCardModsOptions,
@@ -123,8 +124,8 @@ export function renderDebugPanel(options: DebugPanelOptions): HTMLElement {
     'span',
     undefined,
     isRu
-      ? `Этап ${state.ante} · Очки ${state.score}/${state.targetScore} · ${goldText} · Выбрано в руке: ${selectedCardIds.length} · ${state.phase}`
-      : `Stage ${state.ante} · Score ${state.score}/${state.targetScore} · ${goldText} · Selected: ${selectedCardIds.length} · ${state.phase}`,
+      ? `Этап ${state.ante} · Очки ${formatBalatroNumber(state.score)}/${formatBalatroNumber(state.targetScore)} · ${goldText} · Выбрано в руке: ${selectedCardIds.length} · ${state.phase}`
+      : `Stage ${state.ante} · Score ${formatBalatroNumber(state.score)}/${formatBalatroNumber(state.targetScore)} · ${goldText} · Selected: ${selectedCardIds.length} · ${state.phase}`,
   );
   metaBar.append(statusSpan);
 

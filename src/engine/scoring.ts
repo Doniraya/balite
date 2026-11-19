@@ -1,8 +1,9 @@
 import { getCardScoringChips, isCardFace, sortCardsByOrder } from './cards';
+import { createConsumableInstance } from './consumables';
 import { evaluatePokerHand } from './handEval';
-import { pickElement, nextFloat } from './prng';
+import { nextFloat, pickElement, type RngStreamName } from './prng';
+import { pickPoolConsumable } from './shop';
 import {
-  SCROLL_IDS,
   type BossId,
   type CashoutBreakdown,
   type CelestialId,
@@ -96,6 +97,8 @@ type RepetitionSource =
 interface MutableWorkState {
   run: RunState;
   events: TraceEvent[];
+  dollarBuffer: number;
+  dollarsBeforeBuffer: number;
 }
 
 /**
@@ -149,6 +152,7 @@ function tryGrantConsumable(
   work: MutableWorkState,
   kind: ConsumableKind,
   forcedId?: ConsumableId,
+  rngKey: RngStreamName = 'shop',
 ): ConsumableInstance | null {
   if (work.run.consumables.length >= getEffectiveMaxConsumables(work.run)) {
     return null;
@@ -158,25 +162,19 @@ function tryGrantConsumable(
   let nextRng = work.run.rngState;
 
   if (!chosenId) {
-    if (kind === 'scroll') {
-      const pick = pickElement(nextRng, 'shop', SCROLL_IDS);
-      chosenId = pick.value;
-      nextRng = pick.nextState;
-    } else {
-      return null;
-    }
+    // Используем общий пул с фильтрацией дублей и неразблокированных Сфер
+    const pick = pickPoolConsumable(work.run, kind, { stream: rngKey });
+    chosenId = pick.value;
+    nextRng = pick.nextState;
   }
 
-  const baseCost = kind === 'rune' ? 4 : 3;
   const uid = `cons_${work.run.nextCardUid}`;
-  const instance: ConsumableInstance = {
+  const instance = createConsumableInstance(
+    chosenId,
     uid,
-    id: chosenId,
-    kind,
-    edition: 'base',
-    baseCost,
-    sellValue: Math.max(1, Math.floor(baseCost / 2)),
-  };
+    'base',
+    work.run.discountPercent,
+  );
 
   work.run = {
     ...work.run,
@@ -273,6 +271,24 @@ function addDollars(
 }
 
 /**
+ * Копит золото в буфер раздачи (dollarBuffer), не изменяя баланс до окончания подсчёта (для Bull/Vagabond).
+ */
+function bufferPlayDollars(
+  work: MutableWorkState,
+  delta: number,
+  source: 'card' | 'relic',
+): void {
+  if (delta === 0) return;
+  work.dollarBuffer += delta;
+  work.events.push({
+    type: 'DOLLAR_DELTA',
+    delta,
+    totalDollars: work.dollarsBeforeBuffer + work.dollarBuffer,
+    source,
+  });
+}
+
+/**
  * Находит карту в текущей колоде по идентификатору.
  */
 function getCardMap(deck: readonly PlayingCard[]): Map<string, PlayingCard> {
@@ -284,7 +300,48 @@ function getCardMap(deck: readonly PlayingCard[]): Map<string, PlayingCard> {
 }
 
 /**
- * Обрабатывает сброс до 2 случайных карт боссом bl_hook (срабатывают onDiscard и Лиловая печать).
+ * Запускает системный хук по всем текущим слотам Реликвий слева направо с обработкой эффектов и событий.
+ */
+function invokeLifecycleHookSweep<H extends RelicHookName>(
+  work: MutableWorkState,
+  hook: H,
+  options: ScoringOptions,
+  buildContext: (resolved: ResolvedRelicTarget, slotIndex: number, current: RunState) => RelicHookContextFor<H>,
+): void {
+  const slotUids = work.run.relics.map((r) => r.uid);
+  for (const slotUid of slotUids) {
+    const slotIndex = work.run.relics.findIndex((r) => r.uid === slotUid);
+    if (slotIndex === -1) continue;
+
+    const outcome = invokeRelicHook<H>(work.run, slotIndex, options, (resolved) =>
+      buildContext(resolved, slotIndex, work.run),
+    );
+    if (!outcome) continue;
+
+    const res = outcome.result;
+    applyRelicStateEffects(work, outcome.resolved, res);
+    if (res.dollarsDelta) {
+      addDollars(work, res.dollarsDelta, 'relic');
+    }
+    if (res.updatedEffectState || res.dollarsDelta || res.locKey || res.destroySelf) {
+      work.events.push({
+        type: 'RELIC_TRIGGER',
+        relicUid: outcome.resolved.effectRelic.uid,
+        relicId: outcome.resolved.effectRelic.id,
+        ...(outcome.resolved.isBlueprintCopy
+          ? { copiedByUid: outcome.resolved.stateRelic.uid }
+          : {}),
+        hook,
+        ...(res.dollarsDelta ? { dollarsDelta: res.dollarsDelta } : {}),
+        ...(res.locKey ? { locKey: res.locKey } : {}),
+        ...(res.locParams ? { locParams: res.locParams } : {}),
+      });
+    }
+  }
+}
+
+/**
+ * Обрабатывает сброс до 2 случайных карт боссом bl_hook (pre_discard -> в одном цикле Лиловая печать + onDiscard -> remove_playing_cards).
  */
 function processBossHookDiscard(work: MutableWorkState, options: ScoringOptions): void {
   if (getActiveBossId(work.run) !== 'bl_hook' || work.run.handIds.length === 0) {
@@ -296,7 +353,7 @@ function processBossHookDiscard(work: MutableWorkState, options: ScoringOptions)
   const hookDiscardedIds: string[] = [];
 
   for (let i = 0; i < discardCount; i += 1) {
-    const pick = pickElement(work.run.rngState, 'shuffle', remainingHandIds);
+    const pick = pickElement(work.run.rngState, 'hook', remainingHandIds);
     work.run = { ...work.run, rngState: pick.nextState };
     hookDiscardedIds.push(pick.value);
     remainingHandIds = remainingHandIds.filter((id) => id !== pick.value);
@@ -305,7 +362,6 @@ function processBossHookDiscard(work: MutableWorkState, options: ScoringOptions)
   work.run = {
     ...work.run,
     handIds: remainingHandIds,
-    discardPileIds: [...work.run.discardPileIds, ...hookDiscardedIds],
   };
 
   work.events.push({
@@ -321,10 +377,28 @@ function processBossHookDiscard(work: MutableWorkState, options: ScoringOptions)
     .map((id) => cardById.get(id))
     .filter((card): card is PlayingCard => card !== undefined);
 
-  // Лиловая печать на сброшенных картах создаёт Свиток
-  for (const card of discardedCards) {
+  // Системный хук pre_discard до поштучной обработки сбрасываемых карт
+  invokeLifecycleHookSweep(work, 'onPreDiscard', options, (resolved) => ({
+    hook: 'onPreDiscard',
+    state: work.run,
+    effectRelic: resolved.effectRelic,
+    stateRelic: resolved.stateRelic,
+    relicIndex: work.run.relics.findIndex((r) => r.uid === resolved.stateRelic.uid),
+    isBlueprintCopy: resolved.isBlueprintCopy,
+    fullHand: discardedCards,
+    isHookDiscard: true,
+  }));
+
+  const removedCards: PlayingCard[] = [];
+  const keptDiscardedIds: string[] = [];
+
+  // По одной карте подряд: Лиловая печать -> onDiscard Реликвий -> перенос в сброс или удаление
+  for (let cardIndex = 0; cardIndex < discardedCards.length; cardIndex += 1) {
+    const card = discardedCards[cardIndex]!;
+    const isLastDiscardedCard = cardIndex === discardedCards.length - 1;
+
     if (!card.debuffed && card.seal === 'purple') {
-      const created = tryGrantConsumable(work, 'scroll');
+      const created = tryGrantConsumable(work, 'scroll', undefined, `Tarot8ba${work.run.ante}`);
       if (created) {
         work.events.push({
           type: 'CARD_TRIGGER',
@@ -336,14 +410,9 @@ function processBossHookDiscard(work: MutableWorkState, options: ScoringOptions)
         });
       }
     }
-  }
 
-  // Хуки onDiscard вызываются слева направо для каждой сброшенной карты
-  for (let cardIndex = 0; cardIndex < discardedCards.length; cardIndex += 1) {
-    const card = discardedCards[cardIndex]!;
-    const isLastDiscardedCard = cardIndex === discardedCards.length - 1;
+    let removed = false;
     const slotUids = work.run.relics.map((r) => r.uid);
-
     for (const slotUid of slotUids) {
       const slotIndex = work.run.relics.findIndex((r) => r.uid === slotUid);
       if (slotIndex === -1) continue;
@@ -359,11 +428,18 @@ function processBossHookDiscard(work: MutableWorkState, options: ScoringOptions)
         card,
         cardIndex,
         isLastDiscardedCard,
+        isHookDiscard: true,
       }));
 
       if (!outcome) continue;
+      if (outcome.result.removeCard) {
+        removed = true;
+      }
       applyRelicStateEffects(work, outcome.resolved, outcome.result);
-      if (outcome.result.updatedEffectState || outcome.result.locKey) {
+      if (outcome.result.dollarsDelta) {
+        addDollars(work, outcome.result.dollarsDelta, 'relic');
+      }
+      if (outcome.result.updatedEffectState || outcome.result.dollarsDelta || outcome.result.locKey) {
         work.events.push({
           type: 'RELIC_TRIGGER',
           relicUid: outcome.resolved.effectRelic.uid,
@@ -372,11 +448,45 @@ function processBossHookDiscard(work: MutableWorkState, options: ScoringOptions)
             ? { copiedByUid: outcome.resolved.stateRelic.uid }
             : {}),
           hook: 'onDiscard',
+          ...(outcome.result.dollarsDelta ? { dollarsDelta: outcome.result.dollarsDelta } : {}),
           ...(outcome.result.locKey ? { locKey: outcome.result.locKey } : {}),
           ...(outcome.result.locParams ? { locParams: outcome.result.locParams } : {}),
         });
       }
     }
+
+    if (removed) {
+      removedCards.push(card);
+    } else {
+      keptDiscardedIds.push(card.id);
+    }
+  }
+
+  if (removedCards.length > 0) {
+    const removedSet = new Set(removedCards.map((c) => c.id));
+    work.run = {
+      ...work.run,
+      deck: work.run.deck.filter((c) => !removedSet.has(c.id)),
+      discardPileIds: [...work.run.discardPileIds, ...keptDiscardedIds],
+      stats: {
+        ...work.run.stats,
+        cardsDestroyed: work.run.stats.cardsDestroyed + removedCards.length,
+      },
+    };
+    invokeLifecycleHookSweep(work, 'onRemovePlayingCards', options, (resolved, slotIndex) => ({
+      hook: 'onRemovePlayingCards',
+      state: work.run,
+      effectRelic: resolved.effectRelic,
+      stateRelic: resolved.stateRelic,
+      relicIndex: slotIndex,
+      isBlueprintCopy: resolved.isBlueprintCopy,
+      removedCards,
+    }));
+  } else {
+    work.run = {
+      ...work.run,
+      discardPileIds: [...work.run.discardPileIds, ...keptDiscardedIds],
+    };
   }
 }
 
@@ -517,6 +627,8 @@ export function evaluatePlay(
   const work: MutableWorkState = {
     run: state,
     events: [],
+    dollarBuffer: 0,
+    dollarsBeforeBuffer: state.dollars,
   };
 
   // Пред-подготовка: списание руки, отметка playedThisAnte и перенос карт из руки на стол
@@ -590,6 +702,17 @@ export function evaluatePlay(
       handType: topHand,
       locKey: 'hand_debuffed',
     });
+    invokeLifecycleHookSweep(work, 'onDebuffedHand', options, (resolved, slotIndex) => ({
+      hook: 'onDebuffedHand',
+      state: work.run,
+      effectRelic: resolved.effectRelic,
+      stateRelic: resolved.stateRelic,
+      relicIndex: slotIndex,
+      isBlueprintCopy: resolved.isBlueprintCopy,
+      playedCards,
+      scoringCards,
+      handEvaluation,
+    }));
     work.run = {
       ...work.run,
       discardPileIds: [...work.run.discardPileIds, ...playedCardIds],
@@ -608,6 +731,17 @@ export function evaluatePlay(
       targetScore: work.run.targetScore,
       handType: topHand,
     });
+    invokeLifecycleHookSweep(work, 'onAfterScore', options, (resolved, slotIndex) => ({
+      hook: 'onAfterScore',
+      state: work.run,
+      effectRelic: resolved.effectRelic,
+      stateRelic: resolved.stateRelic,
+      relicIndex: slotIndex,
+      isBlueprintCopy: resolved.isBlueprintCopy,
+      playedCards,
+      scoringCards,
+      handEvaluation,
+    }));
     return { nextState: work.run, events: work.events };
   }
 
@@ -713,13 +847,13 @@ export function evaluatePlay(
         });
       }
 
-      // 4.1 Сила -> +Множ -> Золото -> ×Множ -> Издание самой карты
+      // 4.1 Сила -> +Множ -> Золото -> ×Множ -> Издание самой карты (строго раздельными шагами по оригиналу)
       const cardChips = getCardScoringChips(card);
       let cardMult = 0;
       if (card.enhancement === 'mult') {
         cardMult = 4;
       } else if (card.enhancement === 'lucky') {
-        const multRoll = nextFloat(work.run.rngState, 'lucky');
+        const multRoll = nextFloat(work.run.rngState, 'lucky_mult');
         work.run = { ...work.run, rngState: multRoll.nextState };
         if (multRoll.value < work.run.probabilitiesNormal / 5) {
           cardMult = 20;
@@ -728,7 +862,7 @@ export function evaluatePlay(
 
       let cardDollars = card.seal === 'gold' ? 3 : 0;
       if (card.enhancement === 'lucky') {
-        const moneyRoll = nextFloat(work.run.rngState, 'lucky');
+        const moneyRoll = nextFloat(work.run.rngState, 'lucky_money');
         work.run = { ...work.run, rngState: moneyRoll.nextState };
         if (moneyRoll.value < work.run.probabilitiesNormal / 15) {
           cardDollars += 20;
@@ -740,7 +874,7 @@ export function evaluatePlay(
       chips += cardChips;
       mult += cardMult;
       if (cardDollars > 0) {
-        addDollars(work, cardDollars, 'card');
+        bufferPlayDollars(work, cardDollars, 'card');
       }
       if (cardXMult !== undefined) {
         mult *= cardXMult;
@@ -757,20 +891,52 @@ export function evaluatePlay(
       mult += edMult;
       mult *= edXMult;
 
-      work.events.push({
-        type: 'CARD_TRIGGER',
+      const cardMetaFlags = {
         cardId: card.id,
         retriggerIndex: repIndex,
-        ...(cardChips + edChips !== 0 ? { chipsDelta: cardChips + edChips } : {}),
-        ...(cardMult + edMult !== 0 ? { multDelta: cardMult + edMult } : {}),
-        ...(cardXMult !== undefined || edXMult !== 1
-          ? { xMult: (cardXMult ?? 1) * edXMult }
-          : {}),
-        ...(cardDollars !== 0 ? { dollarsDelta: cardDollars } : {}),
         ...(card.edition !== 'base' ? { edition: card.edition } : {}),
         ...(card.enhancement !== 'none' ? { enhancement: card.enhancement } : {}),
         ...(card.seal !== 'none' ? { seal: card.seal } : {}),
-      });
+      } as const;
+
+      if (cardChips !== 0) {
+        work.events.push({
+          type: 'CARD_TRIGGER',
+          ...cardMetaFlags,
+          chipsDelta: cardChips,
+        });
+      }
+      if (cardMult !== 0) {
+        work.events.push({
+          type: 'CARD_TRIGGER',
+          ...cardMetaFlags,
+          multDelta: cardMult,
+        });
+      }
+      if (cardDollars !== 0) {
+        work.events.push({
+          type: 'CARD_TRIGGER',
+          ...cardMetaFlags,
+          dollarsDelta: cardDollars,
+        });
+      }
+      if (cardXMult !== undefined) {
+        work.events.push({
+          type: 'CARD_TRIGGER',
+          ...cardMetaFlags,
+          xMult: cardXMult,
+        });
+      }
+      if (edChips !== 0 || edMult !== 0 || edXMult !== 1) {
+        work.events.push({
+          type: 'CARD_TRIGGER',
+          ...cardMetaFlags,
+          isEditionStep: true,
+          ...(edChips !== 0 ? { chipsDelta: edChips } : {}),
+          ...(edMult !== 0 ? { multDelta: edMult } : {}),
+          ...(edXMult !== 1 ? { xMult: edXMult } : {}),
+        });
+      }
 
       // 4.2 Эффекты Реликвий onScoreCard слева направо
       for (let slotIndex = 0; slotIndex < work.run.relics.length; slotIndex += 1) {
@@ -799,7 +965,7 @@ export function evaluatePlay(
 
         if (res.chipsDelta) chips += res.chipsDelta;
         if (res.multDelta) mult += res.multDelta;
-        if (res.dollarsDelta) addDollars(work, res.dollarsDelta, 'relic');
+        if (res.dollarsDelta) bufferPlayDollars(work, res.dollarsDelta, 'relic');
         if (res.xMult) mult *= res.xMult;
         if (res.createConsumableKind) {
           tryGrantConsumable(work, res.createConsumableKind);
@@ -903,7 +1069,7 @@ export function evaluatePlay(
       for (const hit of pass.relicHoldHits) {
         const res = hit.result;
         applyRelicStateEffects(work, hit.resolved, res);
-        if (res.dollarsDelta) addDollars(work, res.dollarsDelta, 'relic');
+        if (res.dollarsDelta) bufferPlayDollars(work, res.dollarsDelta, 'relic');
         if (res.multDelta) mult += res.multDelta;
         if (res.xMult) mult *= res.xMult;
 
@@ -968,6 +1134,8 @@ export function evaluatePlay(
       scoringCards,
       handCards: heldCards,
       handEvaluation,
+      dollarsBeforeBuffer: work.dollarsBeforeBuffer,
+      dollarBuffer: work.dollarBuffer,
     }));
 
     if (outcome) {
@@ -977,11 +1145,15 @@ export function evaluatePlay(
       if (res.multDelta) mult += res.multDelta;
       if (res.chipsDelta) chips += res.chipsDelta;
       if (res.xMult) mult *= res.xMult;
-      if (res.dollarsDelta) addDollars(work, res.dollarsDelta, 'relic');
+      if (res.dollarsDelta) bufferPlayDollars(work, res.dollarsDelta, 'relic');
 
       let createdScroll: ConsumableInstance | null = null;
       if (res.createConsumableKind) {
-        createdScroll = tryGrantConsumable(work, res.createConsumableKind);
+        const grantKey =
+          outcome.resolved.effectRelic.id === 'j_vagabond'
+            ? `Tarotvag${work.run.ante}`
+            : `${res.createConsumableKind}${work.run.ante}`;
+        createdScroll = tryGrantConsumable(work, res.createConsumableKind, undefined, grantKey);
       }
 
       work.events.push({
@@ -1040,6 +1212,14 @@ export function evaluatePlay(
     }
   }
 
+  // Начисляем буфер заработанного за раздачу золота на счёт после завершения подсчёта Реликвий
+  if (work.dollarBuffer !== 0) {
+    work.run = {
+      ...work.run,
+      dollars: work.dollarsBeforeBuffer + work.dollarBuffer,
+    };
+  }
+
   // Этап 7: проверка поломки Хрустальных карт (ровно 1 раз на карту, независимо от ретриггеров) и финализация
   const shatteredIds = new Set<string>();
   for (const card of scoringCards) {
@@ -1057,6 +1237,10 @@ export function evaluatePlay(
     }
   }
 
+  const shatteredCards =
+    shatteredIds.size > 0
+      ? scoringCards.filter((card) => shatteredIds.has(card.id))
+      : [];
   const survivingPlayedIds = playedCardIds.filter((id) => !shatteredIds.has(id));
   const handScore = Math.floor(chips * mult);
   const totalScore = work.run.score + handScore;
@@ -1081,6 +1265,18 @@ export function evaluatePlay(
     },
   };
 
+  if (shatteredCards.length > 0) {
+    invokeLifecycleHookSweep(work, 'onRemovePlayingCards', options, (resolved, slotIndex) => ({
+      hook: 'onRemovePlayingCards',
+      state: work.run,
+      effectRelic: resolved.effectRelic,
+      stateRelic: resolved.stateRelic,
+      relicIndex: slotIndex,
+      isBlueprintCopy: resolved.isBlueprintCopy,
+      removedCards: shatteredCards,
+    }));
+  }
+
   work.events.push({
     type: 'SCORE_UPDATE',
     chips,
@@ -1090,6 +1286,18 @@ export function evaluatePlay(
     targetScore: work.run.targetScore,
     handType: topHand,
   });
+
+  invokeLifecycleHookSweep(work, 'onAfterScore', options, (resolved, slotIndex) => ({
+    hook: 'onAfterScore',
+    state: work.run,
+    effectRelic: resolved.effectRelic,
+    stateRelic: resolved.stateRelic,
+    relicIndex: slotIndex,
+    isBlueprintCopy: resolved.isBlueprintCopy,
+    playedCards,
+    scoringCards,
+    handEvaluation,
+  }));
 
   if (totalScore >= work.run.targetScore) {
     const slot = work.run.anteBlinds[work.run.currentBlindIndex];
@@ -1117,6 +1325,8 @@ export function evaluateRoundEnd(state: RunState, options: ScoringOptions): Disp
   const work: MutableWorkState = {
     run: state,
     events: [],
+    dollarBuffer: 0,
+    dollarsBeforeBuffer: state.dollars,
   };
 
   // 1. Эффекты карт, оставшихся в руке (слева направо) с ретриггером от Алой печати и Зеркального мима
@@ -1130,7 +1340,12 @@ export function evaluateRoundEnd(state: RunState, options: ScoringOptions): Disp
 
     const hasGold = card.enhancement === 'gold';
     const hasBlueSeal = card.seal === 'blue';
-    if (!hasGold && !hasBlueSeal) continue;
+    // В оригинале (card.lua:1040, state_events.lua:193) Лазурная печать даёт ret.effect
+    // только при наличии свободного слота расходника; без эффекта Мим/Алая печать не ретриггерят
+    const hasFreeSlot = work.run.consumables.length < getEffectiveMaxConsumables(work.run);
+    const canBlueSealTrigger =
+      hasBlueSeal && work.run.lastPlayedHandType !== null && hasFreeSlot;
+    if (!hasGold && !canBlueSealTrigger) continue;
 
     const reps = collectHoldCardRepetitions(work.run, card, heldCards, 'roundEnd', options);
     for (let repIndex = 0; repIndex < reps.length; repIndex += 1) {

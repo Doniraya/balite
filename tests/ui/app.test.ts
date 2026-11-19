@@ -404,8 +404,8 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
       expect(arenaEl.dataset.animating).toBe('true');
       expect(arenaEl.querySelector('.play-zone [data-card-id="c_ace"]')).not.toBeNull();
 
-      // Прокручиваем первые шаги TracePlayer (1x = 640мс/шаг) — появляются поп-апы и подсветка карты/реликвии
-      await vi.advanceTimersByTimeAsync(180);
+      // Прокручиваем вступительные паузы и первые шаги TracePlayer (1x) — появляются поп-апы и подсветка карты/реликвии
+      await vi.advanceTimersByTimeAsync(1400);
       expect(root.querySelectorAll('.popup-layer .trace-popup').length).toBeGreaterThan(0);
 
       const highlightedNodes = root.querySelectorAll(
@@ -1376,7 +1376,7 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
         });
 
       try {
-        const mounted = mountBaliteApp(root, {
+        mounted = mountBaliteApp(root, {
           bridge: mock.bridge,
           initialNowMs: () => nowMs,
           cardAnimatorOptions: {
@@ -1484,7 +1484,7 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
         });
 
       try {
-        const mounted = mountBaliteApp(root, {
+        mounted = mountBaliteApp(root, {
           bridge: mock.bridge,
           initialNowMs: () => nowMs,
           cardTiltOptions: {
@@ -1561,12 +1561,17 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
         enhancement: 'mult',
         edition: 'foil',
       });
+      const sfKing = createPlayingCard({ id: 'sf_king', suit: 'spades', rank: 13 });
+      const sfQueen = createPlayingCard({ id: 'sf_queen', suit: 'spades', rank: 12 });
+      const sfJack = createPlayingCard({ id: 'sf_jack', suit: 'spades', rank: 11 });
+      const sfTen = createPlayingCard({ id: 'sf_ten', suit: 'spades', rank: 10 });
       const relic = createRelicInstance('j_joker', 'rel_flame_joker');
       playingState = {
         ...playingState,
+        // C7: даже при 296 очках накопленного счёта 1 туз (5*1=5) не зажигает пламя — порог 300 должна покрыть сама рука
         score: Math.max(0, playingState.targetScore - 4),
-        handIds: ['lethal_ace', ...playingState.handIds.slice(1)],
-        deck: [lethalAce, ...playingState.deck],
+        handIds: ['lethal_ace', 'sf_king', 'sf_queen', 'sf_jack', 'sf_ten', ...playingState.handIds.slice(5)],
+        deck: [lethalAce, sfKing, sfQueen, sfJack, sfTen, ...playingState.deck],
         relics: [relic],
       };
 
@@ -1638,17 +1643,24 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
       expect(flameIdle).not.toBeNull();
       expect(flameIdle?.dataset.flameActive).toBe('false');
 
-      // Выделяем туза: в предпросмотре 5 * 1 = 5, порог 296 + 5 >= 300 пробит -> пламя загорается
-      root.querySelector<HTMLElement>('[data-belt="hand"] [data-card-id="lethal_ace"]')!.click();
-      expect(root.querySelector<HTMLElement>('.hud-score-flame')?.dataset.flameActive).toBe('true');
-
-      // Снимаем выделение -> пламя предпросмотра гаснет, затем снова выделяем карту
+      // Выделяем только туза: 5 * 1 = 5 < 300 -> одна рука не покрывает цель раунда, пламя ещё не горит
       root.querySelector<HTMLElement>('[data-belt="hand"] [data-card-id="lethal_ace"]')!.click();
       expect(root.querySelector<HTMLElement>('.hud-score-flame')?.dataset.flameActive).toBe('false');
-      root.querySelector<HTMLElement>('[data-belt="hand"] [data-card-id="lethal_ace"]')!.click();
 
-      // Запускаем PLAY_HAND: на шагах CARD_TRIGGER и RELIC_TRIGGER
-      // формула растёт пошагово, срабатывает juice_up и горит пламя
+      // Довыделяем Стрит-флеш (100 * 8 = 800 >= 300) -> пламя предпросмотра загорается
+      for (const cardId of ['sf_king', 'sf_queen', 'sf_jack', 'sf_ten']) {
+        root.querySelector<HTMLElement>(`[data-belt="hand"] [data-card-id="${cardId}"]`)!.click();
+      }
+      expect(root.querySelector<HTMLElement>('.hud-score-flame')?.dataset.flameActive).toBe('true');
+
+      // Снимаем 4 карты -> остаётся один туз (5 < 300), пламя предпросмотра гаснет
+      for (const cardId of ['sf_king', 'sf_queen', 'sf_jack', 'sf_ten']) {
+        root.querySelector<HTMLElement>(`[data-belt="hand"] [data-card-id="${cardId}"]`)!.click();
+      }
+      expect(root.querySelector<HTMLElement>('.hud-score-flame')?.dataset.flameActive).toBe('false');
+
+      // Запускаем PLAY_HAND: на раздельных шагах CARD_TRIGGER и RELIC_TRIGGER
+      // формула растёт до 66 * 9 = 594 >= 300, срабатывает juice_up и горит пламя
       vi.useFakeTimers();
       findButtonByText(root.querySelector('[data-belt="hand"]')!, 'Сыграть')!.click();
 
@@ -1658,13 +1670,13 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
       const multValEl = root.querySelector<HTMLElement>('[data-ref="mult"]');
 
       expect(playCardSlot?.dataset.flightActive).toBe('true');
-      expect(chipsPill?.dataset.flightActive).toBe('true');
 
-      // Прокручиваем кадры NumberRoller на первом шаге и затем до RELIC_TRIGGER (350 мс при speed=2)
-      await vi.advanceTimersByTimeAsync(150);
+      // Прокручиваем вступительную паузу (при speed=2 ~651мс), затем 1-й шаг CARD_TRIGGER (+11) и затем до RELIC_TRIGGER (~1984мс)
+      await vi.advanceTimersByTimeAsync(800);
+      expect(chipsPill?.dataset.flightActive).toBe('true');
       expect(Number(chipsValEl?.textContent)).toBeGreaterThan(5);
 
-      await vi.advanceTimersByTimeAsync(200);
+      await vi.advanceTimersByTimeAsync(1350);
       stepAllFrames(16);
 
       const flameActive = root.querySelector<HTMLElement>('.hud-score-flame');
@@ -1672,7 +1684,7 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
       expect(Number(multValEl?.textContent)).toBeGreaterThanOrEqual(5);
 
       // Завершаем оставшиеся шаги TracePlayer -> переход в cashout гасит пламя
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(4000);
       await flushMicrotasks();
 
       expect(mounted.getState().phase).toBe('cashout');
@@ -1788,7 +1800,7 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
           for (const [, cb] of batch) cb(fxNowMs);
         };
 
-        const mounted = mountBaliteApp(root, {
+        mounted = mountBaliteApp(root, {
           bridge: mock.bridge,
           initialNowMs: () => nowMs,
           numberRollerOptions: {
@@ -1830,7 +1842,7 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
         stepFx(16);
         expect(arcCalls).toBeGreaterThan(0);
 
-        // 2. Выбираем карту в руке -> счётчик Сила (chips) катится плавно через numberRoller, а не прыгает
+        // 2. Выбираем карту в руке -> счётчик Сила (chips) катится плавно через numberRoller (300мс)
         root.querySelector<HTMLElement>('[data-belt="hand"] [data-card-id="glass_ace"]')!.click();
         const chipsElBefore = root.querySelector<HTMLElement>('[data-ref="chips"]')!;
         expect(Number(chipsElBefore.textContent)).toBe(0);
@@ -1844,11 +1856,11 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
         // 3. Играем руку (пробиваем порог и выходим в cashout) -> проверяем построчный кэшаут
         vi.useFakeTimers();
         findButtonByText(root.querySelector('[data-belt="hand"]')!, 'Сыграть')!.click();
-        await vi.advanceTimersByTimeAsync(4500);
+        await vi.advanceTimersByTimeAsync(7000);
         await flushMicrotasks();
 
-        // Пока роллер докручивает score, догоняем кадры и переходим в cashout
-        stepRoller(400);
+        // Догоняем перекат scoreRoller (500мс) и переходим к старту строк кэшаута (1-я строка на 400мс)
+        stepRoller(550);
         expect(mounted.getState().phase).toBe('cashout');
 
         const cashoutRows = Array.from(root.querySelectorAll<HTMLElement>('.cashout-row'));
@@ -1856,8 +1868,8 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
         expect(cashoutRows[0]?.dataset.cashoutRevealed).toBe('true');
         expect(cashoutRows[5]?.dataset.cashoutRevealed).toBe('false');
 
-        // Продвигаем таймлайн кэшаута на один шаг
-        stepRoller(160);
+        // Продвигаем таймлайн кэшаута по каноничным паузам оригинала (монеты + разделитель + 700мс) до следующей строки
+        stepRoller(2600);
         expect(cashoutRows[1]?.dataset.cashoutRevealed).toBe('true');
 
         // Клик по списку кэшаута мгновенно завершает оставшиеся строки
@@ -1874,6 +1886,7 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
 
         // Переходим к победному экрану через состояние забега? Проверим отдельный сценарий победы с confetti и разрушением ниже
         mounted.destroy();
+        mounted = null;
         expect(rollerFrames.size).toBe(0);
         expect(fxFrames.size).toBe(0);
         expect(root.querySelector('.fx-particle-canvas')).toBeNull();
@@ -1884,7 +1897,7 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
       } finally {
         ctxSpy.mockRestore();
       }
-    });
+    }, 15_000);
 
     it('пропускает кэшаут по клику, выпускает конфетти при победе и чистит частицы при destroy()', async () => {
       localStorage.clear();
@@ -1941,7 +1954,7 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
         let nextFxId = 1;
         const fxFrames = new Map<number, FrameRequestCallback>();
 
-        const mounted = mountBaliteApp(root, {
+        mounted = mountBaliteApp(root, {
           bridge: mock.bridge,
           initialNowMs: () => nowMs,
           particleCanvasOptions: {
@@ -1985,12 +1998,13 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
         expect(confettiRects).toBe(rectsBeforeReopen);
 
         mounted.destroy();
+        mounted = null;
         expect(fxFrames.size).toBe(0);
         localStorage.clear();
       } finally {
         ctxSpy.mockRestore();
       }
-    });
+    }, 15_000);
 
     it('выпускает кристальные осколки shatter на canvas при разрушении Хрустальной карты (CARD_SHATTER)', async () => {
       localStorage.clear();
@@ -2061,7 +2075,7 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
         let nextFxId = 1;
         const fxFrames = new Map<number, FrameRequestCallback>();
 
-        const mounted = mountBaliteApp(root, {
+        mounted = mountBaliteApp(root, {
           bridge: mock.bridge,
           initialNowMs: () => nowMs,
           particleCanvasOptions: {
@@ -2094,12 +2108,13 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
         expect(shardPolygons).toBeGreaterThan(0);
 
         mounted.destroy();
+        mounted = null;
         expect(fxFrames.size).toBe(0);
         localStorage.clear();
       } finally {
         ctxSpy.mockRestore();
       }
-    });
+    }, 15_000);
   });
 
   describe('Эпик 3: Админ-панель (?debug) и защита прод-сборки', () => {
@@ -2484,6 +2499,7 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
       const customDeck = [
         createPlayingCard({ id: 'af_as', suit: 'spades', rank: 14 }),
         createPlayingCard({ id: 'af_ah', suit: 'hearts', rank: 14 }),
+        createPlayingCard({ id: 'af_ac', suit: 'clubs', rank: 14 }),
         createPlayingCard({ id: 'af_kd', suit: 'diamonds', rank: 13 }),
         createPlayingCard({ id: 'af_2c', suit: 'clubs', rank: 2 }),
       ];
@@ -2491,10 +2507,10 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
         ...playing,
         deck: customDeck,
         handIds: customDeck.map((c) => c.id),
-        targetScore: 15,
+        targetScore: 30,
         score: 0,
         relics: [
-          // Старшая карта 1 уровня = 5*1 = 5 < 15 (пламя 0), Пара 1 уровня = 10*2 = 20 >= 15 (пламя >0)
+          // Пара = 10*2 = 20 < 30 (пламя 0), Тройка = 30*3 = 90 >= 30 (log5(90)-2 > 0, пламя > 0)
           createRelicInstance('j_joker', 'r_plain'),
         ],
       };
@@ -2512,33 +2528,36 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
         initialNowMs: () => nowMs,
         audio: spyAudio,
       });
-      await mounted.readyPromise;
+      try {
+        await mounted.readyPromise;
 
-      expect(spyAudio.playFlameThreshold).not.toHaveBeenCalled();
+        expect(spyAudio.playFlameThreshold).not.toHaveBeenCalled();
 
-      // Выбираем первого туза: порог ещё не пробит
-      root.querySelector<HTMLElement>('[data-belt="hand"] [data-card-id="af_as"]')?.click();
-      expect(spyAudio.playFlameThreshold).not.toHaveBeenCalled();
+        // Выбираем первого и второго туза (Пара 20 < 30): порог ещё не пробит
+        root.querySelector<HTMLElement>('[data-belt="hand"] [data-card-id="af_as"]')?.click();
+        root.querySelector<HTMLElement>('[data-belt="hand"] [data-card-id="af_ah"]')?.click();
+        expect(spyAudio.playFlameThreshold).not.toHaveBeenCalled();
 
-      // Выбираем второго туза: Пара пробивает targetScore=100 -> переход 0 -> >0, звук ровно 1 раз!
-      root.querySelector<HTMLElement>('[data-belt="hand"] [data-card-id="af_ah"]')?.click();
-      expect(spyAudio.playFlameThreshold).toHaveBeenCalledTimes(1);
+        // Выбираем третьего туза: Тройка (90 >= 30) пробивает targetScore -> переход 0 -> >0, звук ровно 1 раз!
+        root.querySelector<HTMLElement>('[data-belt="hand"] [data-card-id="af_ac"]')?.click();
+        expect(spyAudio.playFlameThreshold).toHaveBeenCalledTimes(1);
 
-      // Добавляем третью карту: пламя уже горит (>0 -> >0), повторно НЕ звучит!
-      root.querySelector<HTMLElement>('[data-belt="hand"] [data-card-id="af_kd"]')?.click();
-      expect(spyAudio.playFlameThreshold).toHaveBeenCalledTimes(1);
+        // Добавляем четвёртую карту: пламя уже горит (>0 -> >0), повторно НЕ звучит!
+        root.querySelector<HTMLElement>('[data-belt="hand"] [data-card-id="af_kd"]')?.click();
+        expect(spyAudio.playFlameThreshold).toHaveBeenCalledTimes(1);
 
-      // Снимаем второго туза -> пламя падает в 0, затем снова выбираем -> снова 1 раз
-      root.querySelector<HTMLElement>('[data-belt="hand"] [data-card-id="af_ah"]')?.click();
-      root.querySelector<HTMLElement>('[data-belt="hand"] [data-card-id="af_ah"]')?.click();
-      expect(spyAudio.playFlameThreshold).toHaveBeenCalledTimes(2);
+        // Снимаем третьего туза -> пламя падает в 0, затем снова выбираем -> снова 1 раз
+        root.querySelector<HTMLElement>('[data-belt="hand"] [data-card-id="af_ac"]')?.click();
+        root.querySelector<HTMLElement>('[data-belt="hand"] [data-card-id="af_ac"]')?.click();
+        expect(spyAudio.playFlameThreshold).toHaveBeenCalledTimes(2);
 
-      // Проверим CONSUMABLE_TRIGGER во время PLAY_HAND (через Синий знак -> создаёт или срабатывает) — если playForTraceEvent получил CONSUMABLE_TRIGGER, дубля нет
-      spyAudio.playForTraceEvent({ type: 'CONSUMABLE_TRIGGER', consumableId: 'c_mercury' }, 0);
-      expect(spyAudio.playConsumable).toHaveBeenCalledTimes(1);
-      expect(spyAudio.playConsumable).toHaveBeenLastCalledWith('celestial');
-
-      mounted.destroy();
+        // Проверим CONSUMABLE_TRIGGER во время PLAY_HAND (через Синий знак -> создаёт или срабатывает) — если playForTraceEvent получил CONSUMABLE_TRIGGER, дубля нет
+        spyAudio.playForTraceEvent({ type: 'CONSUMABLE_TRIGGER', consumableId: 'c_mercury' }, 0);
+        expect(spyAudio.playConsumable).toHaveBeenCalledTimes(1);
+        expect(spyAudio.playConsumable).toHaveBeenLastCalledWith('celestial');
+      } finally {
+        mounted.destroy();
+      }
     });
   });
 
@@ -3693,8 +3712,8 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
       root.querySelector<HTMLElement>(`.hand-card-slot[data-card-id="${ace.id}"]`)?.click();
       findButtonByText(root, 'Сыграть')?.click();
 
-      // Проигрываем TracePlayer до перехода в cashout (960 + 800 + 640 ~ 2400мс)
-      await vi.advanceTimersByTimeAsync(2600);
+      // Проигрываем вступительные шаги + TracePlayer до перехода в cashout (~5019мс на 1x, enterDelayMs ~1400мс)
+      await vi.advanceTimersByTimeAsync(5200);
       await flushMicrotasks(12);
 
       expect(mounted.getState().phase).toBe('cashout');
@@ -3712,10 +3731,10 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
       const firstRowBeforeWait = root.querySelector<HTMLElement>('.cashout-row');
       expect(firstRowBeforeWait?.dataset.cashoutRevealed).toBe('false');
 
-      // После улёта карт и паузы запускается таймлайн кэшаута и раскрывает первую строку
+      // После улёта карт и паузы запускается таймлайн кэшаута и раскрывает первую строку (через 400мс на 1x)
       await vi.advanceTimersByTimeAsync(enterDelayMs + 220);
-      stepRoller(32);
+      stepRoller(420);
       expect(firstRowBeforeWait?.dataset.cashoutRevealed).toBe('true');
-    });
+    }, 15_000);
   });
 });

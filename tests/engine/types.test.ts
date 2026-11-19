@@ -90,16 +90,20 @@ describe('Канонические перечисления и таблицы и
     expect(DECK_IDS).toEqual(['b_red', 'b_blue', 'b_yellow', 'b_black']);
     expect(RELIC_HOOK_NAMES).toEqual([
       'onBlindSelect',
+      'onPreDiscard',
       'onDiscard',
       'onBeforeScore',
+      'onDebuffedHand',
       'onScoreCard',
       'onScoreCardRepetition',
       'onHoldCard',
       'onHoldCardRepetition',
       'onScoreRelic',
+      'onAfterScore',
       'onRoundEnd',
       'onShopReroll',
       'onCardAdded',
+      'onRemovePlayingCards',
       'onUseConsumable',
     ]);
     expect(BLIND_KINDS).toEqual(['small', 'big', 'boss']);

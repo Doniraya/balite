@@ -886,7 +886,7 @@ describe('Конечный автомат забега Balite (Stage 5B: run.ts 
     ).map((c) => c.id);
     expect(afterPlaySuit.handIds).toEqual(expectedAfterPlaySuit);
 
-    // При добавлении карт в руку от расходника (c_cryptid) рука также остаётся отсортированной
+    // A16: при использовании расходника (c_cryptid) рука НЕ пересортировывается: исходный порядок сохраняется, а копии добавляются в конец
     const withCryptid: RunState = {
       ...afterPlaySuit,
       consumables: [createConsumableInstance('c_cryptid', 'cons_cryptid', 'base')],
@@ -898,11 +898,13 @@ describe('Конечный автомат забега Balite (Stage 5B: run.ts 
       targetCardIds: [targetCardId],
     }).nextState;
     expect(afterCryptid.handIds.length).toBe(withCryptid.handIds.length + 2);
-    const suitMap3 = new Map(afterCryptid.deck.map((c) => [c.id, c]));
-    const expectedAfterCryptid = sortCardsBySuit(
-      afterCryptid.handIds.map((id) => suitMap3.get(id)!),
-    ).map((c) => c.id);
-    expect(afterCryptid.handIds).toEqual(expectedAfterCryptid);
+    expect(afterCryptid.handIds.slice(0, withCryptid.handIds.length)).toEqual(withCryptid.handIds);
+    const targetCard = afterCryptid.deck.find((c) => c.id === targetCardId)!;
+    for (const copyId of afterCryptid.handIds.slice(withCryptid.handIds.length)) {
+      const copyCard = afterCryptid.deck.find((c) => c.id === copyId)!;
+      expect(copyCard.suit).toBe(targetCard.suit);
+      expect(copyCard.rank).toBe(targetCard.rank);
+    }
   });
 
   it('REVIVE_RUN 1 раз за забег возвращает из game_over в бой с +1 рукой, перетасовкой сброса и учётом правил Босса', () => {
@@ -1018,5 +1020,340 @@ describe('Конечный автомат забега Balite (Stage 5B: run.ts 
     const secondFree = dispatch(afterFree.nextState, { type: 'FREE_REROLL_SHOP' });
     expect(secondFree.nextState).toBe(afterFree.nextState);
     expect(secondFree.events).toEqual([]);
+  });
+
+  it('A2, A3, A12, A15: REROLL_BOSS при current Боссе, мгновенное расширение Overstock, порядок Босс->Реликвия и $0/долг в магазине', () => {
+    // A2: v_directors_cut позволяет перероллить Босса, когда Small и Big пройдены/пропущены и Босс стал current
+    const base = createInitialRunState('b_red', 'A2_A12_A15');
+    const currentBossState: RunState = {
+      ...base,
+      dollars: 15,
+      charters: ['v_directors_cut'],
+      currentBlindIndex: 2,
+      anteBlinds: [
+        { ...base.anteBlinds[0], status: 'skipped' },
+        { ...base.anteBlinds[1], status: 'skipped' },
+        { ...base.anteBlinds[2], status: 'current', bossId: 'bl_hook', targetScore: 600 },
+      ],
+      targetScore: 600,
+    };
+    const rerolledBoss = dispatch(currentBossState, { type: 'REROLL_BOSS' }).nextState;
+    expect(rerolledBoss.dollars).toBe(5);
+    expect(rerolledBoss.bossRerollsThisAnte).toBe(1);
+    expect(rerolledBoss.anteBlinds[2].bossId).not.toBe('bl_hook');
+    expect(rerolledBoss.targetScore).toBe(rerolledBoss.anteBlinds[2].targetScore);
+
+    // A12: на SELECT_BLIND сначала срабатывает Босс (BOSS_TRIGGER), затем onBlindSelect Реликвии (j_ceremonial -> RELIC_DESTROYED)
+    const manacleWithDagger: RunState = {
+      ...currentBossState,
+      anteBlinds: [
+        currentBossState.anteBlinds[0],
+        currentBossState.anteBlinds[1],
+        { ...currentBossState.anteBlinds[2], bossId: 'bl_manacle', targetScore: 600 },
+      ],
+      relics: [
+        createRelicInstance('j_ceremonial', 'r_dagger'),
+        createRelicInstance('j_joker', 'r_victim'),
+      ],
+    };
+    const battleRes = dispatch(manacleWithDagger, { type: 'SELECT_BLIND' });
+    const bossIdx = battleRes.events.findIndex((e) => e.type === 'BOSS_TRIGGER' && e.bossId === 'bl_manacle');
+    const daggerIdx = battleRes.events.findIndex((e) => e.type === 'RELIC_DESTROYED' && e.reason === 'ceremonial');
+    expect(bossIdx).toBeGreaterThanOrEqual(0);
+    expect(daggerIdx).toBeGreaterThan(bossIdx);
+
+    // A3 + A15: в открытом магазине покупка v_overstock_norm сразу добавляет 3-й товар,
+    // а при отрицательном балансе проходят $0 покупки/бустеры и покупки в пределах bankruptAt
+    const fighting = dispatch(base, { type: 'SELECT_BLIND' }).nextState;
+    const cashout = dispatch(
+      { ...fighting, score: fighting.targetScore },
+      { type: 'PLAY_HAND', cardIds: fighting.handIds.slice(0, 1) },
+    ).nextState;
+    const shopEntered = dispatch(cashout, { type: 'CLAIM_CASHOUT' }).nextState;
+    const overstockReady: RunState = {
+      ...shopEntered,
+      dollars: 30,
+      shop: {
+        ...shopEntered.shop!,
+        voucher: { uid: 'voucher_overstock', charterId: 'v_overstock_norm', cost: 10, baseCost: 10, sold: false },
+      },
+    };
+    const initialCount = overstockReady.shop!.offers.length;
+    const afterOverstock = dispatch(overstockReady, { type: 'BUY_CHARTER' }).nextState;
+    expect(afterOverstock.shopSlots).toBe(3);
+    expect(afterOverstock.shop!.offers).toHaveLength(initialCount + 1);
+
+    // A15: отрицательный баланс разрешает $0 товар и $0 пак, а с bankruptAt = -20 разрешает покупку за $5
+    const debtShop: RunState = {
+      ...afterOverstock,
+      dollars: -5,
+      shop: {
+        offers: [
+          {
+            uid: 'free_j',
+            kind: 'relic',
+            relic: createRelicInstance('j_joker', 'rf'),
+            cost: 0,
+            baseCost: 2,
+            sold: false,
+          },
+          {
+            uid: 'paid_5',
+            kind: 'consumable',
+            consumable: createConsumableInstance('c_pluto', 'cp'),
+            cost: 5,
+            baseCost: 5,
+            sold: false,
+          },
+        ],
+        voucher: null,
+        packs: [
+          {
+            uid: 'free_p',
+            packId: 'p_arcana_normal',
+            type: 'arcana',
+            size: 'normal',
+            cost: 0,
+            baseCost: 4,
+            totalCards: 3,
+            chooseCount: 1,
+            purchased: false,
+          },
+        ],
+        rerollCost: 5,
+        tempRerollCost: null,
+        rerollsUsedThisShop: 0,
+      },
+    };
+    const boughtFree = dispatch(debtShop, { type: 'BUY_SHOP_OFFER', offerUid: 'free_j' }).nextState;
+    expect(boughtFree.relics).toHaveLength(1);
+    const blockedPaid = dispatch(boughtFree, { type: 'BUY_SHOP_OFFER', offerUid: 'paid_5' });
+    expect(blockedPaid.nextState).toBe(boughtFree);
+    const creditPaid = dispatch(
+      { ...boughtFree, bankruptAt: -20 },
+      { type: 'BUY_SHOP_OFFER', offerUid: 'paid_5' },
+    ).nextState;
+    expect(creditPaid.dollars).toBe(-10);
+    const openedFreePack = dispatch(creditPaid, { type: 'OPEN_PACK', packUid: 'free_p' }).nextState;
+    expect(openedFreePack.phase).toBe('booster');
+  });
+
+  it('A10, A11, A16: game_over при handSize 0/пустой руке, ранний рост ante после Босса и бустерная рука без лишней пересортировки/шаффла', () => {
+    // A10 (1): bl_manacle при handSize = 1 приводит к немедленному game_over при входе в бой
+    const start = createInitialRunState('b_red', 'A10_A11_A16');
+    const manacleOneHand: RunState = {
+      ...start,
+      handSize: 1,
+      currentBlindIndex: 2,
+      anteBlinds: [
+        { ...start.anteBlinds[0], status: 'defeated' },
+        { ...start.anteBlinds[1], status: 'defeated' },
+        { ...start.anteBlinds[2], bossId: 'bl_manacle', status: 'current', targetScore: 600 },
+      ],
+    };
+    const manacleLost = dispatch(manacleOneHand, { type: 'SELECT_BLIND' }).nextState;
+    expect(manacleLost.phase).toBe('game_over');
+
+    // A10 (2): при handsLeft > 0, если drawPileIds пуст и сыграны/сброшены все карты из руки, сразу game_over
+    const fighting = dispatch(start, { type: 'SELECT_BLIND' }).nextState;
+    const oneCardLeftPlay: RunState = {
+      ...fighting,
+      handsLeft: 3,
+      drawPileIds: [],
+      handIds: fighting.handIds.slice(0, 1),
+      targetScore: 999_999,
+    };
+    expect(
+      dispatch(oneCardLeftPlay, {
+        type: 'PLAY_HAND',
+        cardIds: oneCardLeftPlay.handIds,
+      }).nextState.phase,
+    ).toBe('game_over');
+    expect(
+      dispatch(oneCardLeftPlay, {
+        type: 'DISCARD_CARDS',
+        cardIds: oneCardLeftPlay.handIds,
+      }).nextState.phase,
+    ).toBe('game_over');
+
+    // A11: победа над Боссом Этапа 1 сразу повышает ante до 2 перед cashout и shop, а NEXT_ROUND оставляет ante = 2
+    const boss1Fight = dispatch(
+      {
+        ...start,
+        currentBlindIndex: 2,
+        anteBlinds: [
+          { ...start.anteBlinds[0], status: 'defeated' },
+          { ...start.anteBlinds[1], status: 'defeated' },
+          { ...start.anteBlinds[2], status: 'current', bossId: 'bl_hook', targetScore: 600 },
+        ],
+      },
+      { type: 'SELECT_BLIND' },
+    ).nextState;
+    const boss1Won = dispatch(
+      { ...boss1Fight, score: 600 },
+      { type: 'PLAY_HAND', cardIds: boss1Fight.handIds.slice(0, 1) },
+    ).nextState;
+    expect(boss1Won.phase).toBe('cashout');
+    expect(boss1Won.ante).toBe(2);
+    const boss1Shop = dispatch(boss1Won, { type: 'CLAIM_CASHOUT' }).nextState;
+    expect(boss1Shop.phase).toBe('shop');
+    expect(boss1Shop.ante).toBe(2);
+    const boss1Next = dispatch(boss1Shop, { type: 'NEXT_ROUND' }).nextState;
+    expect(boss1Next.phase).toBe('blind_select');
+    expect(boss1Next.ante).toBe(2);
+    expect(boss1Next.currentBlindIndex).toBe(0);
+
+    // A11 (Этап 8 -> victory при ante 8 -> CONTINUE_ENDLESS -> ante 9 в cashout, shop и blind_select)
+    const boss8Fight: RunState = {
+      ...boss1Fight,
+      ante: 8,
+      score: 100_000,
+      targetScore: 100_000,
+    };
+    const victoryState = dispatch(boss8Fight, {
+      type: 'PLAY_HAND',
+      cardIds: boss8Fight.handIds.slice(0, 1),
+    }).nextState;
+    expect(victoryState.phase).toBe('victory');
+    expect(victoryState.ante).toBe(8);
+    const endlessCashout = dispatch(victoryState, { type: 'CONTINUE_ENDLESS' }).nextState;
+    expect(endlessCashout.phase).toBe('cashout');
+    expect(endlessCashout.ante).toBe(9);
+    const endlessShop = dispatch(endlessCashout, { type: 'CLAIM_CASHOUT' }).nextState;
+    expect(endlessShop.ante).toBe(9);
+    const endlessNext = dispatch(endlessShop, { type: 'NEXT_ROUND' }).nextState;
+    expect(endlessNext.phase).toBe('blind_select');
+    expect(endlessNext.ante).toBe(9);
+
+    // A16: (1) c_strength не пересортировывает руку в бою; (2) два бустера в одном магазине и два tag_charm сдают следующие карты из drawPileIds
+    const sortedSuit = dispatch(fighting, { type: 'SORT_HAND', by: 'rank' }).nextState;
+    const lowestCardId = sortedSuit.handIds[sortedSuit.handIds.length - 1]!;
+    const withStrength: RunState = {
+      ...sortedSuit,
+      consumables: [createConsumableInstance('c_strength', 'c_str')],
+    };
+    const afterStrength = dispatch(withStrength, {
+      type: 'USE_CONSUMABLE',
+      consumableUid: 'c_str',
+      targetCardIds: [lowestCardId],
+    }).nextState;
+    // Порядок ID в руке остаётся точно таким же, карта остаётся на последнем месте
+    expect(afterStrength.handIds).toEqual(sortedSuit.handIds);
+
+    // Два Arcana пака в одном магазине берут 1..8, затем 9..16 из drawPileIds
+    const twoPacksShop: RunState = {
+      ...boss1Shop,
+      dollars: 50,
+      shop: {
+        ...boss1Shop.shop!,
+        packs: [
+          {
+            uid: 'pack_1',
+            packId: 'p_arcana_normal',
+            type: 'arcana',
+            size: 'normal',
+            cost: 4,
+            baseCost: 4,
+            totalCards: 3,
+            chooseCount: 1,
+            purchased: false,
+          },
+          {
+            uid: 'pack_2',
+            packId: 'p_arcana_normal',
+            type: 'arcana',
+            size: 'normal',
+            cost: 4,
+            baseCost: 4,
+            totalCards: 3,
+            chooseCount: 1,
+            purchased: false,
+          },
+        ],
+      },
+    };
+    const first8Ids = twoPacksShop.drawPileIds.slice(0, 8);
+    const next8Ids = twoPacksShop.drawPileIds.slice(8, 16);
+    const open1 = dispatch(twoPacksShop, { type: 'OPEN_PACK', packUid: 'pack_1' }).nextState;
+    expect(new Set(open1.booster?.drawnHandCardIds)).toEqual(new Set(first8Ids));
+    const closed1 = dispatch(open1, { type: 'SKIP_BOOSTER' }).nextState;
+    // Выжившие карты вернулись в конец drawPileIds
+    expect(closed1.drawPileIds.slice(-8)).toEqual(open1.booster!.drawnHandCardIds);
+    const open2 = dispatch(closed1, { type: 'OPEN_PACK', packUid: 'pack_2' }).nextState;
+    expect(new Set(open2.booster?.drawnHandCardIds)).toEqual(new Set(next8Ids));
+
+    // Два tag_charm от tag_double на SKIP_BLIND также последовательно сдают первые 8, затем следующие 8 карт
+    const doubleCharmStart: RunState = {
+      ...createInitialRunState('b_red', 'DOUBLE_CHARM_A16'),
+      pendingTags: ['tag_double'],
+    };
+    const charmSetup: RunState = {
+      ...doubleCharmStart,
+      anteBlinds: [
+        { ...doubleCharmStart.anteBlinds[0], skipTagId: 'tag_charm' },
+        doubleCharmStart.anteBlinds[1],
+        doubleCharmStart.anteBlinds[2],
+      ],
+    };
+    const expectedFirst8 = new Set(charmSetup.drawPileIds.slice(0, 8));
+    const expectedSecond8 = new Set(charmSetup.drawPileIds.slice(8, 16));
+    const tagOpen1 = dispatch(charmSetup, { type: 'SKIP_BLIND' }).nextState;
+    expect(tagOpen1.phase).toBe('booster');
+    expect(new Set(tagOpen1.booster?.drawnHandCardIds)).toEqual(expectedFirst8);
+    const tagOpen2 = dispatch(tagOpen1, { type: 'SKIP_BOOSTER' }).nextState;
+    expect(tagOpen2.phase).toBe('booster');
+    expect(new Set(tagOpen2.booster?.drawnHandCardIds)).toEqual(expectedSecond8);
+  });
+
+  it('B3 и B4: tag_juggle откладывается в pendingTags до следующего SELECT_BLIND, а DISCARD_CARDS обрабатывает карты поштучно', () => {
+    // B3: пропуск Блайнда с tag_juggle (и tag_double) кладёт tag_juggle в pendingTags без немедленного изменения tempHandSizeBonus
+    const init = createInitialRunState('b_red', 'JUGGLE_DEFER_B3');
+    const setup: RunState = {
+      ...init,
+      pendingTags: ['tag_double'],
+      anteBlinds: [
+        { ...init.anteBlinds[0], skipTagId: 'tag_juggle' },
+        init.anteBlinds[1],
+        init.anteBlinds[2],
+      ],
+    };
+
+    const skipped = dispatch(setup, { type: 'SKIP_BLIND' });
+    expect(skipped.nextState.tempHandSizeBonus).toBe(0);
+    expect(skipped.nextState.pendingTags).toEqual(['tag_juggle', 'tag_juggle']);
+
+    // Входим в следующий (Big) Блайнд -> оба tag_juggle срабатывают и дают +6 к размеру руки на бой
+    const entered = dispatch(skipped.nextState, { type: 'SELECT_BLIND' });
+    expect(entered.nextState.phase).toBe('playing');
+    expect(entered.nextState.pendingTags).toEqual([]);
+    expect(entered.nextState.tempHandSizeBonus).toBe(6);
+    expect(entered.nextState.handIds).toHaveLength(entered.nextState.handSize + 6);
+    expect(
+      entered.events.filter((e) => e.type === 'TAG_TRIGGER' && e.tagId === 'tag_juggle'),
+    ).toHaveLength(2);
+
+    // B4: при DISCARD_CARDS из нескольких карт с Лиловой печатью при 1 свободном слоте расходников
+    // карты обрабатываются последовательно (1-я создаёт Свиток, 2-я уже не помещается)
+    const purple1 = createPlayingCard({ id: 'pur1', suit: 'spades', rank: 9, seal: 'purple' });
+    const purple2 = createPlayingCard({ id: 'pur2', suit: 'hearts', rank: 8, seal: 'purple' });
+    const keep1 = createPlayingCard({ id: 'keep1', suit: 'clubs', rank: 2 });
+    const dummyConsumable = createConsumableInstance('c_pluto', 'cons_pre');
+    const discardState: RunState = {
+      ...entered.nextState,
+      maxConsumables: 2,
+      consumables: [dummyConsumable],
+      discardsLeft: 2,
+      deck: [purple1, purple2, keep1],
+      handIds: ['pur1', 'pur2', 'keep1'],
+      drawPileIds: [],
+      discardPileIds: [],
+    };
+    const discarded = dispatch(discardState, {
+      type: 'DISCARD_CARDS',
+      cardIds: ['pur1', 'pur2'],
+    });
+    expect(discarded.nextState.consumables).toHaveLength(2);
+    expect(discarded.nextState.consumables[1]?.kind).toBe('scroll');
+    expect(discarded.nextState.discardPileIds).toEqual(['pur1', 'pur2']);
   });
 });

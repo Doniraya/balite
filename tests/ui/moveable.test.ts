@@ -3,6 +3,7 @@ import {
   createMoveableState,
   hardSetTarget,
   juiceUp,
+  setMoveableZoom,
   setTarget,
   stepMoveable,
   type MoveableState,
@@ -72,7 +73,7 @@ describe('Пружинный движок Moveable (T -> VT)', () => {
     expect(final.velocity).toEqual({ x: 0, y: 0, scale: 0, r: 0 });
   });
 
-  it('ускоряет сближение пропорционально speedMultiplier (0.5x < 1x < 2x < 4x)', () => {
+  it('работает строго по реальному времени независимо от speedMultiplier (C1)', () => {
     const base = setTarget(createMoveableState({ x: 0, y: 0 }), { x: 300, y: 0 });
 
     const step05 = stepMoveable(base, 1 / 60, 0.5);
@@ -80,9 +81,9 @@ describe('Пружинный движок Moveable (T -> VT)', () => {
     const step2 = stepMoveable(base, 1 / 60, 2);
     const step4 = stepMoveable(base, 1 / 60, 4);
 
-    expect(step05.vt.x).toBeLessThan(step1.vt.x);
-    expect(step1.vt.x).toBeLessThan(step2.vt.x);
-    expect(step2.vt.x).toBeLessThan(step4.vt.x);
+    expect(step05.vt.x).toBeCloseTo(step1.vt.x, 6);
+    expect(step1.vt.x).toBeCloseTo(step2.vt.x, 6);
+    expect(step2.vt.x).toBeCloseTo(step4.vt.x, 6);
 
     const countFramesToSettle = (speed: number): number => {
       let cur = base;
@@ -98,10 +99,10 @@ describe('Пружинный движок Moveable (T -> VT)', () => {
     const settle2 = countFramesToSettle(2);
     const settle4 = countFramesToSettle(4);
 
-    expect(settle4).toBeLessThan(settle2);
-    expect(settle2).toBeLessThan(settle1);
-    expect(settle1).toBeLessThan(settle05);
-    expect(settle05).toBeLessThan(300);
+    expect(settle05).toBe(settle1);
+    expect(settle1).toBe(settle2);
+    expect(settle2).toBe(settle4);
+    expect(settle1).toBeLessThan(300);
   });
 
   it('защищается от больших, отрицательных и NaN значений dtSeconds (clamp)', () => {
@@ -157,5 +158,34 @@ describe('Пружинный движок Moveable (T -> VT)', () => {
     expect(stepped.vt).toEqual(moved.t);
     expect(stepped.velocity).toEqual({ x: 0, y: 0, scale: 0, r: 0 });
     expect(stepped.juice).toBeNull();
+  });
+
+  it('не обрезает аэродинамический наклон полёта на 0.35 рад и поддерживает пружинный hover/drag zoom (C2)', () => {
+    // Быстрый перелёт на большое расстояние даёт пиковый наклон больше прежнего ограничения 0.35 рад
+    const fastFlight = setTarget(createMoveableState({ x: 0, y: 0 }), { x: 1600, y: 0 });
+    const trace = simulateFrames(fastFlight, 25, 1 / 60, 1);
+    const peakTilt = Math.max(...trace.map((frame) => Math.abs(frame.vt.r)));
+    expect(peakTilt).toBeGreaterThan(0.5);
+
+    // Пружинный зум (+0.05 при hover и +0.10 при drag, суммарно +0.15)
+    let zoomed = setMoveableZoom(createMoveableState({ scale: 1 }), {
+      enabled: true,
+      hover: true,
+      drag: false,
+    });
+    expect(zoomed.settled).toBe(false);
+    zoomed = simulateFrames(zoomed, 90, 1 / 60, 1).at(-1)!;
+    expect(zoomed.settled).toBe(true);
+    expect(zoomed.vt.scale).toBeCloseTo(1.05, 4);
+
+    zoomed = setMoveableZoom(zoomed, { drag: true });
+    zoomed = simulateFrames(zoomed, 90, 1 / 60, 1).at(-1)!;
+    expect(zoomed.settled).toBe(true);
+    expect(zoomed.vt.scale).toBeCloseTo(1.15, 4);
+
+    zoomed = setMoveableZoom(zoomed, { hover: false, drag: false });
+    zoomed = simulateFrames(zoomed, 90, 1 / 60, 1).at(-1)!;
+    expect(zoomed.settled).toBe(true);
+    expect(zoomed.vt.scale).toBeCloseTo(1, 4);
   });
 });

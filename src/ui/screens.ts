@@ -2,8 +2,10 @@ import './screens.css';
 import {
   BOSS_DEFINITIONS,
   DECK_IDS,
+  canAffordCost,
   canUseConsumable,
   evaluatePokerHand,
+  formatBalatroNumber,
   getRelicDefinition,
   getRunEndSummary,
   isCollectionItemDiscovered,
@@ -37,6 +39,14 @@ import {
   renderPlayingCardFrame,
 } from './cardFrame';
 import { getRelicLocParams } from './inspector';
+import {
+  createMoveableState,
+  hardSetTarget,
+  setMoveableZoom,
+  setTarget,
+  stepMoveable,
+  type MoveableState,
+} from './moveable';
 import { setTooltipData, type TooltipBadge, type TooltipData } from './tooltip';
 
 /**
@@ -579,7 +589,7 @@ export function buildBlindTooltip(
   }
   return {
     title: blindText.name,
-    subtitle: `${translator.t('ui.blindSelect.target', { score: targetScore })} • ${translator.t('ui.blindSelect.reward', { dollars: reward })}`,
+    subtitle: `${translator.t('ui.blindSelect.target', { score: formatBalatroNumber(targetScore) })} • ${translator.t('ui.blindSelect.reward', { dollars: reward })}`,
     description: blindText.description,
     badges,
     kind: kind === 'boss' ? 'boss' : 'blind',
@@ -693,6 +703,61 @@ function computeLiveCalculator(
   };
 }
 
+const RAD_TO_DEG = 180 / Math.PI;
+const BALATRO_ARC_PX_SCALE = 36;
+
+/**
+ * Вычисляет угол (deg) и вертикальное смещение дуги (px) по формулам CardArea оригинала (cardarea.lua:439-512).
+ */
+function computeCardFanGeometry(
+  index: number,
+  total: number,
+  mode: 'hand' | 'booster' | 'relic',
+): { readonly angleDeg: number; readonly arcY: number } {
+  const count = Math.max(1, total);
+  const normalizedOffset = (index - (count - 1) / 2) / count;
+  if (mode === 'booster') {
+    return {
+      angleDeg: 0.4 * normalizedOffset * RAD_TO_DEG,
+      arcY: Math.pow(Math.abs(1.3 * normalizedOffset), 2) * BALATRO_ARC_PX_SCALE,
+    };
+  }
+  if (mode === 'relic') {
+    return {
+      angleDeg: 0.1 * normalizedOffset * RAD_TO_DEG,
+      arcY: 0,
+    };
+  }
+  return {
+    angleDeg: 0.2 * normalizedOffset * RAD_TO_DEG,
+    arcY: Math.abs(0.5 * normalizedOffset) * BALATRO_ARC_PX_SCALE,
+  };
+}
+
+/**
+ * Пересчитывает data-index и CSS-переменные веера после живого переупорядочивания слотов.
+ */
+function updateContainerFanGeometry(containerEl: HTMLElement, total: number): void {
+  const mode: 'hand' | 'booster' | 'relic' | null = containerEl.classList.contains('hand-fan--booster')
+    ? 'booster'
+    : containerEl.classList.contains('hand-fan')
+      ? 'hand'
+      : null;
+
+  const children = Array.from(containerEl.children).slice(0, total) as HTMLElement[];
+  children.forEach((slotEl, idx) => {
+    slotEl.dataset.index = String(idx);
+    if (mode !== null) {
+      const geom = computeCardFanGeometry(idx, children.length, mode);
+      slotEl.style.setProperty('--fan-angle', `${geom.angleDeg.toFixed(2)}deg`);
+      slotEl.style.setProperty('--fan-offset-y', `${geom.arcY.toFixed(1)}px`);
+    } else if (slotEl.dataset.zone === 'relic') {
+      const geom = computeCardFanGeometry(idx, children.length, 'relic');
+      slotEl.style.setProperty('--fan-angle', `${geom.angleDeg.toFixed(2)}deg`);
+    }
+  });
+}
+
 /**
  * Вычисляет целевой индекс перестановки элемента при завершении горизонтального перетаскивания.
  */
@@ -746,7 +811,7 @@ interface SlotGestureOptions {
 }
 
 /**
- * Подключает PointerEvents-обработчики тапа, удержания и перетаскивания к слоту карты/предмета.
+ * Подключает PointerEvents-обработчики тапа, удержания и живого перетаскивания на Moveable (T -> VT).
  */
 function attachSlotGestures(options: SlotGestureOptions): void {
   const {
@@ -764,7 +829,9 @@ function attachSlotGestures(options: SlotGestureOptions): void {
 
   let isTracking = false;
   let startX = 0;
+  let startY = 0;
   let lastX = 0;
+  let lastY = 0;
   let moved = false;
   let holdFired = false;
   let suppressNextClick = false;
@@ -772,9 +839,118 @@ function attachSlotGestures(options: SlotGestureOptions): void {
   let suppressTimer: ReturnType<typeof setTimeout> | null = null;
   let startRect = new DOMRect();
 
+  // Состояние живого перетаскивания на Moveable и плавного разъезда соседних карт
+  let currentDragIndex = index;
+  let initialChildrenOrder: HTMLElement[] | null = null;
+  let hasRealLayout = false;
+  let dragOriginShiftX = 0;
+  let dragState: MoveableState | null = null;
+  let dragRafId: number | null = null;
+  let lastDragFrameMs: number | null = null;
+  const neighborStates = new Map<HTMLElement, MoveableState>();
+
   if (enableDrag) {
     el.style.touchAction = 'none';
   }
+
+  const isReducedMotion = (): boolean =>
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const stopDragVisuals = (): void => {
+    if (dragRafId !== null) {
+      if (typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(dragRafId);
+      }
+      dragRafId = null;
+    }
+    lastDragFrameMs = null;
+    el.style.removeProperty('transform');
+    delete el.dataset.flightActive;
+    for (const sibling of neighborStates.keys()) {
+      sibling.style.removeProperty('transform');
+      delete sibling.dataset.flightActive;
+    }
+    neighborStates.clear();
+    dragState = null;
+    dragOriginShiftX = 0;
+  };
+
+  const applyDragTransform = (state: MoveableState): void => {
+    const baseFanDeg = Number.parseFloat(el.style.getPropertyValue('--fan-angle')) || 0;
+    const baseFanY = Number.parseFloat(el.style.getPropertyValue('--fan-offset-y')) || 0;
+    const deg = baseFanDeg + state.vt.r * RAD_TO_DEG;
+    const ty = baseFanY + state.vt.y;
+    const parts = [`translate3d(${state.vt.x.toFixed(2)}px, ${ty.toFixed(2)}px, 0)`];
+    if (Math.abs(deg) > 0.01) {
+      parts.push(`rotate(${deg.toFixed(2)}deg)`);
+    }
+    if (Math.abs(state.vt.scale - 1) > 0.001) {
+      parts.push(`scale(${state.vt.scale.toFixed(4)})`);
+    }
+    el.style.transform = parts.join(' ');
+  };
+
+  const applyNeighborTransform = (sibling: HTMLElement, state: MoveableState): void => {
+    const baseFanDeg = Number.parseFloat(sibling.style.getPropertyValue('--fan-angle')) || 0;
+    const baseFanY = Number.parseFloat(sibling.style.getPropertyValue('--fan-offset-y')) || 0;
+    const deg = baseFanDeg + state.vt.r * RAD_TO_DEG;
+    const ty = baseFanY + state.vt.y;
+    const parts = [`translate3d(${state.vt.x.toFixed(2)}px, ${ty.toFixed(2)}px, 0)`];
+    if (Math.abs(deg) > 0.01) {
+      parts.push(`rotate(${deg.toFixed(2)}deg)`);
+    }
+    sibling.style.transform = parts.join(' ');
+  };
+
+  const stepDragLoop = (nowMs: number): void => {
+    dragRafId = null;
+    if (!isTracking && neighborStates.size === 0) {
+      return;
+    }
+
+    const dtSeconds =
+      lastDragFrameMs === null ? 1 / 60 : Math.max(1 / 240, (nowMs - lastDragFrameMs) / 1000);
+    lastDragFrameMs = nowMs;
+    const reduced = isReducedMotion();
+
+    if (dragState && isTracking && moved) {
+      const dx = lastX - startX - dragOriginShiftX;
+      const dy = clamp((lastY - startY) * 0.35, -24, 24) - 18;
+      dragState = setTarget(dragState, { x: dx, y: dy });
+      dragState = stepMoveable(dragState, dtSeconds, 1, reduced);
+      applyDragTransform(dragState);
+    }
+
+    for (const [sibling, state] of neighborStates) {
+      if (!sibling.isConnected) {
+        neighborStates.delete(sibling);
+        continue;
+      }
+      const next = stepMoveable(state, dtSeconds, 1, reduced);
+      if (next.settled) {
+        sibling.style.removeProperty('transform');
+        delete sibling.dataset.flightActive;
+        neighborStates.delete(sibling);
+      } else {
+        neighborStates.set(sibling, next);
+        applyNeighborTransform(sibling, next);
+      }
+    }
+
+    if ((isTracking && moved) || neighborStates.size > 0) {
+      if (typeof requestAnimationFrame === 'function') {
+        dragRafId = requestAnimationFrame(stepDragLoop);
+      }
+    }
+  };
+
+  const ensureDragLoop = (): void => {
+    if (dragRafId !== null || typeof requestAnimationFrame !== 'function') return;
+    lastDragFrameMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    dragRafId = requestAnimationFrame(stepDragLoop);
+  };
 
   const clearTimersAndListeners = (): void => {
     if (holdTimer !== null) {
@@ -799,8 +975,11 @@ function attachSlotGestures(options: SlotGestureOptions): void {
 
   const onWindowMove = (ev: Event): void => {
     if (!isTracking) return;
-    const clientX = (ev as PointerEvent).clientX ?? 0;
+    const pointerEv = ev as PointerEvent;
+    const clientX = pointerEv.clientX ?? 0;
+    const clientY = pointerEv.clientY ?? startY;
     lastX = clientX;
+    lastY = clientY;
     const dx = clientX - startX;
 
     if (!moved && Math.abs(dx) > DRAG_THRESHOLD_PX) {
@@ -811,11 +990,94 @@ function attachSlotGestures(options: SlotGestureOptions): void {
       }
       if (enableDrag) {
         el.classList.add('is-dragging');
+        el.dataset.flightActive = 'true';
+        const children = Array.from(containerEl.children).slice(0, total) as HTMLElement[];
+        initialChildrenOrder = children;
+        hasRealLayout =
+          startRect.width > 0 && children.some((child) => child.getBoundingClientRect().width > 0);
+        currentDragIndex = index;
+        dragOriginShiftX = 0;
+        dragState = setMoveableZoom(
+          createMoveableState({ x: dx, y: -18, scale: 1, r: 0 }),
+          { enabled: true, hover: false, drag: true },
+        );
+        if (!isReducedMotion()) {
+          ensureDragLoop();
+        }
       }
     }
 
     if (moved && enableDrag) {
-      el.style.setProperty('transform', `translateX(${dx}px) scale(1.06)`);
+      if (hasRealLayout && onReorder && total > 1) {
+        const siblings = Array.from(containerEl.children).slice(0, total) as HTMLElement[];
+        const projectedCenterX = startRect.left + startRect.width / 2 + dx;
+        let targetIdx = currentDragIndex;
+        let minDist = Number.POSITIVE_INFINITY;
+        siblings.forEach((sibling, idx) => {
+          const rect = sibling.getBoundingClientRect();
+          const center = rect.left + rect.width / 2;
+          const dist = Math.abs(projectedCenterX - center);
+          if (dist < minDist) {
+            minDist = dist;
+            targetIdx = idx;
+          }
+        });
+
+        if (targetIdx !== currentDragIndex) {
+          const beforeLeft = new Map<HTMLElement, number>();
+          for (const sibling of siblings) {
+            beforeLeft.set(sibling, sibling.getBoundingClientRect().left);
+          }
+
+          const targetNode = siblings[targetIdx];
+          if (targetNode) {
+            if (targetIdx > currentDragIndex) {
+              containerEl.insertBefore(el, targetNode.nextSibling);
+            } else {
+              containerEl.insertBefore(el, targetNode);
+            }
+            updateContainerFanGeometry(containerEl, total);
+
+            const afterElRect = el.getBoundingClientRect();
+            const newOriginShiftX = afterElRect.left - startRect.left;
+            const deltaShift = newOriginShiftX - dragOriginShiftX;
+            dragOriginShiftX = newOriginShiftX;
+            if (dragState) {
+              dragState = hardSetTarget(dragState, {
+                x: dragState.vt.x - deltaShift,
+                y: dragState.vt.y,
+                scale: dragState.vt.scale,
+                r: dragState.vt.r,
+              });
+              dragState = setMoveableZoom(dragState, { enabled: true, hover: false, drag: true });
+            }
+
+            const updatedSiblings = Array.from(containerEl.children).slice(0, total) as HTMLElement[];
+            for (const sibling of updatedSiblings) {
+              if (sibling === el) continue;
+              const prevLeft = beforeLeft.get(sibling);
+              if (prevLeft === undefined) continue;
+              const afterLeft = sibling.getBoundingClientRect().left;
+              const diffX = prevLeft - afterLeft;
+              if (Math.abs(diffX) >= 0.5 && !isReducedMotion()) {
+                let sState = createMoveableState({ x: diffX, y: 0, scale: 1, r: 0 });
+                sState = setTarget(sState, { x: 0, y: 0, scale: 1, r: 0 });
+                sibling.dataset.flightActive = 'true';
+                neighborStates.set(sibling, sState);
+                applyNeighborTransform(sibling, sState);
+              }
+            }
+            currentDragIndex = targetIdx;
+            if (!isReducedMotion()) {
+              ensureDragLoop();
+            }
+          }
+        }
+      }
+
+      if (!hasRealLayout || isReducedMotion()) {
+        el.style.setProperty('transform', `translateX(${(dx - dragOriginShiftX).toFixed(2)}px) scale(1.1)`);
+      }
     }
   };
 
@@ -824,16 +1086,30 @@ function attachSlotGestures(options: SlotGestureOptions): void {
     isTracking = false;
     clearTimersAndListeners();
     el.classList.remove('is-dragging');
-    el.style.removeProperty('transform');
+    const wasRealLayout = hasRealLayout;
+    const liveIndex = currentDragIndex;
+    const savedOrder = initialChildrenOrder;
+    hasRealLayout = false;
+    initialChildrenOrder = null;
+    stopDragVisuals();
 
     if (cancelled) {
+      if (wasRealLayout && savedOrder && savedOrder.length === total) {
+        const tailAnchor = Array.from(containerEl.children)[total] ?? null;
+        for (const node of savedOrder) {
+          containerEl.insertBefore(node, tailAnchor);
+        }
+        updateContainerFanGeometry(containerEl, total);
+      }
       resetSuppression();
       return;
     }
 
     const dx = lastX - startX;
     if (moved && enableDrag && onReorder && total > 1) {
-      const targetIndex = resolveDropIndex(containerEl, index, total, dx, startRect);
+      const targetIndex = wasRealLayout
+        ? liveIndex
+        : resolveDropIndex(containerEl, index, total, dx, startRect);
       resetSuppression();
       if (targetIndex !== index) {
         onReorder(index, targetIndex);
@@ -854,6 +1130,9 @@ function attachSlotGestures(options: SlotGestureOptions): void {
     if (typeof (ev as PointerEvent).clientX === 'number') {
       lastX = (ev as PointerEvent).clientX;
     }
+    if (typeof (ev as PointerEvent).clientY === 'number') {
+      lastY = (ev as PointerEvent).clientY;
+    }
     finishTracking(false);
   };
 
@@ -871,7 +1150,9 @@ function attachSlotGestures(options: SlotGestureOptions): void {
     moved = false;
     holdFired = false;
     startX = pointerEv.clientX ?? 0;
+    startY = pointerEv.clientY ?? 0;
     lastX = startX;
+    lastY = startY;
     startRect = el.getBoundingClientRect();
 
     if (holdDelayMs !== undefined && onHold) {
@@ -908,7 +1189,9 @@ function attachSlotGestures(options: SlotGestureOptions): void {
   el.addEventListener('keydown', onKeyDown);
 
   registerCleanup(() => {
+    isTracking = false;
     clearTimersAndListeners();
+    stopDragVisuals();
     if (suppressTimer !== null) {
       clearTimeout(suppressTimer);
       suppressTimer = null;
@@ -980,9 +1263,10 @@ function renderHudBelt(
     // Скрытые дежурные узлы для соблюдения контракта ScreenRefs на стартовом экране
     const standby = createEl('div', 'hud-refs-standby');
     standby.setAttribute('aria-hidden', 'true');
-    const chipsEl = createEl('span', undefined, String(calc.chips));
-    const multEl = createEl('span', undefined, String(calc.mult));
-    const scoreEl = createEl('span', undefined, String(calc.totalScore));
+    const chipsEl = createEl('span', undefined, formatBalatroNumber(calc.chips));
+    const multEl = createEl('span', undefined, formatBalatroNumber(calc.mult));
+    const scoreEl = createEl('span', undefined, formatBalatroNumber(calc.totalScore));
+    scoreEl.dataset.rawValue = String(calc.totalScore);
     const dollarsEl = createEl(
       'span',
       undefined,
@@ -1079,7 +1363,7 @@ function renderHudBelt(
   const targetRow = createEl('div', 'hud-boss-btn__target-row');
   targetRow.append(
     createEl('span', 'blind-card__score-gem', '◆'),
-    createEl('strong', 'hud-boss-btn__target-number', String(activeSlot.targetScore)),
+    createEl('strong', 'hud-boss-btn__target-number', formatBalatroNumber(activeSlot.targetScore)),
   );
   targetBox.append(
     createEl('span', 'hud-boss-btn__target-caption', translator.t('ui.blindSelect.minScore')),
@@ -1132,12 +1416,13 @@ function renderHudBelt(
   const calcCol = createEl('div', 'hud-calc-col');
   const scoreBox = createEl('div', 'hud-score-box');
   const scoreNumbers = createEl('div', 'hud-score-box__numbers');
-  const scoreEl = createEl('span', 'hud-score-box__value', String(calc.totalScore));
+  const scoreEl = createEl('span', 'hud-score-box__value', formatBalatroNumber(calc.totalScore));
   scoreEl.dataset.ref = 'score';
+  scoreEl.dataset.rawValue = String(calc.totalScore);
   const targetEl = createEl(
     'span',
     'hud-score-box__target',
-    `/ ${calc.targetScore}`,
+    `/ ${formatBalatroNumber(calc.targetScore)}`,
   );
   scoreNumbers.append(scoreEl, targetEl);
   scoreBox.append(
@@ -1155,7 +1440,7 @@ function renderHudBelt(
 
   const formula = createEl('div', 'hud-formula');
   const chipsPill = createEl('div', 'hud-pill hud-pill--chips');
-  const chipsEl = createEl('span', 'hud-pill__val', String(calc.chips));
+  const chipsEl = createEl('span', 'hud-pill__val', formatBalatroNumber(calc.chips));
   chipsEl.dataset.ref = 'chips';
   chipsPill.append(
     createEl('span', 'hud-pill__label', translator.t('ui.hud.powerShort')),
@@ -1163,7 +1448,7 @@ function renderHudBelt(
   );
 
   const multPill = createEl('div', 'hud-pill hud-pill--mult');
-  const multEl = createEl('span', 'hud-pill__val', String(calc.mult));
+  const multEl = createEl('span', 'hud-pill__val', formatBalatroNumber(calc.mult));
   multEl.dataset.ref = 'mult';
   multPill.append(
     createEl('span', 'hud-pill__label', translator.t('ui.hud.multShort')),
@@ -1287,6 +1572,8 @@ function renderInventoryBelt(ctx: RenderContext): HTMLElement {
     slot.dataset.relicUid = relic.uid;
     slot.dataset.zone = 'relic';
     slot.dataset.index = String(index);
+    const relicGeom = computeCardFanGeometry(index, state.relics.length, 'relic');
+    slot.style.setProperty('--fan-angle', `${relicGeom.angleDeg.toFixed(2)}deg`);
     if (isHighlighted) {
       slot.dataset.highlighted = 'true';
     }
@@ -1585,10 +1872,13 @@ function renderBlindSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void 
   const header = createEl('div', 'arena-header');
   header.append(createEl('h2', 'arena-title', boardTitle));
 
-  // Кнопка смены Босса доступна при наличии грамоты Указа смены врага (v_directors_cut)
+  // Кнопка смены Босса доступна при наличии грамоты Указа смены врага (v_directors_cut) вплоть до входа в бой с Боссом
   const bossSlot = state.anteBlinds[2];
-  if (state.charters.includes('v_directors_cut') && bossSlot.status === 'upcoming') {
-    const canReroll = state.dollars >= BOSS_REROLL_COST && state.bossRerollsThisAnte < 1;
+  if (
+    state.charters.includes('v_directors_cut') &&
+    (bossSlot.status === 'upcoming' || bossSlot.status === 'current')
+  ) {
+    const canReroll = canAffordCost(state, BOSS_REROLL_COST) && state.bossRerollsThisAnte < 1;
     header.append(
       createButton(
         translator.t('ui.actions.rerollBoss', { dollars: BOSS_REROLL_COST }),
@@ -1647,7 +1937,7 @@ function renderBlindSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void 
     const targetRow = createEl('div', 'blind-card__target-value-row');
     targetRow.append(
       createEl('span', 'blind-card__score-gem', '◆'),
-      createEl('strong', 'blind-card__target-number', String(slot.targetScore)),
+      createEl('strong', 'blind-card__target-number', formatBalatroNumber(slot.targetScore)),
     );
     targetBox.append(
       createEl('span', 'blind-card__target-caption', translator.t('ui.blindSelect.minScore')),
@@ -1938,16 +2228,17 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
   );
   if (shop) {
     const rerollCost = shop.tempRerollCost ?? shop.rerollCost;
+    const canAffordReroll = canAffordCost(state, rerollCost);
     headerActions.append(
       createButton(
         translator.t('ui.actions.rerollShop', { dollars: rerollCost }),
         'ui-btn--compact shop-reroll-btn',
         () => handlers.onCommand({ type: 'REROLL_SHOP' }),
-        state.dollars < rerollCost,
+        !canAffordReroll,
       ),
     );
     if (
-      state.dollars < rerollCost &&
+      !canAffordReroll &&
       !shop.adRerollUsed &&
       vm.canShowRewarded !== false &&
       handlers.onAdRerollShop
@@ -1982,7 +2273,7 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
       continue;
     }
 
-    const affordable = state.dollars >= offer.cost;
+    const affordable = canAffordCost(state, offer.cost);
     const slotBtn = createEl('button', 'shop-slot-btn interactive-slot');
     slotBtn.type = 'button';
     slotBtn.dataset.offerUid = offer.uid;
@@ -2062,7 +2353,7 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
   charterRow.append(createEl('span', 'shop-row__title', translator.t('ui.shop.charterTitle')));
   if (shop.voucher && !shop.voucher.sold) {
     const voucher = shop.voucher;
-    const affordable = state.dollars >= voucher.cost;
+    const affordable = canAffordCost(state, voucher.cost);
     const voucherBtn = createEl('button', 'shop-slot-btn interactive-slot');
     voucherBtn.type = 'button';
     voucherBtn.dataset.charterId = voucher.charterId;
@@ -2110,7 +2401,7 @@ function renderShopArena(ctx: RenderContext, arenaEl: HTMLElement): void {
       continue;
     }
 
-    const affordable = state.dollars >= pack.cost;
+    const affordable = canAffordCost(state, pack.cost);
     const packBtn = createEl('button', 'shop-slot-btn interactive-slot');
     packBtn.type = 'button';
     packBtn.dataset.packUid = pack.uid;
@@ -2350,9 +2641,10 @@ function renderRunEndArena(
   }
   card.append(cardHeader);
 
+  const formattedBestScore = formatBalatroNumber(summary.bestHandScore);
   const bestHandLabel = summary.bestHandType
-    ? `${summary.bestHandScore} (${translator.getHandText(summary.bestHandType).name})`
-    : String(summary.bestHandScore);
+    ? `${formattedBestScore} (${translator.getHandText(summary.bestHandType).name})`
+    : formattedBestScore;
   const mostPlayedLabel = summary.mostPlayedHand
     ? `${translator.getHandText(summary.mostPlayedHand.handType).name} (${summary.mostPlayedHand.count})`
     : translator.t('ui.runEnd.none', { count: 0 });
@@ -2761,11 +3053,10 @@ function renderHandBelt(ctx: RenderContext): HTMLElement {
   }
 
   const handIds = isBoosterHand ? state.booster!.drawnHandCardIds : state.handIds;
-  const fanEl = createEl('div', 'hand-fan hand-cards');
-  const midIndex = (handIds.length - 1) / 2;
-  const isDenseHand = handIds.length > 8;
-  const angleStep = isDenseHand ? 1.2 : 1.7;
-  const arcFactor = isDenseHand ? 0.55 : 0.85;
+  const fanEl = createEl(
+    'div',
+    `hand-fan hand-cards ${isBoosterHand ? 'hand-fan--booster' : ''}`.trim(),
+  );
   // Адаптивное перекрытие карт, чтобы 8–10+ карт веера помещались без горизонтального и вертикального скроллбаров
   const extraOverlapPx =
     handIds.length <= 6
@@ -2779,9 +3070,11 @@ function renderHandBelt(ctx: RenderContext): HTMLElement {
 
     const selected = vm.selectedCardIds.includes(cardId);
     const highlighted = vm.highlightedHandCardId === cardId;
-    const offsetFromCenter = index - midIndex;
-    const angleDeg = offsetFromCenter * angleStep;
-    const arcY = Math.abs(offsetFromCenter) * Math.abs(offsetFromCenter) * arcFactor;
+    const { angleDeg, arcY } = computeCardFanGeometry(
+      index,
+      handIds.length,
+      isBoosterHand ? 'booster' : 'hand',
+    );
 
     const slot = createEl(
       'div',

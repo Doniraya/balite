@@ -215,7 +215,7 @@ export const TAG_DEFINITIONS: Readonly<Record<TagId, TagDefinition>> = {
   tag_coupon: { id: 'tag_coupon', minAnte: 1, immediate: false },
   tag_d_six: { id: 'tag_d_six', minAnte: 1, immediate: false },
   tag_double: { id: 'tag_double', minAnte: 1, immediate: false },
-  tag_juggle: { id: 'tag_juggle', minAnte: 1, immediate: true },
+  tag_juggle: { id: 'tag_juggle', minAnte: 1, immediate: false },
   tag_charm: { id: 'tag_charm', minAnte: 1, immediate: true },
   tag_skip: { id: 'tag_skip', minAnte: 1, immediate: true },
 };
@@ -285,8 +285,9 @@ export function selectBossForAnte(
 /**
  * Случайно выбирает один из 10 Знаков пропуска из изолированного потока 'tag'.
  */
-export function rollSkipTag(rngState: RngState): RollSkipTagResult {
-  const picked = pickElement(rngState, 'tag', TAG_IDS);
+export function rollSkipTag(rngState: RngState, ante?: number): RollSkipTagResult {
+  const key = ante !== undefined ? `Tag${ante}` : 'tag';
+  const picked = pickElement(rngState, key, TAG_IDS);
   return {
     tagId: picked.value,
     nextRngState: picked.nextState,
@@ -303,8 +304,8 @@ export function buildAnteBlinds(
   anteScaling = 1,
 ): BuildAnteBlindsResult {
   const baseAnteScore = getBlindAmount(ante, 1);
-  const smallTagRoll = rollSkipTag(rngState);
-  const bigTagRoll = rollSkipTag(smallTagRoll.nextRngState);
+  const smallTagRoll = rollSkipTag(rngState, ante);
+  const bigTagRoll = rollSkipTag(smallTagRoll.nextRngState, ante);
   const bossDef = BOSS_DEFINITIONS[bossId];
 
   const smallBlind: BlindSlotState = {
@@ -395,7 +396,7 @@ export function applyBossOnBlindSelect(state: RunState): DispatchResult {
   if (activeBoss === 'bl_manacle') {
     nextState = {
       ...nextState,
-      handSize: Math.max(1, nextState.handSize - 1),
+      handSize: Math.max(0, nextState.handSize - 1),
     };
     events.push({
       type: 'BOSS_TRIGGER',
@@ -507,15 +508,34 @@ export function disableActiveBoss(state: RunState): DispatchResult {
     nextState = updateCurrentTargetScore(nextState, Math.floor(nextState.targetScore / 3));
   }
 
+  const events: TraceEvent[] = [
+    {
+      type: 'BOSS_TRIGGER',
+      bossId,
+      locKey: 'boss_disabled',
+    },
+  ];
+
+  // Как в blind.lua:377-400: снижение порога bl_wall (/2) и bl_final_vessel (/3) проверяет мгновенную победу
+  if (
+    (bossId === 'bl_wall' || bossId === 'bl_final_vessel') &&
+    nextState.phase === 'playing' &&
+    nextState.score >= nextState.targetScore
+  ) {
+    const slot = nextState.anteBlinds[nextState.currentBlindIndex];
+    events.push({
+      type: 'BLIND_DEFEATED',
+      ante: nextState.ante,
+      blindKind: slot.kind,
+      bossId: slot.bossId,
+      finalScore: nextState.score,
+      targetScore: nextState.targetScore,
+    });
+  }
+
   return {
     nextState,
-    events: [
-      {
-        type: 'BOSS_TRIGGER',
-        bossId,
-        locKey: 'boss_disabled',
-      },
-    ],
+    events,
   };
 }
 
@@ -533,7 +553,7 @@ export function applyFinalBellSelection(state: RunState): DispatchResult {
     return { nextState: state, events: [] };
   }
 
-  const pick = pickElement(state.rngState, 'shuffle', state.handIds);
+  const pick = pickElement(state.rngState, 'cerulean_bell', state.handIds);
   const forcedId = pick.value;
 
   const nextState: RunState = {
@@ -661,12 +681,30 @@ export function redeemCharter(state: RunState, charterId: CharterId): RunState {
   switch (charterId) {
     case 'v_overstock_norm':
       return { ...withCharter, shopSlots: withCharter.shopSlots + 1 };
-    case 'v_clearance_sale':
+    case 'v_clearance_sale': {
+      // По card.lua:1917-1924 пересчитываем set_cost() для витрины магазина и всех карт у игрока (с сохранением extraValue)
+      const nextRelics = withCharter.relics.map((relic) => {
+        const discountedCost = calculateRelicBuyCost(relic.baseCost, relic.edition, 25);
+        return {
+          ...relic,
+          sellValue: calculateRelicSellValue(discountedCost, relic.extraValue),
+        };
+      });
+      const nextConsumables = withCharter.consumables.map((item) => {
+        const discountedCost = calculateRelicBuyCost(item.baseCost, item.edition, 25);
+        return {
+          ...item,
+          sellValue: calculateRelicSellValue(discountedCost, 0),
+        };
+      });
       return {
         ...withCharter,
         discountPercent: 25,
+        relics: nextRelics,
+        consumables: nextConsumables,
         shop: withCharter.shop ? recalculateShopPrices(withCharter.shop, 25) : null,
       };
+    }
     case 'v_hone':
       return { ...withCharter, editionRate: Math.max(withCharter.editionRate, 2) };
     case 'v_reroll_surplus':
@@ -750,13 +788,6 @@ function applySingleSkipTag(
     };
   }
 
-  if (tagId === 'tag_juggle') {
-    return {
-      nextState: { ...state, tempHandSizeBonus: state.tempHandSizeBonus + 3 },
-      openedArcanaMega: 0,
-    };
-  }
-
   if (tagId === 'tag_charm') {
     return {
       nextState: state,
@@ -764,7 +795,7 @@ function applySingleSkipTag(
     };
   }
 
-  // Отложенные знаки: tag_investment, tag_uncommon, tag_rare, tag_coupon, tag_d_six
+  // Отложенные знаки (в т.ч. tag_juggle — round_start_bonus в начале следующего боя) помещаются в pendingTags
   return {
     nextState: {
       ...state,

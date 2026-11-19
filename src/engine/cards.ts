@@ -21,6 +21,51 @@ export const SUIT_ORDER: Readonly<Record<Suit, number>> = {
 };
 
 /**
+ * Номинальные коэффициенты масти в формуле Balatro (`Card:get_nominal`).
+ */
+const SUIT_NOMINAL_VALUE: Readonly<Record<Suit, number>> = {
+  diamonds: 0.01,
+  clubs: 0.02,
+  hearts: 0.03,
+  spades: 0.04,
+};
+
+function parseCardUniqueVal(cardId: string): number {
+  const match = /(\d+)$/.exec(cardId);
+  return match ? Number(match[1]) % 10000 : 0;
+}
+
+/**
+ * Вычисляет числовой номинал карты (`Card:get_nominal`) по формуле Balatro:
+ * для Каменных карт используется множитель масти -1000, поэтому они всегда ниже обычных карт,
+ * а между собой сортируются по обратному номиналу масти, базовому номиналу и уникальному индексу.
+ */
+export function getCardNominal(card: PlayingCard, mod: 'rank' | 'suit' = 'rank'): number {
+  const mult = card.enhancement === 'stone' ? -1000 : mod === 'suit' ? 1000 : 1;
+  const baseNominal = getRankBaseChips(card.rank);
+  const suitNominal = SUIT_NOMINAL_VALUE[card.suit];
+  const suitNominalOriginal = suitNominal * 0.1;
+  const faceNominal =
+    card.rank === 14
+      ? 0.4
+      : card.rank === 13
+        ? 0.3
+        : card.rank === 12
+          ? 0.2
+          : card.rank === 11
+            ? 0.1
+            : 0;
+
+  return (
+    baseNominal +
+    suitNominal * mult +
+    suitNominalOriginal * 0.0001 * mult +
+    faceNominal +
+    0.000001 * parseCardUniqueVal(card.id)
+  );
+}
+
+/**
  * Параметры для создания новой игральной карты с безопасными значениями по умолчанию.
  */
 export interface CreatePlayingCardParams {
@@ -155,20 +200,8 @@ export function createStandardDeck(startUid = 1): PlayingCard[] {
  * Общий детерминированный компаратор карт для сортировки руки по рангу или по масти.
  */
 function compareCards(a: PlayingCard, b: PlayingCard, primary: 'rank' | 'suit'): number {
-  const aStone = a.enhancement === 'stone' ? 1 : 0;
-  const bStone = b.enhancement === 'stone' ? 1 : 0;
-  if (aStone !== bStone) return aStone - bStone;
-
-  if (primary === 'rank') {
-    if (a.rank !== b.rank) return b.rank - a.rank;
-    const suitDiff = SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit];
-    if (suitDiff !== 0) return suitDiff;
-  } else {
-    const suitDiff = SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit];
-    if (suitDiff !== 0) return suitDiff;
-    if (a.rank !== b.rank) return b.rank - a.rank;
-  }
-
+  const diff = getCardNominal(b, primary) - getCardNominal(a, primary);
+  if (Math.abs(diff) > 1e-12) return diff;
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 

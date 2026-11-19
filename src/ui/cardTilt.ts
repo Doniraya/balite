@@ -37,8 +37,8 @@ export interface CardTiltController {
 
 interface CardTiltEntry {
   readonly element: HTMLElement;
-  phaseOffset: number;
-  freqMul: number;
+  numericId: number;
+  orderIndex: number;
   currentTiltX: number;
   currentTiltY: number;
   targetTiltX: number;
@@ -57,8 +57,9 @@ const DEFAULT_CARD_SELECTOR = '.card-frame';
 const MAX_FRAME_DT_SECONDS = 0.05;
 const TILT_FOLLOW_RATE = 20;
 const AMBIENT_BLEND_RATE = 14;
-const SWAY_ROTATION_DEG = 1.5;
-const SWAY_OFFSET_PX = 2.4;
+const RAD_TO_DEG = 180 / Math.PI;
+// Базовый масштаб игровой единицы ширины карты Balatro в экранных пикселях для синхронной волны по X
+const UNIT_PX_SCALE = 38;
 
 function clamp(value: number, min: number, max: number): number {
   if (value < min) return min;
@@ -93,8 +94,8 @@ function createCardEntry(card: HTMLElement, index: number): CardTiltEntry {
   const seed = resolveCardSeed(card, index);
   return {
     element: card,
-    phaseOffset: ((seed % 6283) / 1000) + index * 0.47,
-    freqMul: 0.88 + ((seed >>> 4) % 31) * 0.01,
+    numericId: (seed % 10000) + 1,
+    orderIndex: index,
     currentTiltX: 0,
     currentTiltY: 0,
     targetTiltX: 0,
@@ -113,6 +114,8 @@ function createCardEntry(card: HTMLElement, index: number): CardTiltEntry {
 function applyNeutralVars(card: HTMLElement): void {
   card.style.setProperty('--tilt-x', '0');
   card.style.setProperty('--tilt-y', '0');
+  card.style.setProperty('--ambient-tilt-x', '0');
+  card.style.setProperty('--ambient-tilt-y', '0');
   card.style.setProperty('--glare-x', '50%');
   card.style.setProperty('--glare-y', '50%');
   card.style.setProperty('--sway-r', '0deg');
@@ -122,10 +125,26 @@ function applyNeutralVars(card: HTMLElement): void {
 function clearInlineVars(card: HTMLElement): void {
   card.style.removeProperty('--tilt-x');
   card.style.removeProperty('--tilt-y');
+  card.style.removeProperty('--ambient-tilt-x');
+  card.style.removeProperty('--ambient-tilt-y');
   card.style.removeProperty('--glare-x');
   card.style.removeProperty('--glare-y');
   card.style.removeProperty('--sway-r');
   card.style.removeProperty('--sway-y');
+}
+
+/**
+ * Определяет координату T.x в единицах Balatro для синхронной бегущей волны слева направо.
+ */
+function resolveWaveCoordX(entry: CardTiltEntry): number {
+  const rect = entry.element.getBoundingClientRect();
+  if (rect.width > 0) {
+    return rect.left / Math.max(20, rect.width * 0.5);
+  }
+  const slot = entry.element.closest<HTMLElement>('[data-index]');
+  const parsedIdx = slot?.dataset.index !== undefined ? Number(slot.dataset.index) : Number.NaN;
+  const idx = Number.isFinite(parsedIdx) ? parsedIdx : entry.orderIndex;
+  return idx * 2.1;
 }
 
 function isSwayPaused(entry: CardTiltEntry): boolean {
@@ -244,9 +263,25 @@ export function initCardTiltController(options: CardTiltOptions): CardTiltContro
         entry.ambientWeight = targetAmbient;
       }
 
-      const phase = timeSec * entry.freqMul + entry.phaseOffset;
-      const swayR = Math.sin(phase * 1.45) * SWAY_ROTATION_DEG * entry.ambientWeight;
-      const swayY = Math.cos(phase * 1.9 + 0.7) * SWAY_OFFSET_PX * entry.ambientWeight;
+      // Синхронная бегущая волна по координате X из cardarea.lua:439-540
+      const coordX = resolveWaveCoordX(entry);
+      const slotEl = card.closest<HTMLElement>('[data-zone]');
+      const isBoosterHand = card.closest('.hand-fan--booster') !== null;
+      const isConsumable = slotEl?.dataset.zone === 'consumable';
+
+      const swayR = isConsumable
+        ? 0
+        : 0.02 * Math.sin(2 * timeSec + coordX) * RAD_TO_DEG * entry.ambientWeight;
+      const swayYUnits = isConsumable
+        ? 0.05 * Math.sin(2 * 1.666 * timeSec + coordX)
+        : (isBoosterHand ? 0.1 : 0.03) * Math.sin(0.666 * timeSec + coordX);
+      const swayY = swayYUnits * UNIT_PX_SCALE * entry.ambientWeight;
+
+      // Индивидуальный орбитальный tilt_var по card.lua:4380
+      const orbitFreq = 1.56 + ((entry.numericId / 1.14212) % 1);
+      const tiltAngle = timeSec * orbitFreq + entry.numericId / 1.35122;
+      const ambientTiltX = 0.2 * Math.cos(tiltAngle) * entry.ambientWeight;
+      const ambientTiltY = 0.2 * Math.sin(tiltAngle) * entry.ambientWeight;
 
       entry.currentTiltX += (entry.targetTiltX - entry.currentTiltX) * tiltAlpha;
       entry.currentTiltY += (entry.targetTiltY - entry.currentTiltY) * tiltAlpha;
@@ -258,17 +293,19 @@ export function initCardTiltController(options: CardTiltOptions): CardTiltContro
       const desiredGlareX =
         entry.isHovered || entry.isActiveTouch
           ? entry.targetGlareX
-          : 50 + Math.cos(phase * 0.95) * 16 * entry.ambientWeight;
+          : 50 + Math.cos(tiltAngle) * 16 * entry.ambientWeight;
       const desiredGlareY =
         entry.isHovered || entry.isActiveTouch
           ? entry.targetGlareY
-          : 50 + Math.sin(phase * 0.8 + 0.5) * 12 * entry.ambientWeight;
+          : 50 + Math.sin(tiltAngle) * 12 * entry.ambientWeight;
 
       entry.currentGlareX += (desiredGlareX - entry.currentGlareX) * tiltAlpha;
       entry.currentGlareY += (desiredGlareY - entry.currentGlareY) * tiltAlpha;
 
       card.style.setProperty('--tilt-x', entry.currentTiltX.toFixed(4));
       card.style.setProperty('--tilt-y', entry.currentTiltY.toFixed(4));
+      card.style.setProperty('--ambient-tilt-x', ambientTiltX.toFixed(4));
+      card.style.setProperty('--ambient-tilt-y', ambientTiltY.toFixed(4));
       card.style.setProperty('--glare-x', `${entry.currentGlareX.toFixed(2)}%`);
       card.style.setProperty('--glare-y', `${entry.currentGlareY.toFixed(2)}%`);
       card.style.setProperty('--sway-r', `${swayR.toFixed(3)}deg`);
@@ -404,8 +441,8 @@ export function initCardTiltController(options: CardTiltOptions): CardTiltContro
       } else {
         const entry = entries.get(card)!;
         const seed = resolveCardSeed(card, index);
-        entry.phaseOffset = ((seed % 6283) / 1000) + index * 0.47;
-        entry.freqMul = 0.88 + ((seed >>> 4) % 31) * 0.01;
+        entry.numericId = (seed % 10000) + 1;
+        entry.orderIndex = index;
       }
     });
 

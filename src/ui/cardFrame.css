@@ -3,6 +3,8 @@
 .card-frame {
   --tilt-x: 0;
   --tilt-y: 0;
+  --ambient-tilt-x: 0;
+  --ambient-tilt-y: 0;
   --sway-r: 0deg;
   --sway-y: 0px;
   --glare-x: 50%;
@@ -42,8 +44,8 @@
     translateY(var(--sway-y, 0px))
     rotate(var(--sway-r, 0deg))
     perspective(640px)
-    rotateX(calc(var(--tilt-y, 0) * -10deg))
-    rotateY(calc(var(--tilt-x, 0) * 10deg));
+    rotateX(calc((var(--tilt-y, 0) + var(--ambient-tilt-y, 0)) * -10deg))
+    rotateY(calc((var(--tilt-x, 0) + var(--ambient-tilt-x, 0)) * 10deg));
   transition:
     transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 180ms ease,
@@ -87,8 +89,8 @@
     translateY(calc(-24px + var(--sway-y, 0px)))
     rotate(var(--sway-r, 0deg))
     perspective(640px)
-    rotateX(calc(var(--tilt-y, 0) * -10deg))
-    rotateY(calc(var(--tilt-x, 0) * 10deg));
+    rotateX(calc((var(--tilt-y, 0) + var(--ambient-tilt-y, 0)) * -10deg))
+    rotateY(calc((var(--tilt-x, 0) + var(--ambient-tilt-x, 0)) * 10deg));
   border-color: #f5b942;
   box-shadow:
     0 16px 26px rgba(2, 6, 14, 0.65),

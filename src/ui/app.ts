@@ -9,6 +9,7 @@ import {
   applyDebugCardMods,
   applyDebugVoucher,
   buildDailyRunSpec,
+  canAffordCost,
   canUseConsumable,
   collectRunMetaDiscoveries,
   createInitialMetaSave,
@@ -18,6 +19,8 @@ import {
   extractDailyDateKeyFromSeed,
   forceDebugBlindWin,
   forceDebugRunEnd,
+  formatBalatroNumber,
+  generateRandomSeed,
   giveDebugConsumable,
   giveDebugRelic,
   hasAnyUnseenCollectionItems,
@@ -94,6 +97,10 @@ import {
 import { renderCollectionModal } from './collection';
 import { APP_VERSION, renderMainMenu } from './mainMenu';
 import {
+  CARD_HOVER_JUICE_ROT,
+  CARD_HOVER_JUICE_SCALE,
+} from './moveable';
+import {
   createCashoutTimeline,
   createNumberRoller,
   type CashoutTimelineController,
@@ -129,6 +136,7 @@ import {
 import {
   playTraceEvents,
   type TraceJuiceTarget,
+  type TraceLeadInStep,
   type TracePlayerHandle,
   type TracePopupPayload,
 } from './tracePlayer';
@@ -137,11 +145,6 @@ import {
  * Стандартный интервал между показами межстраничной рекламы (3 минуты).
  */
 const DEFAULT_AD_COOLDOWN_MS = 180_000;
-
-/**
- * Алфавит для генерации читаемых случайных кодов забега без похожих символов.
- */
-const SEED_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 const CELESTIAL_ID_SET = new Set<string>(CELESTIAL_IDS);
 const SCROLL_ID_SET = new Set<string>(SCROLL_IDS);
@@ -228,15 +231,10 @@ const POPUP_COLORS: Readonly<Record<TracePopupPayload['kind'], string>> = {
 };
 
 /**
- * Генерирует случайный 8-символьный код нового забега.
+ * Генерирует случайный 8-символьный код нового забега по алгоритму оригинала.
  */
 function createRandomSeed(): string {
-  let result = '';
-  for (let i = 0; i < 8; i += 1) {
-    const idx = Math.floor(Math.random() * SEED_ALPHABET.length);
-    result += SEED_ALPHABET[idx] ?? 'A';
-  }
-  return result;
+  return generateRandomSeed(8);
 }
 
 /**
@@ -738,6 +736,7 @@ export function mountBaliteApp(
     flightLayer: flightLayerEl,
     getSpeed: () => saveData.meta.settings.animationSpeed,
     onCardDeal: () => audio.playCardDeal(),
+    onCardDepart: () => audio.playCardDeal(),
   });
   const cardTiltController: CardTiltController = initCardTiltController({
     ...options.cardTiltOptions,
@@ -952,14 +951,17 @@ export function mountBaliteApp(
   let cashoutFinishedKey: string | null = null;
   let victoryConfettiKey: string | null = null;
   let isSkippingTrace = false;
+  let pendingPlayLaunchDelay = false;
 
   const scoreRoller: NumberRollerController = createNumberRoller({
     initialValue: 0,
-    durationMs: 260,
+    durationMs: 500,
     ...options.numberRollerOptions,
+    format: formatBalatroNumber,
     speed: () => saveData.meta.settings.animationSpeed,
-    onUpdate: (_val, formatted) => {
+    onUpdate: (val, formatted) => {
       if (screenRefs && !destroyed) {
+        screenRefs.scoreEl.dataset.rawValue = String(val);
         screenRefs.scoreEl.textContent = formatted;
       }
     },
@@ -967,8 +969,9 @@ export function mountBaliteApp(
 
   const chipsRoller: NumberRollerController = createNumberRoller({
     initialValue: 0,
-    durationMs: 200,
+    durationMs: 300,
     ...options.numberRollerOptions,
+    format: formatBalatroNumber,
     speed: () => saveData.meta.settings.animationSpeed,
     onUpdate: (_val, formatted) => {
       if (screenRefs && !destroyed) {
@@ -979,8 +982,9 @@ export function mountBaliteApp(
 
   const multRoller: NumberRollerController = createNumberRoller({
     initialValue: 0,
-    durationMs: 200,
+    durationMs: 300,
     ...options.numberRollerOptions,
+    format: formatBalatroNumber,
     speed: () => saveData.meta.settings.animationSpeed,
     onUpdate: (_val, formatted) => {
       if (screenRefs && !destroyed && exactMultOverride === null) {
@@ -995,7 +999,7 @@ export function mountBaliteApp(
       if (immediate) {
         multRoller.snap(value);
         if (screenRefs && !destroyed) {
-          screenRefs.multEl.textContent = String(value);
+          screenRefs.multEl.textContent = formatBalatroNumber(value);
         }
       } else {
         multRoller.setTarget(value);
@@ -1006,7 +1010,7 @@ export function mountBaliteApp(
     exactMultOverride = value;
     multRoller.snap(Math.round(value));
     if (screenRefs && !destroyed) {
-      screenRefs.multEl.textContent = String(value);
+      screenRefs.multEl.textContent = formatBalatroNumber(value);
     }
   };
 
@@ -1061,7 +1065,7 @@ export function mountBaliteApp(
     const phaseChanged = state.phase !== lastHudPhase;
     lastHudPhase = state.phase;
 
-    const targetScore = Number(refs.scoreEl.textContent) || 0;
+    const targetScore = Number(refs.scoreEl.dataset.rawValue ?? refs.scoreEl.textContent) || 0;
     const targetChips = refs.previewChips;
     const targetMult = refs.previewMult;
 
@@ -1078,10 +1082,13 @@ export function mountBaliteApp(
     setMultDisplay(targetMult, false);
 
     // Синхронизируем свежесозданный DOM с текущим значением роллеров без визуального скачка
-    refs.scoreEl.textContent = String(scoreRoller.getCurrent());
-    refs.chipsEl.textContent = String(chipsRoller.getCurrent());
+    refs.scoreEl.dataset.rawValue = String(scoreRoller.getCurrent());
+    refs.scoreEl.textContent = formatBalatroNumber(scoreRoller.getCurrent());
+    refs.chipsEl.textContent = formatBalatroNumber(chipsRoller.getCurrent());
     refs.multEl.textContent =
-      exactMultOverride !== null ? String(exactMultOverride) : String(multRoller.getCurrent());
+      exactMultOverride !== null
+        ? formatBalatroNumber(exactMultOverride)
+        : formatBalatroNumber(multRoller.getCurrent());
   };
 
   const syncCashoutTimeline = (
@@ -2176,10 +2183,10 @@ export function mountBaliteApp(
         }
       }
       if (departingVisualCards > 0) {
-        // Ждём полного улёта всех карт в сброс + короткую паузу перед появлением кэшаута/финала
+        // Ждём поочерёдного улёта всех карт в сброс (100мс на карту) + паузы end_round (delay 0.3 + 0.3)
         arenaEnterDelayMs = Math.max(
           0,
-          Math.round((420 + Math.min(10, departingVisualCards) * 32) / animSpeed),
+          Math.round((600 + Math.min(10, departingVisualCards) * 100) / animSpeed),
         );
       }
     }
@@ -2249,10 +2256,15 @@ export function mountBaliteApp(
     }
 
     if (layoutSnapshot) {
+      const usePlayLaunchDelay = pendingPlayLaunchDelay;
+      pendingPlayLaunchDelay = false;
       cardAnimator.animateFromSnapshot(screenHostEl, layoutSnapshot, {
         speed: saveData.meta.settings.animationSpeed,
-        ...(transitionKind === 'blind-to-playing' ? { dealInitialDelaySeconds: 0.52 } : {}),
+        ...(transitionKind === 'blind-to-playing' ? { dealInitialDelaySeconds: 1.1 } : {}),
+        ...(usePlayLaunchDelay ? { playInitialDelaySeconds: 0.4 } : {}),
       });
+    } else {
+      pendingPlayLaunchDelay = false;
     }
 
     if (!isAnimating && viewState.phase === 'blind_select') {
@@ -2370,8 +2382,49 @@ export function mountBaliteApp(
       handsLeft: Math.max(0, prevState.handsLeft - 1),
     };
     selectedCardIds = [];
+    pendingPlayLaunchDelay = playedIds.length > 0;
 
     render();
+
+    const scoringCardIds: string[] = [];
+    const seenScoringCardIds = new Set<string>();
+    for (const ev of events) {
+      if (
+        (ev.type === 'CARD_TRIGGER' || ev.type === 'CARD_DEBUFFED') &&
+        playedIds.includes(ev.cardId) &&
+        !seenScoringCardIds.has(ev.cardId)
+      ) {
+        seenScoringCardIds.add(ev.cardId);
+        scoringCardIds.push(ev.cardId);
+      }
+    }
+
+    const leadInSteps: TraceLeadInStep[] = [];
+    if (playedIds.length > 0) {
+      // Как в state_events.lua:476, 483, 601: пауза 400мс после -1 руки + вылет карт (100мс/карта) + 200мс перед подъёмом
+      leadInSteps.push({
+        delayMs: 400 + playedIds.length * 100 + 200,
+      });
+      for (const cardId of scoringCardIds) {
+        leadInSteps.push({
+          highlightCardId: cardId,
+          delayMs: 100,
+          onTrigger: () => {
+            if (destroyed || animationRunToken !== currentToken) return;
+            cardAnimator.pulseCard(cardId, 0.14, 0);
+            audio.playCardSelect();
+          },
+        });
+      }
+      // Пауза 400мс перед срабатыванием первой карты (state_events.lua:620)
+      leadInSteps.push({
+        delayMs: 400,
+        onTrigger: () => {
+          if (destroyed || animationRunToken !== currentToken) return;
+          applyTriggerHighlight(screenHostEl, '.play-zone__card', null);
+        },
+      });
+    }
 
     exactMultOverride = null;
     scoreRoller.snap(prevState.score);
@@ -2531,7 +2584,7 @@ export function mountBaliteApp(
           backdrop.setMood('defeat');
         }
       },
-    });
+    }, { leadInSteps });
 
     activeTraceHandle = handle;
     void handle.promise.finally(() => {
@@ -3006,7 +3059,7 @@ export function mountBaliteApp(
         return;
       }
       const rerollCost = runState.shop.tempRerollCost ?? runState.shop.rerollCost;
-      if (runState.dollars >= rerollCost) {
+      if (canAffordCost(runState, rerollCost)) {
         return;
       }
 
@@ -3168,7 +3221,7 @@ export function mountBaliteApp(
       });
     },
     onInspectOffer: (offer: ShopOffer) => {
-      const canAfford = runState.dollars >= offer.cost;
+      const canAfford = canAffordCost(runState, offer.cost);
       let hasSlot = true;
       let slotFreeForImmediateUse = false;
 
@@ -3182,7 +3235,7 @@ export function mountBaliteApp(
           runState.consumables.length < getEffectiveMaxConsumables(runState);
         const simulatedState: RunState = {
           ...runState,
-          dollars: Math.max(0, runState.dollars - offer.cost),
+          dollars: offer.cost <= 0 ? runState.dollars : runState.dollars - offer.cost,
         };
         slotFreeForImmediateUse = canUseConsumable(simulatedState, offer.consumable, []);
       }
@@ -3200,14 +3253,14 @@ export function mountBaliteApp(
         kind: 'shop_charter',
         charterId,
         price,
-        canAfford: runState.dollars >= price,
+        canAfford: canAffordCost(runState, price),
       });
     },
     onInspectPack: (pack: PackOffer) => {
       openInspector({
         kind: 'shop_pack',
         pack,
-        canAfford: runState.dollars >= pack.cost,
+        canAfford: canAffordCost(runState, pack.cost),
       });
     },
     onInspectPlayingCard: (card: PlayingCard) => {
@@ -3376,14 +3429,12 @@ export function mountBaliteApp(
     }
   };
 
-  // Озвучка наведения мышью (pointer: fine) на открытую активную карту в руке с троттлингом >= 60 мс
+  // Озвучка, мини-импульс juice_up (0.02, ±0.012) и пружинный hover-зум (+0.05) при наведении мышью (C2)
   const CARD_HOVER_THROTTLE_MS = 60;
   let lastCardHoverAudioAtMs: number | null = null;
+  let hoverJuiceSign = 1;
   const handleHandCardPointerOver = (event: Event): void => {
     if (destroyed || isAnimating || activeModal !== null || activeInspectTarget !== null) {
-      return;
-    }
-    if (runState.phase !== 'playing' && runState.phase !== 'booster') {
       return;
     }
     const pointerType = (event as Partial<PointerEvent>).pointerType;
@@ -3400,25 +3451,44 @@ export function mountBaliteApp(
     }
 
     const targetEl = event.target instanceof Element ? event.target : null;
-    const slot = targetEl?.closest<HTMLElement>('.hand-card-slot[data-zone="hand"][data-card-id]');
-    if (!slot) {
+    const anySlot = targetEl?.closest<HTMLElement>(
+      '.hand-card-slot, .inventory-slot, .play-zone__card',
+    );
+    if (!anySlot || anySlot.classList.contains('is-dragging')) {
       return;
     }
 
     const related = (event as Partial<MouseEvent>).relatedTarget;
-    if (related && typeof Node !== 'undefined' && related instanceof Node && slot.contains(related)) {
+    if (related && typeof Node !== 'undefined' && related instanceof Node && anySlot.contains(related)) {
       return;
     }
 
-    if (slot.getAttribute('aria-disabled') === 'true' || slot.classList.contains('is-disabled')) {
+    if (anySlot.getAttribute('aria-disabled') === 'true' || anySlot.classList.contains('is-disabled')) {
       return;
     }
 
     const isFaceDown =
-      slot.dataset.tooltipFacing === 'back' ||
-      slot.dataset.faceDown === 'true' ||
-      slot.classList.contains('is-face-down') ||
-      slot.querySelector('[data-face-down="true"], .is-face-down') !== null;
+      anySlot.dataset.tooltipFacing === 'back' ||
+      anySlot.dataset.faceDown === 'true' ||
+      anySlot.classList.contains('is-face-down') ||
+      anySlot.querySelector('[data-face-down="true"], .is-face-down') !== null;
+
+    if (!isFaceDown) {
+      cardAnimator.setHoverZoom?.(anySlot, true);
+      cardAnimator.triggerJuice(anySlot, {
+        scaleDelta: CARD_HOVER_JUICE_SCALE,
+        rotDelta: hoverJuiceSign * CARD_HOVER_JUICE_ROT,
+        speed: saveData.meta.settings.animationSpeed,
+      });
+      hoverJuiceSign *= -1;
+    }
+
+    if (runState.phase !== 'playing' && runState.phase !== 'booster') {
+      return;
+    }
+    if (!anySlot.matches('.hand-card-slot[data-zone="hand"][data-card-id]')) {
+      return;
+    }
     if (isFaceDown) {
       return;
     }
@@ -3433,7 +3503,27 @@ export function mountBaliteApp(
     lastCardHoverAudioAtMs = currentMs;
     audio.playCardHover();
   };
+
+  const handleHandCardPointerOut = (event: Event): void => {
+    const pointerType = (event as Partial<PointerEvent>).pointerType;
+    if (pointerType === 'touch' || pointerType === 'pen') {
+      return;
+    }
+    const targetEl = event.target instanceof Element ? event.target : null;
+    const anySlot = targetEl?.closest<HTMLElement>(
+      '.hand-card-slot, .inventory-slot, .play-zone__card',
+    );
+    if (!anySlot) return;
+
+    const related = (event as Partial<MouseEvent>).relatedTarget;
+    if (related && typeof Node !== 'undefined' && related instanceof Node && anySlot.contains(related)) {
+      return;
+    }
+    cardAnimator.setHoverZoom?.(anySlot, false);
+  };
+
   screenHostEl.addEventListener('pointerover', handleHandCardPointerOver);
+  screenHostEl.addEventListener('pointerout', handleHandCardPointerOut);
   root.addEventListener('contextmenu', handleContextMenu);
 
   const gestureEvents = ['pointerdown', 'touchstart', 'click'] as const;
@@ -3620,6 +3710,7 @@ export function mountBaliteApp(
       root.removeEventListener(eventName, handleFirstGesture, { capture: true });
     }
     screenHostEl.removeEventListener('pointerover', handleHandCardPointerOver);
+    screenHostEl.removeEventListener('pointerout', handleHandCardPointerOut);
     root.removeEventListener('contextmenu', handleContextMenu);
     if (typeof window !== 'undefined') {
       window.removeEventListener('keydown', handleKeyDown);

@@ -739,15 +739,16 @@
   flex-shrink: 0;
   min-width: 44px;
   min-height: 44px;
+  transform: rotate(var(--fan-angle, 0deg));
   touch-action: pan-y;
   transition: transform 0.14s ease, filter 0.14s ease;
 }
 
 .inventory-slot.is-dragging {
-  transform: scale(1.07);
-  z-index: 10;
+  z-index: 28;
   filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.55));
   touch-action: none;
+  transition: none;
 }
 
 .inventory-slot[data-highlighted='true'] {
@@ -2431,10 +2432,10 @@
 }
 
 .hand-card-slot.is-dragging {
-  transform: translateY(-22px) scale(1.06);
   z-index: 28;
   filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.6));
   touch-action: none;
+  transition: none;
 }
 
 .hand-card-slot[data-highlighted='true'] {

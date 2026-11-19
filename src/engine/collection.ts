@@ -500,13 +500,18 @@ export function collectRunMetaDiscoveries(
     }
   }
 
-  if (Number.isInteger(state.ante) && state.ante >= 2 && state.ante <= 8) {
+  // После победы над Боссом state.ante уже увеличен на +1, хотя anteBlinds ещё относятся к завершённому Этапу
+  const blindsAnte =
+    state.anteBlinds[2].status === 'defeated' && state.phase !== 'victory' && state.ante > 1
+      ? state.ante - 1
+      : state.ante;
+  if (Number.isInteger(blindsAnte) && blindsAnte >= 2 && blindsAnte <= 8) {
     for (const slot of state.anteBlinds) {
       if (
         (slot.kind === 'small' || slot.kind === 'big') &&
         (slot.status === 'defeated' || (slot.status === 'current' && state.phase !== 'blind_select'))
       ) {
-        const monsterId = `m_ante_${state.ante}_${slot.kind}`;
+        const monsterId = `m_ante_${blindsAnte}_${slot.kind}`;
         pushUniqueValidId(discoveredMonsters, seenMonsters, monsterId, REGULAR_MONSTER_ID_SET);
       }
     }

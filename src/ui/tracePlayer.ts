@@ -1,3 +1,4 @@
+import { formatBalatroNumber } from '../engine';
 import type { AnimationSpeed, ConsumableId, HandType, TraceEvent } from '../engine/types';
 import type { MessageParams, TraceLocKey, Translator } from '../i18n';
 
@@ -75,6 +76,22 @@ export interface TracePlayerHandlers {
 }
 
 /**
+ * Шаг вступительной задержки / подсветки карт перед запуском событий подсчёта.
+ */
+export interface TraceLeadInStep {
+  readonly delayMs: number;
+  readonly highlightCardId?: string;
+  readonly onTrigger?: () => void;
+}
+
+/**
+ * Дополнительные опции очереди воспроизведения TraceEvent.
+ */
+export interface PlayTraceEventsOptions {
+  readonly leadInSteps?: readonly TraceLeadInStep[];
+}
+
+/**
  * Дескриптор запущенной очереди воспроизведения событий.
  */
 export interface TracePlayerHandle {
@@ -84,9 +101,127 @@ export interface TracePlayerHandle {
 }
 
 /**
- * Базовая длительность шага подсчёта на скорости 1x в миллисекундах.
+ * Базовая длительность шага подсчёта по умолчанию на скорости 1x в миллисекундах.
  */
 export const DEFAULT_BASE_STEP_MS = 640;
+
+/**
+ * Шаг тика EventManager оригинала (1/60 секунды реального времени, event.lua:118).
+ */
+export const EVENT_FRAME_MS = 1000 / 60;
+
+/**
+ * Дискретизирует задержку события под 60 Гц цикл EventManager (минимум +1 кадр REAL после истечения таймера).
+ */
+export function quantizeBalatroStepDelayMs(
+  baseDelayMs: number,
+  speedFactor = 1,
+): number {
+  if (!Number.isFinite(baseDelayMs) || baseDelayMs <= 0) {
+    return 0;
+  }
+  const safeFactor = Number.isFinite(speedFactor) && speedFactor > 0 ? speedFactor : 1;
+  const waitFrames = Math.max(1, Math.ceil(baseDelayMs / safeFactor / EVENT_FRAME_MS));
+  return Math.round((waitFrames + 1) * EVENT_FRAME_MS);
+}
+
+const MAX_COMBO_ACC = 16;
+
+/**
+ * Накапливает фактор разгона G.ACC для длинных комбо-цепочек (game.lua:2489-2493).
+ */
+export function advanceComboAcc(
+  acc: number,
+  stepSeconds: number,
+  speed: AnimationSpeed | number = 1,
+): number {
+  const safeAcc = Number.isFinite(acc) && acc > 0 ? acc : 0;
+  const safeDt = Number.isFinite(stepSeconds) && stepSeconds > 0 ? stepSeconds : 0;
+  const resolvedSpeed = resolveSpeed(speed);
+  return Math.min(MAX_COMBO_ACC, safeAcc + safeDt * 0.2 * resolvedSpeed);
+}
+
+/**
+ * Вычисляет эффективный SPEEDFACTOR оригинала: GAMESPEED + max(0, abs(ACC) - 2) (game.lua:2495-2496).
+ */
+export function computeComboSpeedFactor(
+  speed: AnimationSpeed | number = 1,
+  acc = 0,
+): number {
+  const resolvedSpeed = resolveSpeed(speed);
+  const safeAcc = Number.isFinite(acc) ? Math.abs(acc) : 0;
+  return resolvedSpeed + Math.max(0, safeAcc - 2);
+}
+
+/**
+ * Возвращает дифференцированную базовую задержку (мс на 1x) для каждого типа события
+ * по common_events.lua:805-878 (* 1.25), state_events.lua:1029-1066 и card.lua.
+ */
+export function getEventBaseDelayMs(event: TraceEvent): number {
+  switch (event.type) {
+    case 'CARD_TRIGGER': {
+      if (event.isEditionStep) {
+        return 938;
+      }
+      if (
+        (event.multDelta !== undefined && event.multDelta !== 0) ||
+        (event.xMult !== undefined && event.xMult !== 1) ||
+        (event.dollarsDelta !== undefined && event.dollarsDelta !== 0)
+      ) {
+        return 813;
+      }
+      if (event.chipsDelta !== undefined && event.chipsDelta !== 0) {
+        return 750;
+      }
+      return 813;
+    }
+    case 'HAND_CARD_TRIGGER': {
+      if (event.createdConsumableId !== undefined) {
+        return 563;
+      }
+      return 813;
+    }
+    case 'RELIC_TRIGGER': {
+      if (
+        event.locKey === 'card_retrigger' ||
+        event.locKey === 'relic_upgrade' ||
+        event.locKey === 'card_debuffed' ||
+        event.hook === 'onDiscard' ||
+        event.hook === 'onBeforeScore'
+      ) {
+        return 563;
+      }
+      return 938;
+    }
+    case 'CONSUMABLE_TRIGGER':
+      return 680;
+    case 'SCORE_UPDATE':
+      return event.handScore > 0 ? 2000 : 400;
+    case 'DOLLAR_DELTA':
+      return event.source === 'card' || event.source === 'relic' ? 0 : 500;
+    case 'CARD_SHATTER':
+      return 720;
+    case 'CARD_ENHANCEMENT_STRIPPED':
+      return 563;
+    case 'RELIC_DESTROYED':
+      return 680;
+    case 'CARD_DEBUFFED':
+      return 813;
+    case 'HAND_DEBUFFED':
+    case 'BOSS_TRIGGER':
+      return 760;
+    case 'TAG_TRIGGER':
+    case 'HAND_LEVEL_UP':
+      return 680;
+    case 'BLIND_DEFEATED':
+      return 960;
+    case 'RUN_WON':
+    case 'RUN_LOST':
+      return 1040;
+    case 'PHASE_CHANGED':
+      return 0;
+  }
+}
 
 const SHATTER_LOC_KEYS: Readonly<Record<'glass' | 'scroll' | 'rune', TraceLocKey>> = {
   glass: 'card_shatter_glass',
@@ -189,7 +324,7 @@ function formatDollarsPopup(translator: Translator, delta: number): string {
  */
 function formatMultPopup(translator: Translator, multDelta: number): string {
   const sign = multDelta > 0 ? '+' : '';
-  return `${sign}${multDelta} ${translator.t('ui.hud.multShort')}`;
+  return `${sign}${formatBalatroNumber(multDelta)} ${translator.t('ui.hud.multShort')}`;
 }
 
 /**
@@ -197,7 +332,7 @@ function formatMultPopup(translator: Translator, multDelta: number): string {
  */
 function formatChipsPopup(chipsDelta: number): string {
   const sign = chipsDelta > 0 ? '+' : '';
-  return `${sign}${chipsDelta}`;
+  return `${sign}${formatBalatroNumber(chipsDelta)}`;
 }
 
 /**
@@ -207,14 +342,18 @@ export function playTraceEvents(
   events: readonly TraceEvent[],
   speed: AnimationSpeed = 1,
   handlers: TracePlayerHandlers,
+  options: PlayTraceEventsOptions = {},
 ): TracePlayerHandle {
   const resolvedSpeed = resolveSpeed(speed);
   const { translator } = handlers;
+  const leadInSteps = options.leadInSteps ?? [];
 
   let settled = false;
   let timerId: ReturnType<typeof setTimeout> | null = null;
+  let leadInIndex = 0;
   let index = 0;
   let comboIndex = 0;
+  let acc = 0;
   let lastHandLevelUpSignature: string | null = null;
 
   let activeCardId: string | null = null;
@@ -338,7 +477,7 @@ export function playTraceEvents(
     if (deltas.xMult !== undefined && deltas.xMult !== 1) {
       handlers.onPopup?.({
         kind: 'xmult',
-        text: `×${deltas.xMult}`,
+        text: `×${formatBalatroNumber(deltas.xMult)}`,
         ...target,
       });
       emitted = true;
@@ -378,10 +517,11 @@ export function playTraceEvents(
   };
 
   /**
-   * Выполняет один шаг события в нормальном режиме и возвращает задержку перед следующим шагом.
+   * Выполняет один шаг события и возвращает базовую задержку на 1x (до учёта SPEEDFACTOR).
    */
   const dispatchStep = (event: TraceEvent): number => {
     const rotSign = comboIndex % 2 === 0 ? 1 : -1;
+    const stepBaseMs = getEventBaseDelayMs(event);
     switch (event.type) {
       case 'CARD_TRIGGER': {
         highlightCard(event.cardId);
@@ -402,7 +542,7 @@ export function playTraceEvents(
         }
         handlers.audio?.playForTraceEvent(event, comboIndex);
         comboIndex += 1;
-        return getStepDelayMs(resolvedSpeed, DEFAULT_BASE_STEP_MS);
+        return stepBaseMs;
       }
 
       case 'HAND_CARD_TRIGGER': {
@@ -424,7 +564,7 @@ export function playTraceEvents(
         }
         handlers.audio?.playForTraceEvent(event, comboIndex);
         comboIndex += 1;
-        return getStepDelayMs(resolvedSpeed, DEFAULT_BASE_STEP_MS);
+        return stepBaseMs;
       }
 
       case 'RELIC_TRIGGER': {
@@ -447,7 +587,7 @@ export function playTraceEvents(
         }
         handlers.audio?.playForTraceEvent(event, comboIndex);
         comboIndex += 1;
-        return getStepDelayMs(resolvedSpeed, DEFAULT_BASE_STEP_MS);
+        return stepBaseMs;
       }
 
       case 'CONSUMABLE_TRIGGER': {
@@ -465,7 +605,7 @@ export function playTraceEvents(
           emitFormulaJuice({ xMult: event.xMult }, rotSign);
           handlers.onPopup?.({
             kind: 'xmult',
-            text: `×${event.xMult}`,
+            text: `×${formatBalatroNumber(event.xMult!)}`,
           });
         } else if (event.locKey && !alreadyAnnounced) {
           const text = translateEventKey(translator, event.locKey, event.locParams);
@@ -489,7 +629,7 @@ export function playTraceEvents(
         if (alreadyAnnounced) {
           return 0;
         }
-        return getStepDelayMs(resolvedSpeed, 680);
+        return stepBaseMs;
       }
 
       case 'SCORE_UPDATE': {
@@ -505,7 +645,7 @@ export function playTraceEvents(
         handlers.onJuice?.({ kind: 'mult', scaleDelta: 0.24, rotDelta: 0.05 });
         handlers.audio?.playForTraceEvent(event, comboIndex);
         comboIndex = 0;
-        return getStepDelayMs(resolvedSpeed, 800);
+        return stepBaseMs;
       }
 
       case 'DOLLAR_DELTA': {
@@ -517,11 +657,7 @@ export function playTraceEvents(
           });
         }
         handlers.audio?.playForTraceEvent(event, comboIndex);
-        // Для карточных/реликвийных выплат пауза делается на самом CARD_TRIGGER/RELIC_TRIGGER
-        if (event.source === 'card' || event.source === 'relic') {
-          return 0;
-        }
-        return getStepDelayMs(resolvedSpeed, 500);
+        return stepBaseMs;
       }
 
       case 'CARD_SHATTER': {
@@ -539,7 +675,7 @@ export function playTraceEvents(
           targetCardId: event.cardId,
         });
         handlers.audio?.playForTraceEvent(event, comboIndex);
-        return getStepDelayMs(resolvedSpeed, 720);
+        return stepBaseMs;
       }
 
       case 'CARD_ENHANCEMENT_STRIPPED': {
@@ -550,7 +686,7 @@ export function playTraceEvents(
           targetCardId: event.cardId,
         });
         handlers.audio?.playForTraceEvent(event, comboIndex);
-        return getStepDelayMs(resolvedSpeed, 590);
+        return stepBaseMs;
       }
 
       case 'RELIC_DESTROYED': {
@@ -567,7 +703,7 @@ export function playTraceEvents(
           targetRelicUid: event.relicUid,
         });
         handlers.audio?.playForTraceEvent(event, comboIndex);
-        return getStepDelayMs(resolvedSpeed, DEFAULT_BASE_STEP_MS);
+        return stepBaseMs;
       }
 
       case 'CARD_DEBUFFED': {
@@ -578,7 +714,7 @@ export function playTraceEvents(
           targetCardId: event.cardId,
         });
         handlers.audio?.playForTraceEvent(event, comboIndex);
-        return getStepDelayMs(resolvedSpeed, 550);
+        return stepBaseMs;
       }
 
       case 'HAND_DEBUFFED': {
@@ -590,7 +726,7 @@ export function playTraceEvents(
         });
         handlers.onBanner?.(text, 'boss');
         handlers.audio?.playForTraceEvent(event, comboIndex);
-        return getStepDelayMs(resolvedSpeed, 760);
+        return stepBaseMs;
       }
 
       case 'BOSS_TRIGGER': {
@@ -602,7 +738,7 @@ export function playTraceEvents(
         });
         handlers.onBanner?.(text, 'boss');
         handlers.audio?.playForTraceEvent(event, comboIndex);
-        return getStepDelayMs(resolvedSpeed, 760);
+        return stepBaseMs;
       }
 
       case 'TAG_TRIGGER': {
@@ -615,7 +751,7 @@ export function playTraceEvents(
         });
         handlers.onBanner?.(text, 'info');
         handlers.audio?.playForTraceEvent(event, comboIndex);
-        return getStepDelayMs(resolvedSpeed, 680);
+        return stepBaseMs;
       }
 
       case 'HAND_LEVEL_UP': {
@@ -631,34 +767,34 @@ export function playTraceEvents(
         });
         handlers.onBanner?.(text, 'info');
         handlers.audio?.playForTraceEvent(event, comboIndex);
-        return getStepDelayMs(resolvedSpeed, 680);
+        return stepBaseMs;
       }
 
       case 'BLIND_DEFEATED': {
         clearHighlights();
         handlers.onBanner?.(translator.t('blind_defeated'), 'win');
         handlers.audio?.playForTraceEvent(event, comboIndex);
-        return getStepDelayMs(resolvedSpeed, 960);
+        return stepBaseMs;
       }
 
       case 'RUN_WON': {
         clearHighlights();
         handlers.onBanner?.(translator.t('run_won', { ante: event.ante }), 'win');
         handlers.audio?.playForTraceEvent(event, comboIndex);
-        return getStepDelayMs(resolvedSpeed, 1040);
+        return stepBaseMs;
       }
 
       case 'RUN_LOST': {
         clearHighlights();
         handlers.onBanner?.(translator.t('run_lost', { ante: event.ante }), 'lose');
         handlers.audio?.playForTraceEvent(event, comboIndex);
-        return getStepDelayMs(resolvedSpeed, 1040);
+        return stepBaseMs;
       }
 
       case 'PHASE_CHANGED': {
         clearHighlights();
         handlers.audio?.playForTraceEvent(event, comboIndex);
-        return 0;
+        return stepBaseMs;
       }
     }
   };
@@ -690,6 +826,29 @@ export function playTraceEvents(
 
   const processNext = (): void => {
     while (!settled) {
+      if (leadInIndex < leadInSteps.length) {
+        const step = leadInSteps[leadInIndex]!;
+        leadInIndex += 1;
+        if (step.highlightCardId) {
+          highlightCard(step.highlightCardId);
+        }
+        step.onTrigger?.();
+        if (settled) {
+          return;
+        }
+        if (step.delayMs > 0) {
+          const speedFactor = computeComboSpeedFactor(resolvedSpeed, acc);
+          const delayMs = quantizeBalatroStepDelayMs(step.delayMs, speedFactor);
+          acc = advanceComboAcc(acc, delayMs / 1000, resolvedSpeed);
+          timerId = setTimeout(() => {
+            timerId = null;
+            processNext();
+          }, delayMs);
+          return;
+        }
+        continue;
+      }
+
       if (index >= events.length) {
         finishPlayback();
         return;
@@ -698,12 +857,15 @@ export function playTraceEvents(
       const event = events[index]!;
       index += 1;
 
-      const delayMs = dispatchStep(event);
+      const baseDelayMs = dispatchStep(event);
       if (settled) {
         return;
       }
 
-      if (delayMs > 0) {
+      if (baseDelayMs > 0) {
+        const speedFactor = computeComboSpeedFactor(resolvedSpeed, acc);
+        const delayMs = quantizeBalatroStepDelayMs(baseDelayMs, speedFactor);
+        acc = advanceComboAcc(acc, delayMs / 1000, resolvedSpeed);
         timerId = setTimeout(() => {
           timerId = null;
           processNext();
@@ -721,6 +883,7 @@ export function playTraceEvents(
       if (settled) {
         return;
       }
+      leadInIndex = leadInSteps.length;
       clearPendingTimer();
       while (index < events.length) {
         const remainingEvent = events[index]!;

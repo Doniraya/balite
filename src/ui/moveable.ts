@@ -41,6 +41,15 @@ export interface MoveableJuice {
 }
 
 /**
+ * Состояние пружинного зума при наведении и перетаскивании (moveable.lua:424).
+ */
+export interface MoveableZoomState {
+  readonly enabled: boolean;
+  readonly hover: boolean;
+  readonly drag: boolean;
+}
+
+/**
  * Полное неизменяемое состояние одного Moveable-объекта.
  */
 export interface MoveableState {
@@ -48,6 +57,7 @@ export interface MoveableState {
   readonly vt: MoveableTransform;
   readonly velocity: MoveableVelocity;
   readonly juice: MoveableJuice | null;
+  readonly zoom?: MoveableZoomState;
   readonly settled: boolean;
 }
 
@@ -71,8 +81,15 @@ const SUBSTEP_MAX_DT_SECONDS = 1 / 60;
 const JUICE_DURATION_SECONDS = 0.4;
 
 const DEFAULT_MAX_VELOCITY_PX_PER_SEC = 5600;
-const DEFAULT_TILT_VELOCITY_FACTOR = 0.000167;
-const DEFAULT_MAX_TILT_RAD = 0.35;
+// В оригинале 0.015 * vel.x / dt при 1 единице ≈ 80 px и макс. скорости 70/s (~1.05 рад без искусственного обрезания 0.35)
+const DEFAULT_TILT_VELOCITY_FACTOR = 0.0001875;
+const DEFAULT_MAX_TILT_RAD = Number.POSITIVE_INFINITY;
+
+/** Каноничный микро-импульс при наведении курсора на карту (Card:hover -> juice_up(0.05, 0.03) * 0.4). */
+export const CARD_HOVER_JUICE_SCALE = 0.02;
+export const CARD_HOVER_JUICE_ROT = 0.012;
+export const MOVEABLE_HOVER_ZOOM_DELTA = 0.05;
+export const MOVEABLE_DRAG_ZOOM_DELTA = 0.1;
 
 const POS_EPSILON_PX = 0.2;
 const POS_VEL_EPSILON_PX = 0.2;
@@ -80,6 +97,11 @@ const SCALE_EPSILON = 0.001;
 const SCALE_VEL_EPSILON = 0.001;
 const ROT_EPSILON_RAD = 0.001;
 const ROT_VEL_EPSILON_RAD = 0.001;
+
+function resolveZoomOffset(zoom?: MoveableZoomState): number {
+  if (!zoom || !zoom.enabled) return 0;
+  return (zoom.drag ? MOVEABLE_DRAG_ZOOM_DELTA : 0) + (zoom.hover ? MOVEABLE_HOVER_ZOOM_DELTA : 0);
+}
 
 function clamp(value: number, min: number, max: number): number {
   if (value < min) return min;
@@ -100,10 +122,6 @@ function mergeTransform(
   };
 }
 
-function isTransformEqual(a: MoveableTransform, b: MoveableTransform): boolean {
-  return a.x === b.x && a.y === b.y && a.scale === b.scale && a.r === b.r;
-}
-
 function isVelocityZero(v: MoveableVelocity): boolean {
   return v.x === 0 && v.y === 0 && v.scale === 0 && v.r === 0;
 }
@@ -113,8 +131,17 @@ function computeSettled(
   vt: MoveableTransform,
   velocity: MoveableVelocity,
   juice: MoveableJuice | null,
+  zoom?: MoveableZoomState,
 ): boolean {
-  return juice === null && isTransformEqual(t, vt) && isVelocityZero(velocity);
+  const targetScale = t.scale + resolveZoomOffset(zoom);
+  return (
+    juice === null &&
+    vt.x === t.x &&
+    vt.y === t.y &&
+    vt.r === t.r &&
+    vt.scale === targetScale &&
+    isVelocityZero(velocity)
+  );
 }
 
 /**
@@ -156,12 +183,36 @@ export function setTarget(
   target: Partial<MoveableTransform>,
 ): MoveableState {
   const t = mergeTransform(state.t, target);
+  const zoom = state.zoom ? { ...state.zoom } : undefined;
   return {
     t,
     vt: { ...state.vt },
     velocity: { ...state.velocity },
     juice: state.juice ? { ...state.juice } : null,
-    settled: computeSettled(t, state.vt, state.velocity, state.juice),
+    ...(zoom ? { zoom } : {}),
+    settled: computeSettled(t, state.vt, state.velocity, state.juice, zoom),
+  };
+}
+
+/**
+ * Управляет пружинным масштабированием Moveable при наведении (hover +0.05) и перетаскивании (drag +0.10).
+ */
+export function setMoveableZoom(
+  state: MoveableState,
+  zoomPatch: Partial<MoveableZoomState>,
+): MoveableState {
+  const zoom: MoveableZoomState = {
+    enabled: zoomPatch.enabled ?? state.zoom?.enabled ?? true,
+    hover: zoomPatch.hover ?? state.zoom?.hover ?? false,
+    drag: zoomPatch.drag ?? state.zoom?.drag ?? false,
+  };
+  return {
+    t: { ...state.t },
+    vt: { ...state.vt },
+    velocity: { ...state.velocity },
+    juice: state.juice ? { ...state.juice } : null,
+    zoom,
+    settled: computeSettled(state.t, state.vt, state.velocity, state.juice, zoom),
   };
 }
 
@@ -205,6 +256,7 @@ export function juiceUp(
     vt: nextVt,
     velocity: { ...state.velocity },
     juice,
+    ...(state.zoom ? { zoom: { ...state.zoom } } : {}),
     settled: false,
   };
 }
@@ -288,7 +340,10 @@ function integrateSubstep(
   }
 
   // 2. Поворот от скорости полёта и импульса (move_r)
-  const velTilt = clamp((vx / subDt) * tiltVelocityFactor, -maxTiltRad, maxTiltRad);
+  const rawVelTilt = (vx / subDt) * tiltVelocityFactor;
+  const velTilt = Number.isFinite(maxTiltRad)
+    ? clamp(rawVelTilt, -maxTiltRad, maxTiltRad)
+    : rawVelTilt;
   const desR = t.r + velTilt + (juice ? juice.r * 2 : 0);
   if (desR !== vtR || Math.abs(vr) > ROT_VEL_EPSILON_RAD) {
     const expR = Math.exp(-190 * subDt);
@@ -300,8 +355,9 @@ function integrateSubstep(
     vr = 0;
   }
 
-  // 3. Масштаб и импульс scale (move_scale)
-  const desScale = t.scale + (juice ? juice.scale : 0);
+  // 3. Масштаб, пружинный hover/drag-зум (move_scale) и импульс scale
+  const targetScale = t.scale + resolveZoomOffset(state.zoom);
+  const desScale = targetScale + (juice ? juice.scale : 0);
   if (desScale !== vtScale || Math.abs(vs) > SCALE_VEL_EPSILON) {
     const expScale = Math.exp(-60 * subDt);
     vs = expScale * vs + (1 - expScale) * (desScale - vtScale);
@@ -309,10 +365,10 @@ function integrateSubstep(
   }
   if (
     !juice &&
-    Math.abs(vtScale - t.scale) < SCALE_EPSILON &&
+    Math.abs(vtScale - targetScale) < SCALE_EPSILON &&
     Math.abs(vs) < SCALE_VEL_EPSILON
   ) {
-    vtScale = t.scale;
+    vtScale = targetScale;
     vs = 0;
   }
 
@@ -324,27 +380,31 @@ function integrateSubstep(
     vt: nextVt,
     velocity: nextVelocity,
     juice,
-    settled: computeSettled(t, nextVt, nextVelocity, juice),
+    ...(state.zoom ? { zoom: { ...state.zoom } } : {}),
+    settled: computeSettled(t, nextVt, nextVelocity, juice, state.zoom),
   };
 }
 
 /**
- * Выполняет шаг интегрирования VT -> T с защитой от больших dt (clamp до 0.05с),
- * учётом speedMultiplier и поддержкой reducedMotion (мгновенный переход VT = T).
+ * Выполняет шаг интегрирования VT -> T строго по реальному времени (G.TIMERS.REAL),
+ * с защитой от больших dt (clamp до 0.05с) и поддержкой reducedMotion (мгновенный переход VT = T).
+ * Аргумент speedMultiplier сохраняется для совместимости вызовов, не сжимая физику пружины на 2x/4x.
  */
 export function stepMoveable(
   state: MoveableState,
   dtSeconds: number,
-  speedMultiplier = 1,
+  _speedMultiplier = 1,
   reducedMotion = false,
   options: MoveableStepOptions = {},
 ): MoveableState {
   if (reducedMotion) {
+    const targetScale = state.t.scale + resolveZoomOffset(state.zoom);
     return {
       t: { ...state.t },
-      vt: { ...state.t },
+      vt: { ...state.t, scale: targetScale },
       velocity: { ...ZERO_VELOCITY },
       juice: null,
+      ...(state.zoom ? { zoom: { ...state.zoom } } : {}),
       settled: true,
     };
   }
@@ -353,8 +413,7 @@ export function stepMoveable(
     Number.isFinite(dtSeconds) && dtSeconds > 0
       ? Math.min(MAX_FRAME_DT_SECONDS, dtSeconds)
       : 0;
-  const safeSpeed = Number.isFinite(speedMultiplier) && speedMultiplier > 0 ? speedMultiplier : 1;
-  const totalDt = clampedDt * safeSpeed;
+  const totalDt = clampedDt;
 
   if (totalDt <= 0 || state.settled) {
     return {
@@ -362,7 +421,8 @@ export function stepMoveable(
       vt: { ...state.vt },
       velocity: { ...state.velocity },
       juice: state.juice ? { ...state.juice } : null,
-      settled: computeSettled(state.t, state.vt, state.velocity, state.juice),
+      ...(state.zoom ? { zoom: { ...state.zoom } } : {}),
+      settled: computeSettled(state.t, state.vt, state.velocity, state.juice, state.zoom),
     };
   }
 

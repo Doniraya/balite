@@ -7,7 +7,7 @@ import {
 } from './collection';
 import { extractDailyDateKeyFromSeed } from './daily';
 import { getHandLevelStats } from './handEval';
-import { RNG_STREAM_NAMES, type RngState, type RngStreamName } from './prng';
+import { RNG_STREAM_NAMES, type RngState } from './prng';
 import {
   BLIND_KINDS,
   BOSS_IDS,
@@ -1795,11 +1795,28 @@ function sanitizeRngState(raw: unknown): RngState | null {
   if (typeof raw.seed !== 'string') return null;
   if (!isRecord(raw.streams)) return null;
 
-  const streams = {} as Record<RngStreamName, number>;
+  const streams: Record<string, number> = {};
   for (const streamName of RNG_STREAM_NAMES) {
     const val = raw.streams[streamName];
-    if (typeof val !== 'number' || !Number.isFinite(val)) return null;
-    streams[streamName] = val >>> 0;
+    if (typeof val !== 'number' || !Number.isFinite(val) || val < 0) return null;
+    streams[streamName] = val > 1 ? val >>> 0 : val;
+  }
+
+  // Сохраняем все динамические ключи Balatro-словаря pseudorandom (с защитой размера)
+  let extraCount = 0;
+  for (const [key, val] of Object.entries(raw.streams)) {
+    if (Object.prototype.hasOwnProperty.call(streams, key)) continue;
+    if (extraCount >= 512) break;
+    if (
+      key.length > 0 &&
+      key.length <= 48 &&
+      typeof val === 'number' &&
+      Number.isFinite(val) &&
+      val >= 0
+    ) {
+      streams[key] = val > 1 ? val >>> 0 : val;
+      extraCount += 1;
+    }
   }
 
   return {

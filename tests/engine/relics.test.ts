@@ -808,7 +808,7 @@ describe('Простые, мастные и позиционные Реликв�
         handCards: [king, stoneKing, debuffedKing],
         handEvaluation: evalRes,
       }),
-    ).toBeNull();
+    ).toEqual({ locKey: 'card_debuffed' });
   });
 });
 
@@ -926,7 +926,7 @@ describe('Сложные условия R2/R3 (j_blackboard, j_card_sharp, j_acr
     ).toBe(3);
   });
 
-  it('проверяет j_stencil (с учётом negative слотов и строгого порога emptySlots > 0)', () => {
+  it('проверяет j_stencil (с учётом negative слотов и срабатывания при xMult > 1 даже без пустых слотов)', () => {
     const stencil1 = createRelicInstance('j_stencil', 'st1');
     const stencil2 = createRelicInstance('j_stencil', 'st2');
     const negStencil = createRelicInstance('j_stencil', 'st_neg', 'negative');
@@ -948,21 +948,25 @@ describe('Сложные условия R2/R3 (j_blackboard, j_card_sharp, j_acr
         handEvaluation: evalRes,
       });
 
-    // 1 слепок в 5 слотах: empty = 4 > 0 -> 4 + 1 = x5
+    // 1 слепок в 5 слотах: empty = 4 -> 4 + 1 = x5
     expect(runStencil([stencil1])?.xMult).toBe(5);
 
-    // 2 слепка + 2 реликвии (4 занято, 1 пустой): empty = 1 > 0 -> 1 + 2 = x3
+    // 2 слепка + 2 реликвии (4 занято, 1 пустой): empty = 1 -> 1 + 2 = x3
     expect(runStencil([stencil1, stencil2, filler, filler])?.xMult).toBe(3);
 
-    // 5 занятых слотов (вкл. 2 слепка): empty = 0 -> НЕ срабатывает (vanilla gate!)
-    expect(runStencil([stencil1, stencil2, filler, filler, filler])).toBeNull();
+    // A1: 5 занятых слотов и 2 слепка: empty = 0, stencilCount = 2 -> 0 + 2 = x2 (срабатывает при xMult > 1)
+    expect(runStencil([stencil1, stencil2, filler, filler, filler])?.xMult).toBe(2);
 
-    // 5 реликвий, одна из них negative: limit = 5 + 1 = 6, empty = 1 > 0 -> 1 + 1 = x2
+    // 5 занятых слотов и только 1 слепок: empty = 0, stencilCount = 1 -> xMult = 1 -> НЕ срабатывает
+    expect(runStencil([stencil1, filler, filler, filler, filler])).toBeNull();
+
+    // 5 реликвий, одна из них negative: limit = 5 + 1 = 6, empty = 1 -> 1 + 1 = x2
     expect(runStencil([negStencil, filler, filler, filler, filler], negStencil, negStencil)?.xMult).toBe(2);
 
-    // Blueprint копирует Stencil: xMult = (5 - 2) + 1 = x4 (при 0 пустых слотов тоже null)
+    // Blueprint копирует Stencil: (5 - 2) + 1 = x4; при 0 пустых и 1 Stencil -> null; при 0 пустых и 2 Stencil -> x2
     expect(runStencil([bp, stencil1], stencil1, bp, true)?.xMult).toBe(4);
     expect(runStencil([bp, stencil1, filler, filler, filler], stencil1, bp, true)).toBeNull();
+    expect(runStencil([bp, stencil1, stencil2, filler, filler], stencil1, bp, true)?.xMult).toBe(2);
   });
 
   it('проверяет ретриггеры j_sock_and_buskin и j_mime (фазы scoring и roundEnd)', () => {

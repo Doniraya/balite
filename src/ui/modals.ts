@@ -16,6 +16,7 @@ import {
   buildDeckViewModel,
   countMetaDiscoveries,
   createPlayingCard,
+  formatBalatroNumber,
   getMostPlayedHand,
   type AnimationSpeed,
   type CardBackStyle,
@@ -420,7 +421,7 @@ function renderHandsTab(
     const chipPill = document.createElement('span');
     chipPill.className = 'run-info-chip-pill';
     chipPill.setAttribute('aria-hidden', 'true');
-    chipPill.textContent = String(levelState.chips);
+    chipPill.textContent = formatBalatroNumber(levelState.chips);
 
     const multTimes = document.createElement('span');
     multTimes.className = 'run-info-mult-times';
@@ -430,7 +431,7 @@ function renderHandsTab(
     const multPill = document.createElement('span');
     multPill.className = 'run-info-mult-pill';
     multPill.setAttribute('aria-hidden', 'true');
-    multPill.textContent = String(levelState.mult);
+    multPill.textContent = formatBalatroNumber(levelState.mult);
 
     formulaEl.append(chipPill, multTimes, multPill);
 
@@ -600,7 +601,7 @@ function renderBlindsTab(
     gem.className = 'run-info-blind-gem';
     gem.textContent = '◆';
     const num = document.createElement('strong');
-    num.textContent = String(slot.targetScore);
+    num.textContent = formatBalatroNumber(slot.targetScore);
     targetVal.append(gem, ' ', num);
 
     const rewardEl = document.createElement('div');
@@ -1351,7 +1352,7 @@ function renderStatsTabBody(
   grid.dataset.statsPanel = 'true';
 
   const entries: ReadonlyArray<{ readonly label: string; readonly value: string }> = [
-    { label: translator.t('ui.stats.bestHand'), value: String(summary.bestHandScore) },
+    { label: translator.t('ui.stats.bestHand'), value: formatBalatroNumber(summary.bestHandScore) },
     { label: translator.t('ui.stats.highestRound'), value: String(summary.highestRound) },
     {
       label: translator.t('ui.stats.highestStage'),

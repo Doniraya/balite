@@ -1,5 +1,5 @@
 /**
- * Имена изолированных потоков генератора случайных чисел для различных подсистем забега.
+ * Базовые имена потоков PRNG для совместимости инициализации и санитизации сохранений.
  */
 export const RNG_STREAM_NAMES = [
   'shop',
@@ -12,14 +12,19 @@ export const RNG_STREAM_NAMES = [
 ] as const;
 
 /**
- * Идентификатор изолированного PRNG-потока.
+ * Алфавит случайных кодов забега из оригинала Balatro ('1'..'9', 'A'..'N', 'P'..'Z'; исключены '0' и 'O').
  */
-export type RngStreamName = (typeof RNG_STREAM_NAMES)[number];
+export const SEED_ALPHABET = '123456789ABCDEFGHIJKLMNPQRSTUVWXYZ';
 
 /**
- * Карта текущих 32-битных состояний всех потоков PRNG.
+ * Идентификатор потока/ключа PRNG (базовый поток или динамический строковый ключ Balatro вроде 'lucky_mult', 'cdt1').
  */
-export type RngStreams = Readonly<Record<RngStreamName, number>>;
+export type RngStreamName = (typeof RNG_STREAM_NAMES)[number] | (string & {});
+
+/**
+ * Динамический словарь состояний ключей PRNG (`G.GAME.pseudorandom`).
+ */
+export type RngStreams = Readonly<Record<string, number>>;
 
 /**
  * Сериализуемое иммутабельное состояние многопоточного PRNG забега.
@@ -149,12 +154,61 @@ export class Mulberry32 {
 }
 
 /**
- * Инициализирует сериализуемое состояние всех 7 независимых PRNG-потоков из строкового сида забега.
+ * Вычисляет некриптографический float-хеш строки `pseudohash` по точной формуле Balatro (misc_functions.lua:279).
+ */
+export function pseudohash(str: string): number {
+  let num = 1;
+  for (let i = str.length; i >= 1; i -= 1) {
+    num = ((1.1239285023 / num) * str.charCodeAt(i - 1) * Math.PI + Math.PI * i) % 1;
+    if (!Number.isFinite(num) || num === 0) {
+      num = 1e-13;
+    }
+  }
+  return num;
+}
+
+/**
+ * Генерирует случайный код забега по алгоритму и алфавиту оригинала (`random_string`: 1..9, A..N, P..Z).
+ */
+export function generateRandomSeed(length = 8): string {
+  const digits = '123456789';
+  const lettersAN = 'ABCDEFGHIJKLMN';
+  const lettersPZ = 'PQRSTUVWXYZ';
+  let result = '';
+  for (let i = 0; i < length; i += 1) {
+    const branch = Math.random();
+    if (branch > 0.7) {
+      result += digits[Math.floor(Math.random() * digits.length)] ?? '1';
+    } else if (Math.random() > 0.45) {
+      result += lettersAN[Math.floor(Math.random() * lettersAN.length)] ?? 'A';
+    } else {
+      result += lettersPZ[Math.floor(Math.random() * lettersPZ.length)] ?? 'P';
+    }
+  }
+  return result;
+}
+
+/**
+ * Сворачивает [0, 1) double из `pseudoseed` в 32-битное зерно с сохранением старших и младших бит мантиссы.
+ */
+function doubleToUint32Seed(value: number): number {
+  const scaled = value * UINT32_MODULO;
+  const hi = Math.floor(scaled) >>> 0;
+  const lo = Math.floor((scaled - hi) * UINT32_MODULO) >>> 0;
+  let h = (hi ^ Math.imul(lo, 0x9e3779b1)) >>> 0;
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b) >>> 0;
+  h ^= h >>> 13;
+  return h >>> 0;
+}
+
+/**
+ * Инициализирует сериализуемое состояние PRNG с базовыми потоками через `pseudohash`.
  */
 export function createRngState(seed: string): RngState {
-  const streams = {} as Record<RngStreamName, number>;
+  const streams: Record<string, number> = {};
   for (const streamName of RNG_STREAM_NAMES) {
-    streams[streamName] = hashSeed(`${seed}::${streamName}`);
+    streams[streamName] = pseudohash(`${streamName}${seed}`);
   }
   return {
     seed,
@@ -163,17 +217,32 @@ export function createRngState(seed: string): RngState {
 }
 
 /**
- * Генерирует следующее число с плавающей точкой в [0, 1) из указанного потока, не затрагивая другие потоки.
+ * Генерирует следующее число с плавающей точкой в [0, 1) из указанного ключа PRNG (`pseudoseed`),
+ * не затрагивая остальные ключи словаря.
  */
 export function nextFloat(state: RngState, stream: RngStreamName): RngResult<number> {
-  const step = mulberry32Step(state.streams[stream]);
+  const prevRaw = state.streams[stream];
+  const prev =
+    prevRaw === undefined
+      ? pseudohash(`${stream}${state.seed}`)
+      : prevRaw > 1
+        ? ((prevRaw >>> 0) % 1_000_000_000) / 1_000_000_000 || 0.5
+        : prevRaw;
+
+  const nextStreamVal = Math.abs(
+    Number(((2.134453429141 + prev * 1.72431234) % 1).toFixed(13)),
+  );
+  const hashedSeed = pseudohash(state.seed);
+  const seedFloat = (nextStreamVal + hashedSeed) / 2;
+  const step = mulberry32Step(doubleToUint32Seed(seedFloat));
+
   return {
     value: step.value,
     nextState: {
       seed: state.seed,
       streams: {
         ...state.streams,
-        [stream]: step.nextState,
+        [stream]: nextStreamVal,
       },
     },
   };
@@ -240,4 +309,38 @@ export function shuffleArray<T>(
     value: copy,
     nextState: currentState,
   };
+}
+
+/**
+ * Извлекает стабильный числовой индекс создания карты (`sort_id`) из идентификатора `card_<N>`.
+ */
+export function getCardSortId(cardId: string): number {
+  const match = /^card_(\d+)$/.exec(cardId);
+  return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * Компаратор для предварительной сортировки карт перед перетасовкой `pseudoshuffle`.
+ */
+export function compareCardIdsForShuffle(a: string, b: string): number {
+  const sortA = getCardSortId(a);
+  const sortB = getCardSortId(b);
+  if (sortA !== sortB) return sortA - sortB;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * Детерминированная перетасовка колоды по алгоритму Balatro (`pseudoshuffle`):
+ * сначала сортирует карты по `sort_id`, затем выполняет тасование Фишера — Йетса.
+ */
+export function shuffleDeckIds(
+  state: RngState,
+  stream: RngStreamName,
+  cardIds: readonly string[],
+): RngResult<string[]> {
+  if (cardIds.length <= 1) {
+    return { value: [...cardIds], nextState: state };
+  }
+  const sorted = [...cardIds].sort(compareCardIdsForShuffle);
+  return shuffleArray(state, stream, sorted);
 }

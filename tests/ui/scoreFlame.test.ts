@@ -6,9 +6,12 @@ import {
 } from '../../src/ui/scoreFlame';
 
 describe('computeScoreFlameIntensity', () => {
-  it('возвращает 0, если прогнозируемый счёт меньше цели раунда', () => {
+  it('возвращает 0, если прогнозируемый счёт руки меньше цели раунда (без суммирования с текущим счётом)', () => {
     expect(computeScoreFlameIntensity(0, 20, 2, 300)).toBe(0);
     expect(computeScoreFlameIntensity(250, 20, 2, 300)).toBe(0);
+    expect(computeScoreFlameIntensity(290, 20, 1, 300)).toBe(0);
+    // Масштаб Balatro: clamp01((log_5(300) - 2) / 10) ≈ 0.1544
+    expect(computeScoreFlameIntensity(0, 100, 3, 300)).toBeCloseTo((Math.log(300) / Math.log(5) - 2) / 10, 4);
   });
 
   it('возвращает 0 при неактивном подсчёте (нулевые Сила, Множ или цель)', () => {
@@ -99,8 +102,8 @@ describe('createScoreFlame', () => {
     expect(controller.element.dataset.flameActive).toBe('true');
     expect(raf.requestFrame).toHaveBeenCalledTimes(1);
 
-    // За несколько кадров сглаженная интенсивность приближается к целевой
-    for (let i = 0; i < 20; i++) {
+    // За несколько кадров (с инерцией 2-го порядка Balatro) интенсивность превышает 0.5
+    for (let i = 0; i < 36; i++) {
       raf.flushFrame(16);
     }
     expect(controller.getIntensity()).toBeGreaterThan(0.5);
@@ -110,7 +113,7 @@ describe('createScoreFlame', () => {
 
     // Сброс в 0 плавно гасит пламя и останавливает цикл rAF
     controller.setIntensity(0);
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 180; i++) {
       raf.flushFrame(32);
     }
     expect(controller.getIntensity()).toBe(0);

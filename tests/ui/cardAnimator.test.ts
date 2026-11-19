@@ -336,8 +336,8 @@ describe('CardAnimator (пружинные полёты карт поверх Mo
     animator.destroy();
   });
 
-  it('ускоряет завершение полёта при speed = 4 по сравнению со speed = 0.5', () => {
-    const runWithSpeed = (speed: 0.5 | 4): number => {
+  it('ускоряет каскад добора из 6 карт при speed = 4 за счёт stagger-задержек, сохраняя реальное время пружины (C1)', () => {
+    const runCascade = (speed: 0.5 | 4, cardCount: number): number => {
       const { container, flightLayer } = createStagePair();
       const scheduler = createManualFrameScheduler();
       const animator = createCardAnimator({
@@ -348,29 +348,28 @@ describe('CardAnimator (пружинные полёты карт поверх Mo
         prefersReducedMotion: () => false,
       });
 
-      const slotBefore = createCardSlot({
-        cardId: 'card_speed',
-        zone: 'hand',
-        rect: { left: 80, top: 960, width: 80, height: 112 },
-      });
-      container.append(slotBefore);
+      const deckBefore = createDeckBtn({ left: 600, top: 1120, width: 70, height: 96 });
+      container.append(deckBefore);
       const snapshot = animator.captureSnapshot(container);
 
-      const slotAfter = createCardSlot({
-        cardId: 'card_speed',
-        zone: 'play',
-        rect: { left: 340, top: 480, width: 80, height: 112 },
-      });
-      container.replaceChildren(slotAfter);
+      const deckAfter = createDeckBtn({ left: 600, top: 1120, width: 70, height: 96 });
+      const newSlots = Array.from({ length: cardCount }, (_, idx) =>
+        createCardSlot({
+          cardId: `card_speed_${idx}`,
+          zone: 'hand',
+          rect: { left: 60 + idx * 80, top: 960, width: 80, height: 112 },
+        }),
+      );
+      container.replaceChildren(...newSlots, deckAfter);
 
-      animator.animateFromSnapshot(container, snapshot, { speed });
-      const frames = scheduler.runUntilIdle(400, 16);
+      animator.animateFromSnapshot(container, snapshot, { speed, animateDeal: true });
+      const frames = scheduler.runUntilIdle(500, 16);
       animator.destroy();
       return frames;
     };
 
-    const framesSlow = runWithSpeed(0.5);
-    const framesFast = runWithSpeed(4);
+    const framesSlow = runCascade(0.5, 6);
+    const framesFast = runCascade(4, 6);
     expect(framesFast).toBeLessThan(framesSlow);
     expect(framesFast * 2).toBeLessThan(framesSlow);
   });
@@ -724,6 +723,97 @@ describe('CardAnimator (пружинные полёты карт поверх Mo
       expect(p2.style.transform).toBe('');
       expect(animator.getActiveFlightCount()).toBe(0);
 
+      animator.destroy();
+    });
+
+    it('поддерживает пружинный hover-зум через setHoverZoom и поочерёдный сброс с шагом 0.10с через onCardDepart и паузой 0.30с до добора', () => {
+      const { container, flightLayer } = createStagePair();
+      const scheduler = createManualFrameScheduler();
+      const departEvents: Array<{ index: number; zone: 'hand' | 'play' }> = [];
+
+      const animator = createCardAnimator({
+        flightLayer,
+        requestFrame: scheduler.requestFrame,
+        cancelFrame: scheduler.cancelFrame,
+        now: scheduler.now,
+        prefersReducedMotion: () => false,
+        onCardDepart: (index, zone) => {
+          departEvents.push({ index, zone });
+        },
+      });
+
+      const s1 = createCardSlot({
+        cardId: 'dep_1',
+        zone: 'play',
+        rect: { left: 100, top: 480, width: 80, height: 112 },
+      });
+      const s2 = createCardSlot({
+        cardId: 'dep_2',
+        zone: 'play',
+        rect: { left: 200, top: 480, width: 80, height: 112 },
+      });
+      container.append(s1, s2);
+
+      // Hover-зум плавно масштабирует карту и возвращается в исходный масштаб
+      expect(animator.setHoverZoom?.(s1, true)).toBe(true);
+      scheduler.runUntilIdle(120, 16);
+      expect(s1.style.transform).toContain('scale(1.05');
+
+      expect(animator.setHoverZoom?.(s1, false)).toBe(true);
+      scheduler.runUntilIdle(120, 16);
+      expect(s1.style.transform).toBe('');
+
+      // Поочерёдный сброс двух карт с шагом 0.10с (100мс) и вызовом onCardDepart
+      const beforeSnap = animator.captureSnapshot(container);
+      container.replaceChildren();
+      animator.animateFromSnapshot(container, beforeSnap, {
+        speed: 1,
+        animateDepartures: true,
+      });
+
+      scheduler.step(16);
+      // На первом шаге стартует только первая карта (index: 0), вторая ждёт 100мс
+      expect(departEvents).toEqual([{ index: 0, zone: 'play' }]);
+
+      for (let i = 0; i < 6; i += 1) {
+        scheduler.step(16);
+      }
+      expect(departEvents).toEqual([
+        { index: 0, zone: 'play' },
+        { index: 1, zone: 'play' },
+      ]);
+
+      scheduler.runUntilIdle(240, 16);
+
+      // При одновременном сбросе и доборе новой карты новая карта ждёт паузу 0.3с после ухода сброшенной
+      const deckBefore = createDeckBtn();
+      const handBefore = createCardSlot({
+        cardId: 'disc_1',
+        zone: 'hand',
+        rect: { left: 100, top: 960, width: 80, height: 112 },
+      });
+      container.replaceChildren(handBefore, deckBefore);
+      const discSnap = animator.captureSnapshot(container);
+      const drawnAfter = createCardSlot({
+        cardId: 'drawn_after_disc',
+        zone: 'hand',
+        rect: { left: 100, top: 960, width: 80, height: 112 },
+      });
+      container.replaceChildren(drawnAfter, createDeckBtn());
+      animator.animateFromSnapshot(container, discSnap, { speed: 1 });
+
+      for (let i = 0; i < 10; i += 1) {
+        scheduler.step(16);
+      }
+      // На 160мс (меньше 300мс) новая карта ещё ждёт в колоде
+      expect(drawnAfter.style.opacity).toBe('0');
+      for (let i = 0; i < 12; i += 1) {
+        scheduler.step(16);
+      }
+      // После 352мс новая карта вылетела из колоды
+      expect(drawnAfter.style.opacity).toBe('');
+
+      scheduler.runUntilIdle(240, 16);
       animator.destroy();
     });
   });

@@ -360,8 +360,7 @@ export const RELIC_DEFINITIONS: readonly RelicDefinition[] = [
       },
       onScoreRelic: (ctx) => {
         if (isRelicDisabled(ctx)) return null;
-        const { chips } = ctx.effectRelic.state;
-        return chips > 0 ? chipsResult(chips) : null;
+        return chipsResult(ctx.effectRelic.state.chips);
       },
     },
   }),
@@ -649,8 +648,7 @@ export const RELIC_DEFINITIONS: readonly RelicDefinition[] = [
         }
         const relicSlotLimit = ctx.state.maxRelics + negativeCount;
         const emptySlots = Math.max(0, relicSlotLimit - ctx.state.relics.length);
-        // Канонический порог оригинала: без реально свободных слотов (emptySlots <= 0) слепок не срабатывает
-        if (emptySlots <= 0) return null;
+        // По оригиналу (card.lua:3653, 4203-4208) Слепок срабатывает при любом xMult > 1 (даже при 0 пустых слотов, если есть 2+ Слепка)
         const xMult = emptySlots + stencilCount;
         return xMult > 1 ? xMultResult(xMult) : null;
       },
@@ -673,7 +671,8 @@ export const RELIC_DEFINITIONS: readonly RelicDefinition[] = [
     baseCost: 5,
     hooks: {
       onHoldCardRepetition: (ctx) => {
-        if (isRelicDisabled(ctx) || ctx.card.debuffed) return null;
+        // В конце раунда подавленная карта не даёт эффектов; в скоринге эффект card_debuffed (напр., j_baron) может ретриггериться
+        if (isRelicDisabled(ctx) || (ctx.card.debuffed && ctx.phase === 'roundEnd')) return null;
         if (ctx.phase !== 'scoring' && ctx.phase !== 'roundEnd') return null;
         return { retriggerDelta: 1 };
       },
@@ -698,7 +697,9 @@ export const RELIC_DEFINITIONS: readonly RelicDefinition[] = [
     hooks: {
       onScoreRelic: (ctx) => {
         if (isRelicDisabled(ctx)) return null;
-        return ctx.state.dollars > 0 ? chipsResult(2 * ctx.state.dollars) : null;
+        // В оригинале (card.lua:3936-3942) Бык учитывает dollars + dollar_buffer текущей руки
+        const effectiveDollars = ctx.state.dollars + (ctx.dollarBuffer ?? 0);
+        return effectiveDollars > 0 ? chipsResult(2 * effectiveDollars) : null;
       },
     },
   }),
@@ -726,8 +727,11 @@ export const RELIC_DEFINITIONS: readonly RelicDefinition[] = [
     baseCost: 8,
     hooks: {
       onHoldCard: (ctx) => {
-        if (isRelicDisabled(ctx) || ctx.card.debuffed) return null;
-        return getCardEffectiveRank(ctx.card) === 13 ? xMultResult(1.5) : null;
+        if (isRelicDisabled(ctx) || getCardEffectiveRank(ctx.card) !== 13) return null;
+        if (ctx.card.debuffed) {
+          return { locKey: 'card_debuffed' };
+        }
+        return xMultResult(1.5);
       },
     },
   }),
@@ -748,7 +752,9 @@ export const RELIC_DEFINITIONS: readonly RelicDefinition[] = [
     hooks: {
       onScoreRelic: (ctx) => {
         if (isRelicDisabled(ctx)) return null;
-        if (ctx.state.dollars > 4) return null;
+        // В оригинале (card.lua:3743-3761) Бродяга проверяет строго G.GAME.dollars <= 4 без dollar_buffer текущей руки
+        const dollarsBeforeBuffer = ctx.dollarsBeforeBuffer ?? ctx.state.dollars;
+        if (dollarsBeforeBuffer > 4) return null;
         const negativeConsumables = ctx.state.consumables.filter(
           (item) => item.edition === 'negative',
         ).length;

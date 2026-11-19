@@ -294,4 +294,47 @@ describe('initCardTiltController (Story 2.2: 3D-наклон и фазовое �
     expect(cardNew.style.getPropertyValue('--sway-r')).toBe('');
     expect(cardNew.style.getPropertyValue('--glare-x')).toBe('');
   });
+
+  it('различает амплитуду бегущей волны в обычной руке, бустере и расходниках (C3)', () => {
+    const container = document.createElement('div');
+
+    const handZone = document.createElement('div');
+    handZone.className = 'hand-fan';
+    const handSlot = createCardElement('hand_a', 100, 100, 80, 112);
+    handSlot.dataset.zone = 'hand';
+    const handCard = handSlot.querySelector('.card-frame') as HTMLElement;
+    handZone.append(handSlot);
+
+    const boosterZone = document.createElement('div');
+    boosterZone.className = 'hand-fan hand-fan--booster';
+    const boosterSlot = createCardElement('boost_a', 100, 100, 80, 112);
+    boosterSlot.dataset.zone = 'hand';
+    const boosterCard = boosterSlot.querySelector('.card-frame') as HTMLElement;
+    boosterZone.append(boosterSlot);
+
+    const consumableSlot = createCardElement('cons_a', 100, 100, 80, 112);
+    consumableSlot.dataset.zone = 'consumable';
+    const consumableCard = consumableSlot.querySelector('.card-frame') as HTMLElement;
+
+    container.append(handZone, boosterZone, consumableSlot);
+    document.body.append(container);
+
+    const raf = createManualRafDriver();
+    const controller = initCardTiltController({
+      container,
+      reducedMotion: false,
+      now: raf.now,
+      requestFrame: raf.requestFrame,
+      cancelFrame: raf.cancelFrame,
+    });
+
+    raf.stepFrames(25, 40);
+
+    const handSwayY = Math.abs(parseFloat(handCard.style.getPropertyValue('--sway-y')));
+    const boosterSwayY = Math.abs(parseFloat(boosterCard.style.getPropertyValue('--sway-y')));
+    expect(boosterSwayY).toBeGreaterThan(handSwayY * 2);
+    expect(parseFloat(consumableCard.style.getPropertyValue('--sway-r'))).toBeCloseTo(0, 4);
+
+    controller.destroy();
+  });
 });

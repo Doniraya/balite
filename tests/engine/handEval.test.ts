@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createPlayingCard } from '../../src/engine/cards';
 import {
+  BALATRO_NUMBER_SWITCH_POINT,
   HAND_BASE_CONFIG,
   createInitialHandLevels,
   evaluatePokerHand,
+  formatBalatroNumber,
   getBlindAmount,
   getHandLevelStats,
 } from '../../src/engine/handEval';
@@ -220,13 +222,13 @@ describe('evaluatePokerHand: все 12 раскладов, модификато�
     expect(stonePairBlock.handType).toBe('High Card');
     expect(stonePairBlock.scoringCardIds).toEqual(['a1']);
 
-    // Только Stone-карты -> High Card берёт первую Stone-карту
+    // B5: только Stone-карты -> High Card выбирает карту с наибольшим Card:get_nominal() (hearts -18.6 > spades -38)
     const onlyStones = evaluatePokerHand([
       c('st1', 2, 'spades', 'stone'),
       c('st2', 14, 'hearts', 'stone'),
     ]);
     expect(onlyStones.handType).toBe('High Card');
-    expect(onlyStones.scoringCardIds).toEqual(['st1']);
+    expect(onlyStones.scoringCardIds).toEqual(['st2']);
 
     // Stone-карта ломает 5-карточный Флеш/Стрит без Four Fingers, но при Four Fingers 4 обычные карты работают
     const fourNormalPlusStone = [
@@ -379,5 +381,15 @@ describe('evaluatePokerHand: все 12 раскладов, модификато�
     );
     expect(combo.handType).toBe('Straight Flush');
     expect(combo.scoringCardIds).toEqual(['1', '2', '3', '4']);
+  });
+
+  it('B5: форматирует числа >= 1e11 в научной нотации %.3feN через formatBalatroNumber', () => {
+    expect(BALATRO_NUMBER_SWITCH_POINT).toBe(100_000_000_000);
+    expect(formatBalatroNumber(0)).toBe('0');
+    expect(formatBalatroNumber(50_000)).toBe('50000');
+    expect(formatBalatroNumber(99_999_999_999)).toBe('99999999999');
+    expect(formatBalatroNumber(100_000_000_000)).toBe('1.000e11');
+    expect(formatBalatroNumber(123_456_000_000)).toBe('1.235e11');
+    expect(formatBalatroNumber(-123_456_000_000)).toBe('-1.235e11');
   });
 });

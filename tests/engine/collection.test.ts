@@ -233,5 +233,29 @@ describe('Коллекция Balite (src/engine/collection.ts)', () => {
       phase: 'playing',
     });
     expect(ante9Discoveries.discoveredMonsters).toEqual([]);
+
+    // A11: после победы над Боссом Этапа 1 state.ante уже 2, а anteBlinds всё ещё с побеждённым Боссом Этапа 1 —
+    // монстры m_ante_2_* НЕ должны засчитываться преждевременно; после Босса Этапа 2 (state.ante = 3) — m_ante_2_* засчитываются
+    const postBoss1Shop: RunState = {
+      ...richState,
+      phase: 'shop',
+      ante: 2,
+      currentBlindIndex: 2,
+      anteBlinds: [
+        { kind: 'small', bossId: null, targetScore: 300, reward: 3, status: 'defeated', skipTagId: null },
+        { kind: 'big', bossId: null, targetScore: 450, reward: 4, status: 'defeated', skipTagId: null },
+        { kind: 'boss', bossId: 'bl_hook', targetScore: 600, reward: 5, status: 'defeated', skipTagId: null },
+      ],
+    };
+    expect(collectRunMetaDiscoveries(postBoss1Shop).discoveredMonsters).toEqual([]);
+
+    const postBoss2Shop: RunState = {
+      ...postBoss1Shop,
+      ante: 3,
+    };
+    expect(collectRunMetaDiscoveries(postBoss2Shop).discoveredMonsters).toEqual([
+      'm_ante_2_small',
+      'm_ante_2_big',
+    ]);
   });
 });

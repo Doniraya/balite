@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createStandardDeck } from '../../src/engine/cards';
 import { unlockAllCollection } from '../../src/engine/collection';
 import { createInitialHandLevels } from '../../src/engine/handEval';
-import { createRngState } from '../../src/engine/prng';
+import { createRngState, nextFloat } from '../../src/engine/prng';
 import {
   countMetaDiscoveries,
   createCompactFallbackSave,
@@ -617,5 +617,69 @@ describe('baliteSave и createBalitePlatformBridge', () => {
 
     bridge.audio.dispose();
     freshDeviceBridge.audio.dispose();
+  });
+
+  it('B1: укладывает динамические ключи rngState.streams в лимит <= 2200 байт на ключ при чанкинге VK', async () => {
+    window.history.replaceState({}, '', '/?platform=vk');
+
+    const vkStorage = new Map<string, string>();
+    vkBridgeMock.send.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+      if (method === 'VKWebAppStorageSet') {
+        const key = String(params?.key ?? '');
+        const value = String(params?.value ?? '');
+        vkStorage.set(key, value);
+        return { result: true };
+      }
+      if (method === 'VKWebAppStorageGet') {
+        const reqKeys = Array.isArray(params?.keys) ? (params.keys as string[]) : [];
+        return {
+          keys: reqKeys
+            .filter((k) => vkStorage.has(k))
+            .map((k) => ({ key: k, value: vkStorage.get(k)! })),
+        };
+      }
+      return {};
+    });
+
+    const bridge = createBalitePlatformBridge({
+      localBackupKey: 'balite_vk_dynamic_rng_test',
+      cloudDebounceMs: 0,
+    });
+    await bridge.init();
+
+    let dynRng = createRngState('VK-B1-DYN');
+    for (let ante = 1; ante <= 8; ante += 1) {
+      for (const prefix of ['cdt', 'Voucher', 'shop_pack', 'Tag', 'rarity', 'Joker1sho']) {
+        dynRng = nextFloat(dynRng, `${prefix}${ante}`).nextState;
+      }
+    }
+    dynRng = nextFloat(dynRng, 'lucky_mult').nextState;
+    dynRng = nextFloat(dynRng, 'lucky_money').nextState;
+
+    const runWithDynRng: RunState = {
+      ...createOversizedRunState(),
+      rngState: dynRng,
+    };
+    const meta = createInitialMetaSave(9000);
+    const snapshot = serializeRunStateToSnapshot(runWithDynRng, 25, 9500);
+    const fullSave = createPlayerSaveData(meta, snapshot, 25, 9500);
+
+    await expect(persistBaliteSave(bridge, fullSave)).resolves.toBe(true);
+    for (const [, storedVal] of vkStorage) {
+      expect(utf8ByteLength(storedVal)).toBeLessThanOrEqual(BALITE_MAX_STORAGE_BYTES);
+    }
+
+    localStorage.clear();
+    const reloadBridge = createBalitePlatformBridge({
+      localBackupKey: 'balite_vk_dynamic_rng_reload',
+    });
+    await reloadBridge.init();
+    const loaded = await loadBaliteSave(reloadBridge);
+    expect(loaded.activeRun).toEqual(snapshot);
+    expect(loaded.activeRun?.rngState.streams['lucky_mult']).toBe(dynRng.streams['lucky_mult']);
+    expect(loaded.activeRun?.rngState.streams['Voucher8']).toBe(dynRng.streams['Voucher8']);
+
+    bridge.audio.dispose();
+    reloadBridge.audio.dispose();
   });
 });

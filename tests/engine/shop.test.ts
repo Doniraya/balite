@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createStandardDeck } from '../../src/engine/cards';
+import { createConsumableInstance } from '../../src/engine/consumables';
 import { createInitialHandLevels } from '../../src/engine/handEval';
 import { createRngState } from '../../src/engine/prng';
 import { RELIC_DEFINITIONS, createRelicInstance, getRelicDefinition, resolveRelicTarget } from '../../src/engine/relics';
 import {
+  appendShopTopShelfOffer,
+  canAffordCost,
   createShopState,
   generateBoosterState,
   pickPoolConsumable,
@@ -14,6 +17,7 @@ import {
 } from '../../src/engine/shop';
 import {
   CHARTER_IDS,
+  SCROLL_IDS,
   type Edition,
   type PackOffer,
   type RelicId,
@@ -475,5 +479,111 @@ describe('Магазин, бустеры и вероятности Balite (shop.
       }
     }
     expect(blackHoleHits).toBeGreaterThan(0);
+  });
+
+  it('A7, A14, A15, A16: единый used_jokers с полкой, фоллбэк j_joker, бесплатные рероллы/долг и забор руки бустера из drawPileIds', () => {
+    // A14: при исчерпании всех R3 реликвий фоллбэк возвращает j_joker (а не дубликат и не R1/R2)
+    const allR3Relics = RELIC_DEFINITIONS.filter((d) => d.rarity === 3).map((d, idx) =>
+      createRelicInstance(d.id, `r3_${idx}`),
+    );
+    const r3Exhausted = createShopTestState({ relics: allR3Relics });
+    expect(pickPoolRelic(r3Exhausted, { rarity: 3 }).value).toBe('j_joker');
+
+    // A7: непроданные товары полки магазина не выпадают внутри открытого бустера
+    const allButOneScrolls = SCROLL_IDS.slice(0, 15).map((id, idx) =>
+      createConsumableInstance(id, `c_own_${idx}`),
+    );
+    const lastScroll = SCROLL_IDS[15]!;
+    const arcanaShopState = createShopTestState({
+      consumables: allButOneScrolls.slice(0, 14),
+      shop: {
+        offers: [
+          {
+            uid: 'shop_scroll',
+            kind: 'consumable',
+            consumable: createConsumableInstance(lastScroll, 'cons_shelf'),
+            cost: 3,
+            baseCost: 3,
+            sold: false,
+          },
+        ],
+        voucher: null,
+        packs: [],
+        rerollCost: 5,
+        tempRerollCost: null,
+        rerollsUsedThisShop: 0,
+      },
+    });
+    const arcanaPack: PackOffer = {
+      uid: 'p_arc',
+      packId: 'p_arcana_normal',
+      type: 'arcana',
+      size: 'normal',
+      cost: 4,
+      baseCost: 4,
+      totalCards: 1,
+      chooseCount: 1,
+      purchased: true,
+    };
+    const arcBooster = generateBoosterState(arcanaShopState, arcanaPack);
+    const arcChoice = arcBooster.nextState.booster?.choices[0];
+    expect(arcChoice?.kind).toBe('consumable');
+    if (arcChoice?.kind === 'consumable') {
+      // Единственный оставшийся без полки и инвентаря — SCROLL_IDS[14]
+      expect(arcChoice.consumable.id).toBe(SCROLL_IDS[14]);
+    }
+
+    // Проверка appendShopTopShelfOffer (A3 на уровне shop.ts)
+    const expandBase = createShopTestState({
+      shopSlots: 3,
+      shop: arcanaShopState.shop,
+    });
+    const expanded = appendShopTopShelfOffer(expandBase, getRelicDefinition);
+    expect(expanded.nextState.shop?.offers).toHaveLength(3);
+
+    // A15: бесплатный реролл (cost = 0) доступен при отрицательном балансе, платный требует bankruptAt
+    const negativeState = createShopTestState({
+      dollars: -5,
+      shop: {
+        offers: [],
+        voucher: null,
+        packs: [],
+        rerollCost: 0,
+        tempRerollCost: 0,
+        rerollsUsedThisShop: 0,
+      },
+    });
+    expect(canAffordCost(negativeState, 0)).toBe(true);
+    expect(canAffordCost(negativeState, 5)).toBe(false);
+    expect(rerollShopState(negativeState, getRelicDefinition).nextState.shop?.rerollsUsedThisShop).toBe(1);
+
+    const creditShop = createShopTestState({
+      dollars: -10,
+      bankruptAt: -20,
+      shop: {
+        offers: [],
+        voucher: null,
+        packs: [],
+        rerollCost: 5,
+        tempRerollCost: null,
+        rerollsUsedThisShop: 0,
+      },
+    });
+    const creditReroll = rerollShopState(creditShop, getRelicDefinition);
+    expect(creditReroll.nextState.dollars).toBe(-15);
+
+    // A16: при непустом drawPileIds generateBoosterState берёт строго верхние handSize карт без шаффла
+    const seqDeck = createStandardDeck();
+    const seqIds = seqDeck.map((c) => c.id);
+    const boosterDrawRes = generateBoosterState(
+      createShopTestState({
+        deck: seqDeck,
+        drawPileIds: seqIds,
+        handSize: 8,
+      }),
+      arcanaPack,
+    );
+    expect(boosterDrawRes.nextState.booster?.drawnHandCardIds).toEqual(seqIds.slice(0, 8));
+    expect(boosterDrawRes.nextState.drawPileIds).toEqual(seqIds.slice(8));
   });
 });

@@ -1689,4 +1689,38 @@ describe('Эпик 7: reviveUsed, adRerollUsed, dailyBestDate/Score и reviewPro
     expect(serialized).not.toBeNull();
     expect(utf8ByteLength(serialized!)).toBeLessThanOrEqual(2200);
   });
+
+  it('B1: сохраняет, санитизирует и восстанавливает динамические ключи rngState.streams без потери состояния', () => {
+    const baseState = createRichRunState();
+    let dynamicRng = createRngState('DYN-SAVE-B1');
+    for (const key of ['lucky_mult', 'lucky_money', 'cdt1', 'Voucher1', 'shop_pack1', 'stdset1']) {
+      dynamicRng = nextFloat(dynamicRng, key).nextState;
+    }
+
+    const richWithDynamicRng = {
+      ...baseState,
+      rngState: dynamicRng,
+    };
+
+    const meta = createInitialMetaSave(1700000000000);
+    const snapshot = serializeRunStateToSnapshot(richWithDynamicRng, 10, 1700000005000);
+    const playerSave = createPlayerSaveData(meta, snapshot, 10, 1700000005000);
+    const sanitized = sanitizePlayerSaveData(JSON.parse(JSON.stringify(playerSave)) as unknown);
+
+    expect(sanitized.activeRun).not.toBeNull();
+    expect(sanitized.activeRun?.rngState.streams['lucky_mult']).toBe(dynamicRng.streams['lucky_mult']);
+    expect(sanitized.activeRun?.rngState.streams['lucky_money']).toBe(dynamicRng.streams['lucky_money']);
+    expect(sanitized.activeRun?.rngState.streams['cdt1']).toBe(dynamicRng.streams['cdt1']);
+    expect(sanitized.activeRun?.rngState.streams['Voucher1']).toBe(dynamicRng.streams['Voucher1']);
+    expect(sanitized.activeRun?.rngState.streams['shop_pack1']).toBe(dynamicRng.streams['shop_pack1']);
+    expect(sanitized.activeRun?.rngState.streams['stdset1']).toBe(dynamicRng.streams['stdset1']);
+
+    const restoredRun = restoreRunStateFromSnapshot(sanitized.activeRun!);
+    expect(nextFloat(restoredRun.rngState, 'lucky_mult').value).toBe(
+      nextFloat(dynamicRng, 'lucky_mult').value,
+    );
+    expect(nextFloat(restoredRun.rngState, 'Voucher1').value).toBe(
+      nextFloat(dynamicRng, 'Voucher1').value,
+    );
+  });
 });

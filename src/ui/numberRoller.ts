@@ -168,7 +168,7 @@ export function createNumberRoller(
     initialValue = 0,
     format = (v: number) => String(v),
     onUpdate,
-    durationMs = 240,
+    durationMs = 300,
   } = options;
 
   const hooks = createRuntimeHooks(options);
@@ -300,6 +300,18 @@ export function createNumberRoller(
 }
 
 /**
+ * Длительность подсчёта монет одной строки кэшаута на 1x (common_events.lua:1022-1041).
+ */
+function computeBalatroCoinRollMs(amount: number): number {
+  const coins = Math.max(0, Math.round(amount));
+  if (coins === 0) return 0;
+  if (coins > 60) return 380;
+  if (coins > 20) return coins * 50;
+  if (coins > 9) return coins * 80;
+  return coins * 180;
+}
+
+/**
  * Создаёт последовательный таймлайн раскрытия строк кэшаута и накрутки итогового золота.
  */
 export function createCashoutTimeline(
@@ -312,9 +324,12 @@ export function createCashoutTimeline(
     onRowReveal,
     onTotalUpdate,
     onComplete,
-    rowStepMs = 140,
-    rollDurationMs = 220,
+    rowStepMs,
+    rollDurationMs,
   } = options;
+  const useBalatroPacing = rowStepMs === undefined && rollDurationMs === undefined;
+  const effectiveRowStepMs = rowStepMs ?? 700;
+  const effectiveRollDurationMs = rollDurationMs ?? 380;
 
   const hooks = createRuntimeHooks(options);
   let started = false;
@@ -334,13 +349,50 @@ export function createCashoutTimeline(
     format: (v: number) => string;
   }
 
-  let accMs = 0;
+  let accMs = useBalatroPacing ? 400 : 0;
   const scheduled: ScheduledRow[] = rows.map((row, index) => {
-    const isZero = row.amount === 0 && !row.isTotal;
-    const stepDelay = isZero ? Math.round(rowStepMs * 0.45) : rowStepMs;
-    const rollMs = isZero ? 0 : rollDurationMs;
+    if (!useBalatroPacing) {
+      const isZero = row.amount === 0 && !row.isTotal;
+      const stepDelay = isZero ? Math.round(effectiveRowStepMs * 0.45) : effectiveRowStepMs;
+      const rollMs = isZero ? 0 : effectiveRollDurationMs;
+      const startMs = accMs;
+      accMs += stepDelay;
+      return {
+        index,
+        row,
+        startMs,
+        rollMs,
+        revealed: false,
+        lastDisplayed: -1,
+        format: row.formatAmount ?? ((v: number) => String(v)),
+      };
+    }
+
+    if (row.isTotal) {
+      const startMs = accMs + 300;
+      const rollMs = 240;
+      accMs = startMs;
+      return {
+        index,
+        row,
+        startMs,
+        rollMs,
+        revealed: false,
+        lastDisplayed: -1,
+        format: row.formatAmount ?? ((v: number) => String(v)),
+      };
+    }
+
     const startMs = accMs;
-    accMs += stepDelay;
+    const coinMs = computeBalatroCoinRollMs(row.amount);
+    const rollMs = row.amount === 0 ? 0 : Math.max(220, coinMs);
+    if (row.amount === 0) {
+      accMs += 200;
+    } else {
+      // После строки Блайнда идёт пауза разделителя 850мс + 700мс до бонусной строки (common_events.lua:937-956)
+      const dividerGapMs = index === 0 ? 850 : 0;
+      accMs += coinMs + dividerGapMs + 700;
+    }
     return {
       index,
       row,

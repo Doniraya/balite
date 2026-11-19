@@ -83,8 +83,9 @@ const PARTICLES_PER_SIDE = 16;
 const STOP_THRESHOLD = 0.005;
 
 /**
- * Вычисляет целевую интенсивность пламени [0..1] при приближении или пробитии порога раунда.
- * При неактивном подсчёте (handChips <= 0 или handMult <= 0) либо недоборе порога возвращает 0.
+ * Вычисляет целевую интенсивность пламени [0..1] по формуле оригинала Balatro:
+ * пламя загорается ТОЛЬКО когда одна текущая рука покрывает весь порог Блайнда (handChips * handMult >= targetScore),
+ * без суммирования с уже набранным счётом раунда, и масштабируется через (log_5(earned_score) - 2) / 10.
  */
 export function computeScoreFlameIntensity(
   currentScore: number,
@@ -105,16 +106,14 @@ export function computeScoreFlameIntensity(
     return 0;
   }
 
-  const projectedScore = Math.max(0, currentScore) + handChips * handMult;
-  if (projectedScore < targetScore) {
+  const earnedScore = handChips * handMult;
+  if (earnedScore < targetScore) {
     return 0;
   }
 
-  // На границе порога пламя заметно зажигается (0.25) и плавно насыщается к 1 с ростом запаса
-  const ratio = projectedScore / targetScore;
-  const excess = Math.log10(Math.max(1, ratio));
-  const raw = 0.25 + 0.75 * (1 - Math.exp(-excess * 1.4));
-  return Math.max(0.25, Math.min(1, raw));
+  const logBase5 = Math.log(Math.max(1, earnedScore)) / Math.log(5);
+  const balatroIntensity = Math.max(0, logBase5 - 2);
+  return clampUnit(balatroIntensity / 10);
 }
 
 function clampUnit(value: number): number {
@@ -258,6 +257,7 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
   const particles = createParticlePool();
   let targetIntensity = 0;
   let realIntensity = 0;
+  let intensityVel = 0;
   let flameTimer = 0;
   let widthCss = 180;
   let heightCss = 56;
@@ -271,7 +271,7 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
   let destroyed = false;
 
   const updateDomState = (intensity: number, reduced: boolean): void => {
-    const active = intensity > STOP_THRESHOLD;
+    const active = intensity > STOP_THRESHOLD || (!reduced && targetIntensity > STOP_THRESHOLD);
     element.dataset.flameActive = active ? 'true' : 'false';
     element.dataset.reducedMotion = reduced ? 'true' : 'false';
     element.style.setProperty('--flame-intensity', intensity.toFixed(4));
@@ -382,6 +382,7 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
 
     if (isReducedMotion()) {
       realIntensity = targetIntensity;
+      intensityVel = 0;
       updateDomState(realIntensity, true);
       clearCanvas();
       stopLoop();
@@ -392,21 +393,30 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
     lastTimestamp = timestamp;
     const dt = Math.max(0, Math.min(0.05, (timestamp - prev) / 1000));
 
-    // Плавное экспоненциальное сглаживание по аналогии с real_intensity в Balatro
-    const smoothRate = targetIntensity > realIntensity ? 10 : 7;
-    const blend = 1 - Math.exp(-smoothRate * (dt > 0 ? dt : 1 / 60));
-    realIntensity += (targetIntensity - realIntensity) * blend;
+    // Пружинное сглаживание 2-го порядка из оригинала Balatro (button_callbacks.lua:2019-2030)
+    const stepDt = dt > 0 ? dt : 1 / 60;
+    const exptime = Math.exp(-0.4 * stepDt);
+    if (intensityVel < 0) {
+      intensityVel = intensityVel * Math.max(0, 1 - 10 * stepDt);
+    }
+    intensityVel =
+      (1 - exptime) * (targetIntensity - realIntensity) * stepDt * 25 + exptime * intensityVel;
+    realIntensity = Math.max(0, realIntensity + intensityVel);
 
-    if (targetIntensity <= 0 && realIntensity <= STOP_THRESHOLD) {
+    if (
+      targetIntensity <= 0 &&
+      realIntensity <= STOP_THRESHOLD &&
+      Math.abs(intensityVel) <= STOP_THRESHOLD
+    ) {
       realIntensity = 0;
+      intensityVel = 0;
       updateDomState(0, false);
       clearCanvas();
       stopLoop();
       return;
     }
 
-    const stepDt = dt > 0 ? dt : 1 / 60;
-    flameTimer += stepDt * (1 + realIntensity * 0.35);
+    flameTimer += stepDt * (1 + realIntensity * 2);
 
     for (const particle of particles) {
       particle.progress = (particle.progress + stepDt * particle.speed * (0.8 + realIntensity * 0.6)) % 1;
@@ -447,6 +457,7 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
     if (reduced) {
       stopLoop();
       realIntensity = targetIntensity;
+      intensityVel = 0;
       updateDomState(realIntensity, true);
       clearCanvas();
       return;
@@ -458,6 +469,7 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
       ensureLoop();
     } else if (realIntensity <= STOP_THRESHOLD) {
       realIntensity = 0;
+      intensityVel = 0;
       updateDomState(0, false);
       clearCanvas();
       stopLoop();

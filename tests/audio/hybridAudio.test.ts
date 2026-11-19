@@ -270,11 +270,18 @@ describe('sampleRegistry и createHybridBaliteAudio', () => {
     const rate0 = ctx.bufferSources[beforeSamples]!.playbackRate.value;
     const rate5 = ctx.bufferSources[beforeSamples + 1]!.playbackRate.value;
     const rate20 = ctx.bufferSources[beforeSamples + 2]!.playbackRate.value;
-    expect(rate0).toBeCloseTo(1, 2);
-    expect(rate5).toBeGreaterThan(rate0);
-    expect(rate20).toBeLessThanOrEqual(1.86);
-    expect(ctx.bufferSources[beforeSamples + 3]!.playbackRate.value).toBeGreaterThan(1);
-    expect(ctx.bufferSources[beforeSamples + 4]!.playbackRate.value).toBeGreaterThan(1);
+    expect(rate0).toBeCloseTo(0.86, 3);
+    expect(rate5).toBeCloseTo(0.94, 3);
+    expect(rate20).toBeCloseTo(1.18, 3);
+    expect(ctx.bufferSources[beforeSamples + 3]!.playbackRate.value).toBeCloseTo(0.908, 3);
+    expect(ctx.bufferSources[beforeSamples + 4]!.playbackRate.value).toBeCloseTo(0.924, 3);
+
+    // Повторный триггер (retrigger announce) использует случайный питч 0.98..1.02
+    const beforeRetrigger = ctx.bufferSources.length;
+    audio.playRelicTrigger(0, true);
+    const retriggerRate = ctx.bufferSources[beforeRetrigger]!.playbackRate.value;
+    expect(retriggerRate).toBeGreaterThanOrEqual(0.98);
+    expect(retriggerRate).toBeLessThanOrEqual(1.02);
 
     // Микро-вариация ±2% на клике и диалоге Миры (при randomFn() === 1 -> 1.02)
     const beforeBtn = ctx.bufferSources.length;

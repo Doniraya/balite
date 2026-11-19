@@ -5,7 +5,7 @@ import {
   calculateConsumableBuyCost,
   createConsumableInstance,
 } from './consumables';
-import { nextFloat, pickElement, shuffleArray } from './prng';
+import { nextFloat, pickElement, shuffleDeckIds } from './prng';
 import type { RngResult, RngState, RngStreamName } from './prng';
 import {
   RELIC_DEFINITIONS,
@@ -50,6 +50,17 @@ import {
 } from './types';
 
 /**
+ * Проверяет платёжеспособность игрока с учётом бесплатных ($0) предложений и порога банкротства.
+ */
+export function canAffordCost(
+  state: Pick<RunState, 'dollars' | 'bankruptAt'>,
+  cost: number,
+): boolean {
+  if (cost <= 0) return true;
+  return state.dollars - (state.bankruptAt ?? 0) >= cost;
+}
+
+/**
  * Функция разрешения цели Реликвии с учётом Blueprint/Brainstorm.
  */
 export type ResolveShopRelicTargetFn = (
@@ -77,6 +88,8 @@ export interface PollEditionOptions {
  */
 export interface PickPoolRelicOptions {
   readonly stream?: RngStreamName;
+  readonly rarityStream?: RngStreamName;
+  readonly keyAppend?: string;
   readonly rarity?: RelicRarity;
   readonly excludedIds?: readonly RelicId[];
   readonly allowDuplicates?: boolean;
@@ -234,16 +247,21 @@ export function pickPoolRelic(
   state: RunState,
   options: PickPoolRelicOptions = {},
 ): RngResult<RelicId> {
-  const stream = options.stream ?? 'shop';
+  const fallbackStream = options.stream ?? 'shop';
   const allowDuplicates = options.allowDuplicates ?? false;
   let rng = state.rngState;
 
   let targetRarity = options.rarity;
   if (targetRarity === undefined) {
-    const rarityRoll = rollRelicRarity(rng, stream);
+    const rarityRoll = rollRelicRarity(rng, options.rarityStream ?? fallbackStream);
     targetRarity = rarityRoll.value;
     rng = rarityRoll.nextState;
   }
+
+  const poolKey =
+    options.keyAppend !== undefined
+      ? `Joker${targetRarity}${options.keyAppend}${state.ante}`
+      : fallbackStream;
 
   const blockedIds = new Set<RelicId>();
   if (!allowDuplicates) {
@@ -257,21 +275,21 @@ export function pickPoolRelic(
     }
   }
 
-  let candidates = RELIC_DEFINITIONS.filter(
+  const candidates = RELIC_DEFINITIONS.filter(
     (def) => def.rarity === targetRarity && !blockedIds.has(def.id),
   );
 
-  // Резервный выбор при исчерпании редких или всех доступных слотов пула
-  if (candidates.length === 0 && options.rarity === undefined) {
-    candidates = RELIC_DEFINITIONS.filter((def) => !blockedIds.has(def.id));
-  }
+  // При исчерпании пула выбранной редкости оригинал Balatro (get_current_pool) возвращает j_joker
   if (candidates.length === 0) {
-    candidates = RELIC_DEFINITIONS.filter((def) => def.rarity === targetRarity);
+    return {
+      value: 'j_joker',
+      nextState: rng,
+    };
   }
 
   const pick = pickElement(
     rng,
-    stream,
+    poolKey,
     candidates.map((def) => def.id),
   );
   return {
@@ -340,6 +358,171 @@ function hasAvailableRareRelic(state: RunState, excludedIds: readonly RelicId[])
 }
 
 /**
+ * Генерирует одно предложение для верхней полки магазина с учётом Знаков и исключённых дублей.
+ */
+function generateSingleTopShelfOffer(
+  state: RunState,
+  options: ShopOptions,
+  excludedRelics: RelicId[],
+  excludedConsumables: ConsumableId[],
+  events: TraceEvent[],
+): { readonly nextState: RunState; readonly offer: ShopOffer } {
+  let current = state;
+  let forcedRarity: RelicRarity | null = null;
+
+  // Проверяем ожидающие Знаки пропуска создания Реликвии в порядке добавления
+  while (forcedRarity === null) {
+    const nextStoreTag = current.pendingTags.find(
+      (tag) => tag === 'tag_uncommon' || tag === 'tag_rare',
+    );
+    if (!nextStoreTag) break;
+
+    current = {
+      ...current,
+      pendingTags: consumeFirstTag(current.pendingTags, nextStoreTag),
+    };
+
+    if (nextStoreTag === 'tag_uncommon') {
+      forcedRarity = 2;
+      events.push({
+        type: 'TAG_TRIGGER',
+        tagId: 'tag_uncommon',
+        locKey: 'tag_activated',
+        locParams: { tagName: 'tag_uncommon' },
+      });
+    } else if (hasAvailableRareRelic(current, excludedRelics)) {
+      forcedRarity = 3;
+      events.push({
+        type: 'TAG_TRIGGER',
+        tagId: 'tag_rare',
+        locKey: 'tag_activated',
+        locParams: { tagName: 'tag_rare' },
+      });
+    } else {
+      events.push({
+        type: 'TAG_TRIGGER',
+        tagId: 'tag_rare',
+        locKey: 'tag_fizzled',
+      });
+    }
+  }
+
+  if (forcedRarity !== null) {
+    const tagAppend = forcedRarity === 3 ? 'rta' : 'uta';
+    const relicPick = pickPoolRelic(current, {
+      keyAppend: tagAppend,
+      rarity: forcedRarity,
+      excludedIds: excludedRelics,
+      ...(options.relicRegistry ? { relicRegistry: options.relicRegistry } : {}),
+    });
+    const edPick = pollEdition(relicPick.nextState, `edi${tagAppend}${current.ante}`, current.editionRate, {
+      allowNegative: true,
+    });
+    const uid = current.nextCardUid;
+    const relic = createRelicInstance(
+      relicPick.value,
+      `relic_${uid}`,
+      edPick.value,
+      current.discountPercent,
+    );
+    const normalBaseCost = calculateRelicBuyCost(relic.baseCost, edPick.value, 0);
+    excludedRelics.push(relic.id);
+    return {
+      nextState: {
+        ...current,
+        rngState: edPick.nextState,
+        nextCardUid: uid + 1,
+      },
+      offer: {
+        uid: `offer_${uid}`,
+        kind: 'relic',
+        relic,
+        cost: 0,
+        baseCost: normalBaseCost,
+        sold: false,
+      },
+    };
+  }
+
+  const kindRoll = nextFloat(current.rngState, `cdt${current.ante}`);
+  const weighted = kindRoll.value * SHOP_TOTAL_WEIGHT;
+  current = { ...current, rngState: kindRoll.nextState };
+
+  if (weighted < SHOP_RELIC_WEIGHT) {
+    const relicPick = pickPoolRelic(current, {
+      rarityStream: `rarity${current.ante}sho`,
+      keyAppend: 'sho',
+      excludedIds: excludedRelics,
+      ...(options.relicRegistry ? { relicRegistry: options.relicRegistry } : {}),
+    });
+    const edPick = pollEdition(relicPick.nextState, `edisho${current.ante}`, current.editionRate, {
+      allowNegative: true,
+    });
+    const uid = current.nextCardUid;
+    const relic = createRelicInstance(
+      relicPick.value,
+      `relic_${uid}`,
+      edPick.value,
+      current.discountPercent,
+    );
+    const normalBaseCost = calculateRelicBuyCost(relic.baseCost, edPick.value, 0);
+    const buyCost = calculateRelicBuyCost(relic.baseCost, edPick.value, current.discountPercent);
+    excludedRelics.push(relic.id);
+    return {
+      nextState: {
+        ...current,
+        rngState: edPick.nextState,
+        nextCardUid: uid + 1,
+      },
+      offer: {
+        uid: `offer_${uid}`,
+        kind: 'relic',
+        relic,
+        cost: buyCost,
+        baseCost: normalBaseCost,
+        sold: false,
+      },
+    };
+  }
+
+  const kind: ConsumableKind =
+    weighted < SHOP_RELIC_WEIGHT + SHOP_SCROLL_WEIGHT ? 'scroll' : 'celestial';
+  const consPick = pickPoolConsumable(current, kind, {
+    stream: `${kind === 'scroll' ? 'Tarot' : 'Planet'}sho${current.ante}`,
+    excludedIds: excludedConsumables,
+  });
+  const uid = current.nextCardUid;
+  // Расходники на полке магазина всегда базового издания (Издания роллят только Реликвии)
+  const consumable = createConsumableInstance(
+    consPick.value,
+    `cons_${uid}`,
+    'base',
+    current.discountPercent,
+  );
+  const buyCost = calculateConsumableBuyCost(
+    consumable.baseCost,
+    'base',
+    current.discountPercent,
+  );
+  excludedConsumables.push(consumable.id);
+  return {
+    nextState: {
+      ...current,
+      rngState: consPick.nextState,
+      nextCardUid: uid + 1,
+    },
+    offer: {
+      uid: `offer_${uid}`,
+      kind: 'consumable',
+      consumable,
+      cost: buyCost,
+      baseCost: consumable.baseCost,
+      sold: false,
+    },
+  };
+}
+
+/**
  * Генерирует верхнюю полку предложений магазина с учётом ожидающих Знаков редкости/величия.
  */
 function generateTopShelfOffers(
@@ -354,161 +537,96 @@ function generateTopShelfOffers(
   const slotsCount = Math.max(1, current.shopSlots);
 
   for (let slotIndex = 0; slotIndex < slotsCount; slotIndex += 1) {
-    let forcedRarity: RelicRarity | null = null;
-
-    // Проверяем ожидающие Знаки пропуска создания Реликвии в порядке добавления
-    while (forcedRarity === null) {
-      const nextStoreTag = current.pendingTags.find(
-        (tag) => tag === 'tag_uncommon' || tag === 'tag_rare',
-      );
-      if (!nextStoreTag) break;
-
-      current = {
-        ...current,
-        pendingTags: consumeFirstTag(current.pendingTags, nextStoreTag),
-      };
-
-      if (nextStoreTag === 'tag_uncommon') {
-        forcedRarity = 2;
-        events.push({
-          type: 'TAG_TRIGGER',
-          tagId: 'tag_uncommon',
-          locKey: 'tag_activated',
-          locParams: { tagName: 'tag_uncommon' },
-        });
-      } else if (hasAvailableRareRelic(current, excludedRelics)) {
-        forcedRarity = 3;
-        events.push({
-          type: 'TAG_TRIGGER',
-          tagId: 'tag_rare',
-          locKey: 'tag_activated',
-          locParams: { tagName: 'tag_rare' },
-        });
-      } else {
-        events.push({
-          type: 'TAG_TRIGGER',
-          tagId: 'tag_rare',
-          locKey: 'tag_fizzled',
-        });
-      }
-    }
-
-    if (forcedRarity !== null) {
-      const relicPick = pickPoolRelic(current, {
-        stream: 'shop',
-        rarity: forcedRarity,
-        excludedIds: excludedRelics,
-        ...(options.relicRegistry ? { relicRegistry: options.relicRegistry } : {}),
-      });
-      const edPick = pollEdition(relicPick.nextState, 'shop', current.editionRate, {
-        allowNegative: true,
-      });
-      const uid = current.nextCardUid;
-      const relic = createRelicInstance(
-        relicPick.value,
-        `relic_${uid}`,
-        edPick.value,
-        current.discountPercent,
-      );
-      const normalBaseCost = calculateRelicBuyCost(relic.baseCost, edPick.value, 0);
-      excludedRelics.push(relic.id);
-      offers.push({
-        uid: `offer_${uid}`,
-        kind: 'relic',
-        relic,
-        cost: 0,
-        baseCost: normalBaseCost,
-        sold: false,
-      });
-      current = {
-        ...current,
-        rngState: edPick.nextState,
-        nextCardUid: uid + 1,
-      };
-      continue;
-    }
-
-    const kindRoll = nextFloat(current.rngState, 'shop');
-    const weighted = kindRoll.value * SHOP_TOTAL_WEIGHT;
-    current = { ...current, rngState: kindRoll.nextState };
-
-    if (weighted < SHOP_RELIC_WEIGHT) {
-      const relicPick = pickPoolRelic(current, {
-        stream: 'shop',
-        excludedIds: excludedRelics,
-        ...(options.relicRegistry ? { relicRegistry: options.relicRegistry } : {}),
-      });
-      const edPick = pollEdition(relicPick.nextState, 'shop', current.editionRate, {
-        allowNegative: true,
-      });
-      const uid = current.nextCardUid;
-      const relic = createRelicInstance(
-        relicPick.value,
-        `relic_${uid}`,
-        edPick.value,
-        current.discountPercent,
-      );
-      const normalBaseCost = calculateRelicBuyCost(relic.baseCost, edPick.value, 0);
-      const buyCost = calculateRelicBuyCost(relic.baseCost, edPick.value, current.discountPercent);
-      excludedRelics.push(relic.id);
-      offers.push({
-        uid: `offer_${uid}`,
-        kind: 'relic',
-        relic,
-        cost: buyCost,
-        baseCost: normalBaseCost,
-        sold: false,
-      });
-      current = {
-        ...current,
-        rngState: edPick.nextState,
-        nextCardUid: uid + 1,
-      };
-    } else {
-      const kind: ConsumableKind =
-        weighted < SHOP_RELIC_WEIGHT + SHOP_SCROLL_WEIGHT ? 'scroll' : 'celestial';
-      const consPick = pickPoolConsumable(current, kind, {
-        stream: 'shop',
-        excludedIds: excludedConsumables,
-      });
-      const uid = current.nextCardUid;
-      // Расходники на полке магазина всегда базового издания (Издания роллят только Реликвии)
-      const consumable = createConsumableInstance(
-        consPick.value,
-        `cons_${uid}`,
-        'base',
-        current.discountPercent,
-      );
-      const buyCost = calculateConsumableBuyCost(
-        consumable.baseCost,
-        'base',
-        current.discountPercent,
-      );
-      excludedConsumables.push(consumable.id);
-      offers.push({
-        uid: `offer_${uid}`,
-        kind: 'consumable',
-        consumable,
-        cost: buyCost,
-        baseCost: consumable.baseCost,
-        sold: false,
-      });
-      current = {
-        ...current,
-        rngState: consPick.nextState,
-        nextCardUid: uid + 1,
-      };
-    }
+    const generated = generateSingleTopShelfOffer(
+      current,
+      options,
+      excludedRelics,
+      excludedConsumables,
+      events,
+    );
+    current = generated.nextState;
+    offers.push(generated.offer);
   }
 
   return { nextState: current, offers };
 }
 
 /**
+ * Собирает идентификаторы непроданных Реликвий и Расходников верхней полки магазина для защиты от дублей.
+ */
+function collectExcludedFromShopOffers(
+  offers: readonly ShopOffer[],
+  excludedRelics: RelicId[],
+  excludedConsumables: ConsumableId[],
+): void {
+  for (const offer of offers) {
+    if (offer.sold) continue;
+    if (offer.kind === 'relic') {
+      excludedRelics.push(offer.relic.id);
+    } else if (offer.kind === 'consumable') {
+      excludedConsumables.push(offer.consumable.id);
+    }
+  }
+}
+
+/**
+ * Дополняет текущую верхнюю полку открытого магазина новыми товарами до актуального shopSlots
+ * (используется сразу после покупки Устава v_overstock_norm).
+ */
+export function appendShopTopShelfOffer(
+  state: RunState,
+  optionsOrRegistry: RelicRegistryLookup | ShopOptions = {},
+): DispatchResult {
+  if (!state.shop) {
+    return { nextState: state, events: [] };
+  }
+
+  const targetSlots = Math.max(1, state.shopSlots);
+  if (state.shop.offers.length >= targetSlots) {
+    return { nextState: state, events: [] };
+  }
+
+  const options: ShopOptions =
+    typeof optionsOrRegistry === 'function'
+      ? { relicRegistry: optionsOrRegistry }
+      : optionsOrRegistry;
+
+  const events: TraceEvent[] = [];
+  let current = state;
+  const offers = [...state.shop.offers];
+  const excludedRelics: RelicId[] = [];
+  const excludedConsumables: ConsumableId[] = [];
+  collectExcludedFromShopOffers(offers, excludedRelics, excludedConsumables);
+
+  while (offers.length < targetSlots) {
+    const generated = generateSingleTopShelfOffer(
+      current,
+      options,
+      excludedRelics,
+      excludedConsumables,
+      events,
+    );
+    current = generated.nextState;
+    offers.push(generated.offer);
+  }
+
+  return {
+    nextState: {
+      ...current,
+      shop: {
+        ...state.shop,
+        offers,
+      },
+    },
+    events,
+  };
+}
+
+/**
  * Выбирает бустер-набор из взвешенного пула всех 5 семейств.
  */
-function rollPackEntry(rngState: RngState): RngResult<PackPoolEntry> {
-  const roll = nextFloat(rngState, 'shop');
+function rollPackEntry(rngState: RngState, ante: number): RngResult<PackPoolEntry> {
+  const roll = nextFloat(rngState, `shop_pack${ante}`);
   const threshold = roll.value * BOOSTER_TOTAL_WEIGHT;
   let cumulative = 0;
 
@@ -563,7 +681,7 @@ export function createShopState(state: RunState, options: ShopOptions = {}): Dis
   } else {
     const eligibleCharters = CHARTER_IDS.filter((id) => isCharterEligible(id, current.charters));
     if (eligibleCharters.length > 0) {
-      const picked = pickElement(current.rngState, 'shop', eligibleCharters);
+      const picked = pickElement(current.rngState, `Voucher${current.ante}`, eligibleCharters);
       const uid = current.nextCardUid;
       voucher = {
         uid: `voucher_${uid}`,
@@ -588,7 +706,7 @@ export function createShopState(state: RunState, options: ShopOptions = {}): Dis
     if (isFirstShop && slot === 0) {
       entry = BOOSTER_POOL.find((p) => p.packId === 'p_buffoon_normal')!;
     } else {
-      const rolled = rollPackEntry(current.rngState);
+      const rolled = rollPackEntry(current.rngState, current.ante);
       entry = rolled.value;
       current = { ...current, rngState: rolled.nextState };
     }
@@ -716,7 +834,7 @@ export function rerollShopState(
   }
 
   const paidCost = state.shop.rerollCost;
-  if (state.dollars < paidCost) {
+  if (!canAffordCost(state, paidCost)) {
     return { nextState: state, events: [] };
   }
 
@@ -849,6 +967,14 @@ export function generateBoosterState(
   const choices: BoosterChoice[] = [];
   const excludedRelics: RelicId[] = [];
   const excludedConsumables: ConsumableId[] = [];
+  // В оригинале непроданные карты на верхней полке магазина входят в общий пул used_jokers
+  if (current.shop) {
+    collectExcludedFromShopOffers(
+      current.shop.offers,
+      excludedRelics,
+      excludedConsumables,
+    );
+  }
   const hasTelescope = current.charters.includes('v_telescope');
 
   for (let i = 0; i < packOffer.totalCards; i += 1) {
@@ -857,7 +983,7 @@ export function generateBoosterState(
 
     if (packOffer.type === 'arcana') {
       const picked = pickPoolConsumable(current, 'scroll', {
-        stream: 'pack',
+        stream: `Tarotar${current.ante}`,
         excludedIds: excludedConsumables,
       });
       const consumable = createConsumableInstance(
@@ -885,7 +1011,7 @@ export function generateBoosterState(
           current.consumables.some((item) => item.id === 'c_black_hole') ||
           excludedConsumables.includes('c_black_hole');
         if (!blackHoleBlocked) {
-          const bhRoll = nextFloat(nextRng, 'pack');
+          const bhRoll = nextFloat(nextRng, `soul_Planet${current.ante}`);
           nextRng = bhRoll.nextState;
           if (bhRoll.value > 0.997) {
             chosenId = 'c_black_hole';
@@ -897,7 +1023,7 @@ export function generateBoosterState(
         const picked = pickPoolConsumable(
           { ...current, rngState: nextRng },
           'celestial',
-          { stream: 'pack', excludedIds: excludedConsumables },
+          { stream: `Planetpl${current.ante}`, excludedIds: excludedConsumables },
         );
         chosenId = picked.value;
         nextRng = picked.nextState;
@@ -920,7 +1046,7 @@ export function generateBoosterState(
         current.consumables.some((item) => item.id === 'c_black_hole') ||
         excludedConsumables.includes('c_black_hole');
       if (!blackHoleBlocked) {
-        const bhRoll = nextFloat(nextRng, 'pack');
+        const bhRoll = nextFloat(nextRng, `soul_Spectral${current.ante}`);
         nextRng = bhRoll.nextState;
         if (bhRoll.value > 0.997) {
           chosenId = 'c_black_hole';
@@ -931,7 +1057,7 @@ export function generateBoosterState(
         const picked = pickPoolConsumable(
           { ...current, rngState: nextRng },
           'rune',
-          { stream: 'pack', excludedIds: excludedConsumables },
+          { stream: `Spectralspe${current.ante}`, excludedIds: excludedConsumables },
         );
         chosenId = picked.value;
         nextRng = picked.nextState;
@@ -948,10 +1074,11 @@ export function generateBoosterState(
       current = { ...current, rngState: nextRng, nextCardUid: uid + 1 };
     } else if (packOffer.type === 'buffoon') {
       const relicPick = pickPoolRelic(current, {
-        stream: 'pack',
+        rarityStream: `rarity${current.ante}buf`,
+        keyAppend: 'buf',
         excludedIds: excludedRelics,
       });
-      const edPick = pollEdition(relicPick.nextState, 'pack', current.editionRate, {
+      const edPick = pollEdition(relicPick.nextState, `edibuf${current.ante}`, current.editionRate, {
         allowNegative: true,
       });
       const relic = createRelicInstance(
@@ -965,28 +1092,28 @@ export function generateBoosterState(
       current = { ...current, rngState: edPick.nextState, nextCardUid: uid + 1 };
     } else {
       // Стандартный набор игральных карт: 40% Улучшение, Издание с mod=2 без Теневого, 20% Печать
-      const enhChanceRoll = nextFloat(current.rngState, 'pack');
+      const enhChanceRoll = nextFloat(current.rngState, `stdset${current.ante}`);
       let nextRng = enhChanceRoll.nextState;
       let enhancement: Enhancement = 'none';
       if (enhChanceRoll.value > 0.6) {
-        const enhPick = pickElement(nextRng, 'pack', NON_NONE_ENHANCEMENTS);
+        const enhPick = pickElement(nextRng, `Enhancedsta${current.ante}`, NON_NONE_ENHANCEMENTS);
         enhancement = enhPick.value;
         nextRng = enhPick.nextState;
       }
 
-      const suitPick = pickElement(nextRng, 'pack', SUITS);
-      const rankPick = pickElement(suitPick.nextState, 'pack', RANKS);
-      const edPick = pollEdition(rankPick.nextState, 'pack', current.editionRate, {
+      const suitPick = pickElement(nextRng, `frontsta${current.ante}`, SUITS);
+      const rankPick = pickElement(suitPick.nextState, `frontsta${current.ante}`, RANKS);
+      const edPick = pollEdition(rankPick.nextState, `edista${current.ante}`, current.editionRate, {
         mod: 2,
         allowNegative: false,
       });
       nextRng = edPick.nextState;
 
       let seal: Seal = 'none';
-      const sealChanceRoll = nextFloat(nextRng, 'pack');
+      const sealChanceRoll = nextFloat(nextRng, `stdseal${current.ante}`);
       nextRng = sealChanceRoll.nextState;
       if (sealChanceRoll.value > 0.8) {
-        const sealTypeRoll = nextFloat(nextRng, 'pack');
+        const sealTypeRoll = nextFloat(nextRng, `stdsealtype${current.ante}`);
         nextRng = sealTypeRoll.nextState;
         if (sealTypeRoll.value > 0.75) {
           seal = 'red';
@@ -1012,22 +1139,47 @@ export function generateBoosterState(
     }
   }
 
-  // Наборы Свитков и Рун набирают временную руку из колоды, если бустер открыт вне боя
+  // Наборы Свитков и Рун набирают временную руку из drawPileIds без перетасовки всей колоды
   let drawnHandCardIds: readonly string[] = [];
   if (packOffer.type === 'arcana' || packOffer.type === 'spectral') {
     if (current.phase === 'playing' && current.handIds.length > 0) {
       drawnHandCardIds = [...current.handIds];
     } else {
-      const shuffled = shuffleArray(
-        current.rngState,
-        'shuffle',
-        current.deck.map((card) => card.id),
-      );
-      drawnHandCardIds = shuffled.value.slice(
-        0,
-        Math.min(shuffled.value.length, Math.max(0, current.handSize)),
-      );
-      current = { ...current, rngState: shuffled.nextState };
+      const targetCount = Math.min(current.deck.length, Math.max(0, current.handSize));
+      if (
+        current.drawPileIds.length === 0 &&
+        current.discardPileIds.length === 0 &&
+        current.deck.length > 0
+      ) {
+        // Резерв для синтетических тестовых состояний с незаполненными стопками
+        const shuffled = shuffleDeckIds(
+          current.rngState,
+          'shuffle',
+          current.deck.map((card) => card.id),
+        );
+        drawnHandCardIds = shuffled.value.slice(0, targetCount);
+        current = {
+          ...current,
+          rngState: shuffled.nextState,
+          drawPileIds: shuffled.value.slice(targetCount),
+        };
+      } else {
+        let pool = [...current.drawPileIds];
+        let discard = [...current.discardPileIds];
+        if (pool.length < targetCount && discard.length > 0) {
+          const reshuffled = shuffleDeckIds(current.rngState, 'shuffle', discard);
+          pool = [...pool, ...reshuffled.value];
+          discard = [];
+          current = { ...current, rngState: reshuffled.nextState };
+        }
+        const takeCount = Math.min(pool.length, targetCount);
+        drawnHandCardIds = pool.slice(0, takeCount);
+        current = {
+          ...current,
+          drawPileIds: pool.slice(takeCount),
+          discardPileIds: discard,
+        };
+      }
     }
   }
 

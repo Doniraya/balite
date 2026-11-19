@@ -1991,5 +1991,309 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
         }
       }
     });
+
+    it('A2 и A15 в UI: показывает реролл Босса при current статусе и не блокирует $0 товары/рероллы при отрицательном балансе', () => {
+      const root = document.createElement('div');
+      const translator = createTranslator('ru');
+      const meta = createInitialMetaSave();
+      const base = createInitialRunState('b_red', 'UI_A2_A15');
+
+      // A2: v_directors_cut активен, Босс стал текущим узлом (status === 'current')
+      const currentBossState: RunState = {
+        ...base,
+        dollars: 15,
+        charters: ['v_directors_cut'],
+        currentBlindIndex: 2,
+        anteBlinds: [
+          { ...base.anteBlinds[0], status: 'skipped' },
+          { ...base.anteBlinds[1], status: 'skipped' },
+          { ...base.anteBlinds[2], status: 'current' },
+        ],
+      };
+      renderRunView(
+        root,
+        createViewModel(currentBossState, { translator, meta }),
+        createMockHandlers(),
+      );
+      const rerollBossLabel = translator.t('ui.actions.rerollBoss', { dollars: 10 });
+      const rerollBossBtn = Array.from(root.querySelectorAll('button')).find(
+        (btn) => btn.textContent?.trim() === rerollBossLabel,
+      );
+      expect(rerollBossBtn).toBeTruthy();
+      expect(rerollBossBtn?.disabled).toBe(false);
+
+      // A15: отрицательный баланс, но бесплатные ($0) реролл, лот и пак активны, ad-reroll не лезет поверх $0 реролла
+      const negativeFreeShopState: RunState = {
+        ...base,
+        phase: 'shop',
+        dollars: -5,
+        shop: {
+          offers: [
+            {
+              uid: 'free_offer',
+              kind: 'relic',
+              relic: createRelicInstance('j_joker', 'rf1'),
+              cost: 0,
+              baseCost: 2,
+              sold: false,
+            },
+          ],
+          voucher: null,
+          packs: [
+            {
+              uid: 'free_pack',
+              packId: 'p_arcana_normal',
+              type: 'arcana',
+              size: 'normal',
+              cost: 0,
+              baseCost: 4,
+              totalCards: 3,
+              chooseCount: 1,
+              purchased: false,
+            },
+          ],
+          rerollCost: 0,
+          tempRerollCost: 0,
+          rerollsUsedThisShop: 0,
+          adRerollUsed: false,
+        },
+      };
+      renderRunView(
+        root,
+        createViewModel(negativeFreeShopState, { translator, meta, canShowRewarded: true }),
+        createMockHandlers(),
+      );
+      const shopRerollBtn = root.querySelector<HTMLButtonElement>('.shop-reroll-btn');
+      expect(shopRerollBtn?.disabled).toBe(false);
+      expect(root.querySelector('.shop-ad-reroll-btn')).toBeNull();
+      const offerBtn = root.querySelector<HTMLElement>('[data-offer-uid="free_offer"]');
+      expect(offerBtn?.querySelector('.shop-slot-btn__warn')).toBeNull();
+      expect(offerBtn?.querySelector('.is-disabled')).toBeNull();
+    });
+
+    it('B5: отображает числа >= 1e11 в научной нотации %.3feN в HUD, выборе Блайнда и окне завершения забега', () => {
+      const root = document.createElement('div');
+      const translator = createTranslator('ru');
+      const meta = createInitialMetaSave();
+      const base = createInitialRunState('b_red', 'UI_BIG_NUM');
+
+      const hugePlayingState: RunState = {
+        ...base,
+        phase: 'playing',
+        score: 123_456_000_000,
+        targetScore: 250_000_000_000,
+        anteBlinds: [
+          { ...base.anteBlinds[0], status: 'current', targetScore: 250_000_000_000 },
+          base.anteBlinds[1],
+          base.anteBlinds[2],
+        ],
+      };
+
+      renderRunView(
+        root,
+        createViewModel(hugePlayingState, {
+          translator,
+          meta,
+          liveScore: {
+            chips: 100_000_000_000,
+            mult: 150_000_000_000,
+            totalScore: 123_456_000_000,
+            targetScore: 250_000_000_000,
+            handType: 'High Card',
+          },
+        }),
+        createMockHandlers(),
+      );
+      expect(root.textContent).toContain('1.235e11');
+      expect(root.textContent).toContain('2.500e11');
+      expect(root.textContent).toContain('1.000e11');
+      expect(root.textContent).toContain('1.500e11');
+
+      const hugeBlindState: RunState = {
+        ...base,
+        phase: 'blind_select',
+        anteBlinds: [
+          { ...base.anteBlinds[0], status: 'upcoming', targetScore: 100_000_000_000 },
+          { ...base.anteBlinds[1], status: 'upcoming', targetScore: 150_000_000_000 },
+          { ...base.anteBlinds[2], status: 'upcoming', targetScore: 300_000_000_000 },
+        ],
+      };
+      renderRunView(
+        root,
+        createViewModel(hugeBlindState, { translator, meta }),
+        createMockHandlers(),
+      );
+      expect(root.textContent).toContain('1.000e11');
+      expect(root.textContent).toContain('1.500e11');
+      expect(root.textContent).toContain('3.000e11');
+
+      const hugeEndState: RunState = {
+        ...base,
+        phase: 'game_over',
+        stats: {
+          ...base.stats,
+          bestHandScore: 123_456_000_000,
+        },
+      };
+      renderRunView(
+        root,
+        createViewModel(hugeEndState, { translator, meta }),
+        createMockHandlers(),
+      );
+      expect(root.textContent).toContain('1.235e11');
+    });
+
+    it('C3: вычисляет каноничный веер руки (0.2/n, V-арка), бустера (0.4/n, x^2-арка) и наклон реликвий (0.1/n)', () => {
+      const root = document.createElement('div');
+      const playing = createPlayingState('C3_FAN_TEST');
+      const fiveIds = playing.handIds.slice(0, 5);
+      const relic1 = createRelicInstance('j_joker', 'rf1');
+      const relic2 = createRelicInstance('j_greedy_joker', 'rf2');
+      const relic3 = createRelicInstance('j_lusty_joker', 'rf3');
+
+      const handState: RunState = {
+        ...playing,
+        handIds: fiveIds,
+        relics: [relic1, relic2, relic3],
+      };
+
+      renderRunView(root, createViewModel(handState), createMockHandlers());
+
+      const handFan = root.querySelector<HTMLElement>('.hand-fan');
+      expect(handFan?.classList.contains('hand-fan--booster')).toBe(false);
+      const handSlots = Array.from(root.querySelectorAll<HTMLElement>('.hand-card-slot'));
+      expect(handSlots).toHaveLength(5);
+
+      const handLeftDeg = parseFloat(handSlots[0]!.style.getPropertyValue('--fan-angle'));
+      const handMidDeg = parseFloat(handSlots[2]!.style.getPropertyValue('--fan-angle'));
+      const handRightDeg = parseFloat(handSlots[4]!.style.getPropertyValue('--fan-angle'));
+      const handLeftY = parseFloat(handSlots[0]!.style.getPropertyValue('--fan-offset-y'));
+      const handMidY = parseFloat(handSlots[2]!.style.getPropertyValue('--fan-offset-y'));
+
+      expect(handMidDeg).toBeCloseTo(0, 2);
+      expect(handLeftDeg).toBeLessThan(0);
+      expect(handRightDeg).toBeCloseTo(-handLeftDeg, 2);
+      expect(handMidY).toBeCloseTo(0, 1);
+      expect(handLeftY).toBeGreaterThan(handMidY);
+
+      // Реликвии получают веерный наклон (0.1 / n)
+      const relicSlots = Array.from(root.querySelectorAll<HTMLElement>('[data-zone="relic"]'));
+      expect(relicSlots).toHaveLength(3);
+      expect(parseFloat(relicSlots[0]!.style.getPropertyValue('--fan-angle'))).toBeLessThan(0);
+      expect(parseFloat(relicSlots[1]!.style.getPropertyValue('--fan-angle'))).toBeCloseTo(0, 2);
+      expect(parseFloat(relicSlots[2]!.style.getPropertyValue('--fan-angle'))).toBeGreaterThan(0);
+
+      // В бустере рука получает класс .hand-fan--booster и вдвое больший угол
+      const boosterState: RunState = {
+        ...handState,
+        phase: 'booster',
+        booster: {
+          packId: 'p_arcana_normal_1',
+          packType: 'arcana',
+          packSize: 'normal',
+          choices: [],
+          remainingPicks: 1,
+          drawnHandCardIds: fiveIds,
+          fromTag: false,
+        },
+      };
+      renderRunView(root, createViewModel(boosterState), createMockHandlers());
+      const boosterFan = root.querySelector<HTMLElement>('.hand-fan.hand-fan--booster');
+      expect(boosterFan).not.toBeNull();
+      const boosterSlots = Array.from(boosterFan!.querySelectorAll<HTMLElement>('.hand-card-slot'));
+      const boosterLeftDeg = parseFloat(boosterSlots[0]!.style.getPropertyValue('--fan-angle'));
+      expect(Math.abs(boosterLeftDeg)).toBeCloseTo(Math.abs(handLeftDeg) * 2, 1);
+    });
+
+    it('C3: поддерживает живую перестановку DOM-соседей во время перетаскивания и откат по pointercancel', () => {
+      const root = document.createElement('div');
+      const playing = createPlayingState('C3_DRAG_LIVE');
+      const fourIds = playing.handIds.slice(0, 4);
+      const handlers = createMockHandlers();
+      const dragState: RunState = {
+        ...playing,
+        handIds: fourIds,
+      };
+
+      renderRunView(root, createViewModel(dragState), handlers);
+      const fanEl = root.querySelector<HTMLElement>('.hand-fan')!;
+      const slots = Array.from(fanEl.querySelectorAll<HTMLElement>('.hand-card-slot'));
+      expect(slots).toHaveLength(4);
+
+      const attachDynamicRect = (slotEl: HTMLElement) => {
+        slotEl.getBoundingClientRect = () => {
+          const idx = Array.from(fanEl.children).indexOf(slotEl);
+          const left = Math.max(0, idx) * 80;
+          return {
+            x: left,
+            y: 500,
+            left,
+            top: 500,
+            width: 60,
+            height: 90,
+            right: left + 60,
+            bottom: 590,
+            toJSON: () => ({}),
+          } as DOMRect;
+        };
+      };
+      slots.forEach(attachDynamicRect);
+
+      const makePtr = (type: string, clientX: number, clientY: number): Event => {
+        const ev = new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY });
+        Object.defineProperty(ev, 'button', { configurable: true, value: 0 });
+        return ev;
+      };
+
+      // 1. Тянем первую карту (center=30) вправо к третьему слоту (center=190): DOM меняется прямо на pointermove
+      const firstCard = slots[0]!;
+      firstCard.dispatchEvent(makePtr('pointerdown', 30, 540));
+      window.dispatchEvent(makePtr('pointermove', 200, 540));
+
+      const orderDuringDrag = Array.from(fanEl.children).map(
+        (node) => (node as HTMLElement).dataset.cardId,
+      );
+      expect(orderDuringDrag).toEqual([fourIds[1], fourIds[2], fourIds[0], fourIds[3]]);
+      expect(slots[1]!.dataset.flightActive).toBe('true');
+
+      window.dispatchEvent(makePtr('pointerup', 200, 540));
+      expect(handlers.onCommand).toHaveBeenCalledWith({
+        type: 'REORDER_HAND',
+        cardIds: [fourIds[1], fourIds[2], fourIds[0], fourIds[3]],
+      });
+
+      // 2. Повторное перетаскивание с отменой pointercancel возвращает DOM в исходный порядок
+      vi.mocked(handlers.onCommand).mockClear();
+      renderRunView(root, createViewModel(dragState), handlers);
+      const fanEl2 = root.querySelector<HTMLElement>('.hand-fan')!;
+      const slots2 = Array.from(fanEl2.querySelectorAll<HTMLElement>('.hand-card-slot'));
+      slots2.forEach((slotEl) => {
+        slotEl.getBoundingClientRect = () => {
+          const idx = Array.from(fanEl2.children).indexOf(slotEl);
+          const left = Math.max(0, idx) * 80;
+          return {
+            x: left,
+            y: 500,
+            left,
+            top: 500,
+            width: 60,
+            height: 90,
+            right: left + 60,
+            bottom: 590,
+            toJSON: () => ({}),
+          } as DOMRect;
+        };
+      });
+
+      slots2[0]!.dispatchEvent(makePtr('pointerdown', 30, 540));
+      window.dispatchEvent(makePtr('pointermove', 200, 540));
+      window.dispatchEvent(new Event('pointercancel'));
+
+      const orderAfterCancel = Array.from(fanEl2.children).map(
+        (node) => (node as HTMLElement).dataset.cardId,
+      );
+      expect(orderAfterCancel).toEqual(fourIds);
+      expect(handlers.onCommand).not.toHaveBeenCalled();
+    });
   });
 });

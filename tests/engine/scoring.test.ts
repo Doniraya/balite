@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { createPlayingCard } from '../../src/engine/cards';
 import { createInitialHandLevels } from '../../src/engine/handEval';
 import { createRngState, nextFloat } from '../../src/engine/prng';
+import { createRelicInstance, getRelicDefinition } from '../../src/engine/relics';
 import { evaluatePlay, evaluateRoundEnd } from '../../src/engine/scoring';
 import {
+  SCROLL_IDS,
   type BlindSlotState,
   type ConsumableInstance,
   type PlayingCard,
@@ -143,13 +145,21 @@ function findSeedWithRoll(
   stream: 'lucky' | 'glass',
   predicate: (firstRoll: number, secondRoll?: number) => boolean,
 ): string {
-  for (let i = 0; i < 1000; i += 1) {
+  for (let i = 0; i < 5000; i += 1) {
     const seed = `ROLL-${stream}-${i}`;
     const rng0 = createRngState(seed);
-    const r1 = nextFloat(rng0, stream);
-    const r2 = nextFloat(r1.nextState, stream);
-    if (predicate(r1.value, r2.value)) {
-      return seed;
+    if (stream === 'lucky') {
+      const rMult = nextFloat(rng0, 'lucky_mult');
+      const rMoney = nextFloat(rMult.nextState, 'lucky_money');
+      if (predicate(rMult.value, rMoney.value)) {
+        return seed;
+      }
+    } else {
+      const r1 = nextFloat(rng0, stream);
+      const r2 = nextFloat(r1.nextState, stream);
+      if (predicate(r1.value, r2.value)) {
+        return seed;
+      }
     }
   }
   throw new Error('NO_TEST_SEED_FOUND');
@@ -758,5 +768,369 @@ describe('evaluateRoundEnd: награды руки в конце раунда �
       tagBonus: 25,
       totalReward: 40,
     });
+  });
+
+  it('A5 и A6: буфер золота (Gold Seal + j_vagabond + j_bull) и выдача расходников без дублей со скидкой', () => {
+    // A5: на счету 4 з., сыграна карта с Золотой печатью (+3 з.) -> j_vagabond всё ещё срабатывает,
+    // а j_bull получает 2 * (4 + 3) = +14 Фишек; в итоге на счету 7 з.
+    const goldAce = createPlayingCard({
+      id: 'ga',
+      suit: 'spades',
+      rank: 14,
+      seal: 'gold',
+    });
+    const bufferState = makeBaseState({
+      dollars: 4,
+      maxConsumables: 2,
+      deck: [goldAce],
+      handIds: ['ga'],
+      relics: [
+        createRelicInstance('j_vagabond', 'r_vag'),
+        createRelicInstance('j_bull', 'r_bull'),
+      ],
+    });
+    const bufferRes = evaluatePlay(bufferState, ['ga'], {
+      relicRegistry: getRelicDefinition,
+    });
+    expect(bufferRes.nextState.dollars).toBe(7);
+    expect(bufferRes.nextState.consumables).toHaveLength(1);
+    expect(bufferRes.nextState.consumables[0]?.kind).toBe('scroll');
+    const bullTrigger = bufferRes.events.find(
+      (e) => e.type === 'RELIC_TRIGGER' && e.relicId === 'j_bull',
+    );
+    expect(bullTrigger && 'chipsDelta' in bullTrigger ? bullTrigger.chipsDelta : 0).toBe(14);
+
+    // A6: j_vagabond не дублирует уже имеющиеся Свитки и tryGrantConsumable поддерживает rune/celestial + скидку
+    const fifteenScrolls: ConsumableInstance[] = SCROLL_IDS.slice(0, 15).map((id, idx) => ({
+      uid: `owned_${idx}`,
+      id,
+      kind: 'scroll',
+      edition: 'base',
+      baseCost: 3,
+      sellValue: 1,
+    }));
+    const uniqueState = makeBaseState({
+      dollars: 2,
+      maxConsumables: 16,
+      consumables: fifteenScrolls,
+      deck: [createPlayingCard({ id: 'sa', suit: 'hearts', rank: 14 })],
+      handIds: ['sa'],
+      relics: [createRelicInstance('j_vagabond', 'r_vag2')],
+    });
+    const uniqueRes = evaluatePlay(uniqueState, ['sa'], {
+      relicRegistry: getRelicDefinition,
+    });
+    expect(uniqueRes.nextState.consumables).toHaveLength(16);
+    expect(uniqueRes.nextState.consumables[15]?.id).toBe(SCROLL_IDS[15]);
+
+    // Скидка 25% снижает sellValue выданной Руны с 2 до 1
+    const runeGranterDef: RelicDefinition = {
+      id: 'j_joker',
+      rarity: 1,
+      baseCost: 2,
+      blueprintCompat: false,
+      perishableCompat: true,
+      eternalCompat: true,
+      initialState: { chips: 0, mult: 0, xMult: 1 },
+      hooks: {
+        onScoreRelic: () => ({ createConsumableKind: 'rune' }),
+      },
+    };
+    const discountedRuneRes = evaluatePlay(
+      makeBaseState({
+        discountPercent: 25,
+        deck: [createPlayingCard({ id: 'ra', suit: 'clubs', rank: 14 })],
+        handIds: ['ra'],
+        relics: [makeRelic('r_rune', 'j_joker')],
+      }),
+      ['ra'],
+      { relicRegistry: makeRegistry({ j_joker: runeGranterDef }) },
+    );
+    expect(discountedRuneRes.nextState.consumables).toHaveLength(1);
+    expect(discountedRuneRes.nextState.consumables[0]?.kind).toBe('rune');
+    expect(discountedRuneRes.nextState.consumables[0]?.sellValue).toBe(1);
+  });
+
+  it('B2: Синяя печать в evaluateRoundEnd не срабатывает и не ретриггерится при заполненных слотах расходников', () => {
+    const dummyScroll = (uid: string): ConsumableInstance => ({
+      uid,
+      id: 'c_fool',
+      kind: 'scroll',
+      edition: 'base',
+      baseCost: 3,
+      sellValue: 1,
+    });
+
+    const blueCard = createPlayingCard({
+      id: 'blue_in_hand',
+      suit: 'spades',
+      rank: 10,
+      seal: 'blue',
+    });
+    const blueRedGoldCard = createPlayingCard({
+      id: 'blue_gold',
+      suit: 'hearts',
+      rank: 9,
+      enhancement: 'gold',
+      seal: 'blue',
+    });
+
+    // Слоты расходников заполнены (2 из 2), есть Mime -> Синяя печать и Mime не должны срабатывать вообще
+    const fullSlotsState = makeBaseState({
+      maxConsumables: 2,
+      consumables: [dummyScroll('u1'), dummyScroll('u2')],
+      lastPlayedHandType: 'Pair',
+      deck: [blueCard],
+      handIds: ['blue_in_hand'],
+      relics: [createRelicInstance('j_mime', 'm1')],
+    });
+    const fullRes = evaluateRoundEnd(fullSlotsState, { relicRegistry: getRelicDefinition });
+    expect(fullRes.nextState.consumables).toHaveLength(2);
+    expect(
+      fullRes.events.some((e) => e.type === 'HAND_CARD_TRIGGER' && e.cardId === 'blue_in_hand'),
+    ).toBe(false);
+    expect(
+      fullRes.events.some((e) => e.type === 'RELIC_TRIGGER' && e.relicId === 'j_mime'),
+    ).toBe(false);
+
+    // Золото + Синяя печать при заполненных слотах: срабатывает только Золото (3 з. + 3 з. от Mime), Синяя печать молчит
+    const goldPlusBlueFullState = makeBaseState({
+      dollars: 0,
+      maxConsumables: 1,
+      consumables: [dummyScroll('u1')],
+      lastPlayedHandType: 'Pair',
+      deck: [blueRedGoldCard],
+      handIds: ['blue_gold'],
+      relics: [createRelicInstance('j_mime', 'm1')],
+    });
+    const goldOnlyRes = evaluateRoundEnd(goldPlusBlueFullState, {
+      relicRegistry: getRelicDefinition,
+    });
+    expect(goldOnlyRes.nextState.dollars).toBe(6);
+    expect(goldOnlyRes.nextState.consumables).toHaveLength(1);
+    expect(
+      goldOnlyRes.events.filter((e) => e.type === 'RELIC_TRIGGER' && e.relicId === 'j_mime'),
+    ).toHaveLength(1);
+
+    // Ровно 1 свободный слот + Mime: создаётся 1 Астральная сфера; на 2-м повторе Мима слотов уже нет, поэтому создаётся ровно 1 карта
+    const oneFreeSlotState = makeBaseState({
+      maxConsumables: 2,
+      consumables: [dummyScroll('u1')],
+      lastPlayedHandType: 'Pair',
+      deck: [blueCard],
+      handIds: ['blue_in_hand'],
+      relics: [createRelicInstance('j_mime', 'm1')],
+    });
+    const oneSlotRes = evaluateRoundEnd(oneFreeSlotState, { relicRegistry: getRelicDefinition });
+    expect(oneSlotRes.nextState.consumables).toHaveLength(2);
+    expect(oneSlotRes.nextState.consumables[1]?.kind).toBe('celestial');
+    expect(
+      oneSlotRes.events.filter(
+        (e) => e.type === 'HAND_CARD_TRIGGER' && e.locKey === 'hand_card_blue_seal',
+      ),
+    ).toHaveLength(1);
+    expect(
+      oneSlotRes.events.filter((e) => e.type === 'RELIC_TRIGGER' && e.relicId === 'j_mime'),
+    ).toHaveLength(1);
+  });
+
+  it('B4: вызывает onPreDiscard, onDiscard (с removeCard), onRemovePlayingCards, onDebuffedHand и onAfterScore', () => {
+    const callOrder: string[] = [];
+    const removedBatches: string[][] = [];
+
+    const hookSpyDef: RelicDefinition = {
+      id: 'j_joker',
+      rarity: 1,
+      baseCost: 2,
+      blueprintCompat: false,
+      perishableCompat: true,
+      eternalCompat: true,
+      initialState: { chips: 0, mult: 0, xMult: 1 },
+      hooks: {
+        onPreDiscard: (ctx) => {
+          callOrder.push(`pre:${ctx.isHookDiscard ? 'hook' : 'std'}:${ctx.fullHand.length}`);
+          return null;
+        },
+        onDiscard: (ctx) => {
+          callOrder.push(`discard:${ctx.card?.id ?? ''}:${ctx.isHookDiscard ? 'hook' : 'std'}`);
+          if (ctx.card?.id === 'h2') {
+            return { removeCard: true };
+          }
+          return null;
+        },
+        onRemovePlayingCards: (ctx) => {
+          const ids = ctx.removedCards.map((c) => c.id);
+          callOrder.push(`remove:${ids.join(',')}`);
+          removedBatches.push(ids);
+          return {
+            updatedEffectState: {
+              ...ctx.effectRelic.state,
+              xMult: ctx.effectRelic.state.xMult + 1,
+            },
+          };
+        },
+        onDebuffedHand: () => {
+          callOrder.push('debuffed_hand');
+          return null;
+        },
+        onAfterScore: () => {
+          callOrder.push('after_score');
+          return null;
+        },
+      },
+    };
+    const registry = makeRegistry({ j_joker: hookSpyDef });
+
+    // 1. bl_hook: onPreDiscard -> цикл карт (включая removeCard) -> onRemovePlayingCards -> onAfterScore
+    const hookCards = [
+      createPlayingCard({ id: 'p1', suit: 'spades', rank: 14 }),
+      createPlayingCard({ id: 'h1', suit: 'hearts', rank: 5 }),
+      createPlayingCard({ id: 'h2', suit: 'clubs', rank: 7 }),
+    ];
+    const hookState = makeBaseState({
+      phase: 'playing',
+      currentBlindIndex: 2,
+      anteBlinds: [
+        { kind: 'small', bossId: null, targetScore: 300, reward: 3, status: 'defeated', skipTagId: null },
+        { kind: 'big', bossId: null, targetScore: 450, reward: 4, status: 'defeated', skipTagId: null },
+        { kind: 'boss', bossId: 'bl_hook', targetScore: 1000, reward: 5, status: 'current', skipTagId: null },
+      ],
+      deck: hookCards,
+      handIds: ['p1', 'h1', 'h2'],
+      relics: [makeRelic('r_spy', 'j_joker')],
+    });
+    const hookRes = evaluatePlay(hookState, ['p1'], { relicRegistry: registry });
+    expect(callOrder[0]).toBe('pre:hook:2');
+    expect(callOrder).toContain('after_score');
+    expect(removedBatches).toContainEqual(['h2']);
+    expect(hookRes.nextState.deck.some((c) => c.id === 'h2')).toBe(false);
+
+    // 2. bl_psychic (меньше 5 карт -> дебафф руки): вызывает onDebuffedHand и onAfterScore
+    callOrder.length = 0;
+    const psychicState = makeBaseState({
+      phase: 'playing',
+      currentBlindIndex: 2,
+      anteBlinds: [
+        { kind: 'small', bossId: null, targetScore: 300, reward: 3, status: 'defeated', skipTagId: null },
+        { kind: 'big', bossId: null, targetScore: 450, reward: 4, status: 'defeated', skipTagId: null },
+        { kind: 'boss', bossId: 'bl_psychic', targetScore: 1000, reward: 5, status: 'current', skipTagId: null },
+      ],
+      deck: [createPlayingCard({ id: 'p1', suit: 'spades', rank: 14 })],
+      handIds: ['p1'],
+      relics: [makeRelic('r_spy', 'j_joker')],
+    });
+    evaluatePlay(psychicState, ['p1'], { relicRegistry: registry });
+    expect(callOrder).toEqual(['debuffed_hand', 'after_score']);
+
+    // 3. Поломка Glass-карты вызывает onRemovePlayingCards, после чего срабатывает onAfterScore
+    callOrder.length = 0;
+    removedBatches.length = 0;
+    const glassBreakSeed = findSeedWithRoll('glass', (r) => r < 0.25);
+    const glassState = makeBaseState({
+      rngState: createRngState(glassBreakSeed),
+      deck: [createPlayingCard({ id: 'gl_break', suit: 'diamonds', rank: 14, enhancement: 'glass' })],
+      handIds: ['gl_break'],
+      relics: [makeRelic('r_spy', 'j_joker')],
+    });
+    const glassRes = evaluatePlay(glassState, ['gl_break'], { relicRegistry: registry });
+    expect(removedBatches).toEqual([['gl_break']]);
+    expect(callOrder.slice(-2)).toEqual(['remove:gl_break', 'after_score']);
+    expect(glassRes.nextState.deck.some((c) => c.id === 'gl_break')).toBe(false);
+  });
+
+  it('B5: j_runner с 0 Силы всё равно эмитит событие с +0, а j_baron на подавленном Короле даёт card_debuffed и ретриггер', () => {
+    const ace = createPlayingCard({ id: 'a1', suit: 'spades', rank: 14 });
+    const runner = createRelicInstance('j_runner', 'run_0'); // initial chips = 0
+    const runnerState = makeBaseState({
+      deck: [ace],
+      handIds: ['a1'],
+      relics: [runner],
+    });
+    const runnerRes = evaluatePlay(runnerState, ['a1'], { relicRegistry: getRelicDefinition });
+    const runnerTrigger = runnerRes.events.find(
+      (e) => e.type === 'RELIC_TRIGGER' && e.relicId === 'j_runner',
+    );
+    expect(runnerTrigger).toBeTruthy();
+    expect(runnerTrigger && 'locKey' in runnerTrigger ? runnerTrigger.locKey : null).toBe(
+      'relic_chips',
+    );
+    expect(runnerTrigger && 'locParams' in runnerTrigger ? runnerTrigger.locParams : null).toEqual({
+      chips: 0,
+    });
+
+    // Подавленный Король в руке с j_baron + j_mime: Множ не умножается, но видны card_debuffed и ретриггер Mime
+    // На пустую подавленную Пятёрку в руке Mime НЕ срабатывает
+    const playedTwo = createPlayingCard({ id: 'p2', suit: 'clubs', rank: 2 });
+    const debuffedKing = createPlayingCard({
+      id: 'dk',
+      suit: 'hearts',
+      rank: 13,
+      debuffed: true,
+    });
+    const debuffedFive = createPlayingCard({
+      id: 'df',
+      suit: 'clubs',
+      rank: 5,
+      debuffed: true,
+    });
+    const baronState = makeBaseState({
+      deck: [playedTwo, debuffedKing, debuffedFive],
+      handIds: ['p2', 'dk', 'df'],
+      relics: [
+        createRelicInstance('j_baron', 'bar1'),
+        createRelicInstance('j_mime', 'mim1'),
+      ],
+    });
+    const baronRes = evaluatePlay(baronState, ['p2'], { relicRegistry: getRelicDefinition });
+    // High Card 2♣: Base 5+2=7 Фишек * 1 Множ = 7 (j_baron не дал x1.5)
+    expect(baronRes.nextState.score).toBe(7);
+    const debuffEvents = baronRes.events.filter(
+      (e) =>
+        e.type === 'RELIC_TRIGGER' &&
+        e.relicId === 'j_baron' &&
+        e.locKey === 'card_debuffed',
+    );
+    const mimeTriggers = baronRes.events.filter(
+      (e) => e.type === 'RELIC_TRIGGER' && e.relicId === 'j_mime',
+    );
+    expect(debuffEvents).toHaveLength(2);
+    expect(mimeTriggers).toHaveLength(1);
+  });
+
+  it('разбивает эффекты сыгранной карты на последовательные CARD_TRIGGER шаги (chips -> mult -> dollars -> isEditionStep) (C5)', () => {
+    const richCard = createPlayingCard({
+      id: 'rich_ace',
+      suit: 'spades',
+      rank: 14,
+      enhancement: 'mult',
+      seal: 'gold',
+      edition: 'foil',
+    });
+    const richState = makeBaseState({
+      deck: [richCard],
+      handIds: ['rich_ace'],
+      dollars: 5,
+    });
+    const res = evaluatePlay(richState, ['rich_ace'], { relicRegistry: getRelicDefinition });
+
+    // High Card: (5 base + 11 rank + 50 foil = 66) * (1 base + 4 mult = 5) = 330, +3$
+    expect(res.nextState.score).toBe(330);
+    expect(res.nextState.dollars).toBe(8);
+
+    const cardTriggers = res.events.filter(
+      (e): e is Extract<(typeof res.events)[number], { type: 'CARD_TRIGGER' }> =>
+        e.type === 'CARD_TRIGGER' && e.cardId === 'rich_ace',
+    );
+    expect(cardTriggers).toHaveLength(4);
+    expect(cardTriggers[0]).toMatchObject({ chipsDelta: 11 });
+    expect(cardTriggers[0]?.multDelta).toBeUndefined();
+    expect(cardTriggers[0]?.isEditionStep).toBeUndefined();
+    expect(cardTriggers[1]).toMatchObject({ multDelta: 4 });
+    expect(cardTriggers[1]?.chipsDelta).toBeUndefined();
+    expect(cardTriggers[1]?.isEditionStep).toBeUndefined();
+    expect(cardTriggers[2]).toMatchObject({ dollarsDelta: 3 });
+    expect(cardTriggers[2]?.chipsDelta).toBeUndefined();
+    expect(cardTriggers[2]?.isEditionStep).toBeUndefined();
+    expect(cardTriggers[3]).toMatchObject({ chipsDelta: 50, isEditionStep: true });
   });
 });

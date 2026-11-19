@@ -33,7 +33,7 @@ export interface BaliteAudioController {
   playCardDeal(): void;
   playChipHit(comboIndex?: number): void;
   playMultHit(comboIndex?: number): void;
-  playRelicTrigger(comboIndex?: number): void;
+  playRelicTrigger(comboIndex?: number, isRetriggerAnnounce?: boolean): void;
   playGoldDelta(positive?: boolean): void;
   playBoosterOpen(): void;
   playConsumable(kind?: 'celestial' | 'scroll' | 'rune'): void;
@@ -109,7 +109,8 @@ interface AmbientState {
 const DEFAULT_SOUND_ENABLED = true;
 const DEFAULT_SFX_VOLUME = 0.8;
 const DEFAULT_MUSIC_VOLUME = 0.4;
-const MAX_COMBO_STEP = 24;
+const MAX_COMBO_STEP = 64;
+const MAX_COMBO_PITCH_RATE = 2;
 const MIN_POSITIVE_VALUE = 0.0001;
 const CELESTIAL_ID_SET = new Set<string>(CELESTIAL_IDS);
 const RUNE_ID_SET = new Set<string>(RUNE_IDS);
@@ -135,7 +136,13 @@ export function dispatchTraceAudioEvent(
 ): void {
   switch (event.type) {
     case 'CARD_TRIGGER': {
-      if (event.xMult !== undefined && event.xMult !== 1) {
+      if (event.isEditionStep) {
+        if (event.edition === 'holo' || event.edition === 'polychrome') {
+          audio.playMultHit(comboIndex);
+        } else {
+          audio.playRelicTrigger(comboIndex);
+        }
+      } else if (event.xMult !== undefined && event.xMult !== 1) {
         audio.playMultHit(comboIndex);
       } else if (event.multDelta && event.multDelta !== 0) {
         audio.playMultHit(comboIndex);
@@ -157,7 +164,9 @@ export function dispatchTraceAudioEvent(
       } else if ('chipsDelta' in event && event.chipsDelta && event.chipsDelta !== 0) {
         audio.playChipHit(comboIndex);
       } else {
-        audio.playRelicTrigger(comboIndex);
+        const isRetriggerAnnounce =
+          event.type === 'RELIC_TRIGGER' && event.locKey === 'card_retrigger';
+        audio.playRelicTrigger(comboIndex, isRetriggerAnnounce);
       }
       return;
     }
@@ -265,9 +274,29 @@ function clampComboStep(comboIndex: number | undefined): number {
   return floored;
 }
 
-function comboPitchFactor(comboIndex: number | undefined): number {
+/**
+ * Линейная формула нарастания питча оригинала Balatro (common_events.lua:780-892):
+ * percent = 0.3 + step * 0.08, pitch = 0.8 + percent * 0.2 = 0.86 + step * 0.016.
+ * Для анонса ретриггера ('Again!') без лесенки используется случайный pitch 0.98..1.02.
+ */
+export function computeBalatroComboPitch(
+  comboIndex = 0,
+  isRetriggerAnnounce = false,
+  randomFn: () => number = Math.random,
+): number {
+  if (isRetriggerAnnounce) {
+    const raw = randomFn();
+    const r = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0.5;
+    const percent = 0.9 + 0.2 * r;
+    return 0.8 + percent * 0.2;
+  }
   const step = clampComboStep(comboIndex);
-  return Math.pow(2, step / 12);
+  const percent = 0.3 + step * 0.08;
+  return Math.min(MAX_COMBO_PITCH_RATE, 0.8 + percent * 0.2);
+}
+
+function comboPitchFactor(comboIndex: number | undefined, isRetriggerAnnounce = false): number {
+  return computeBalatroComboPitch(comboIndex ?? 0, isRetriggerAnnounce);
 }
 
 function getAudioContextConstructor(): AudioContextConstructor | null {
@@ -1046,10 +1075,10 @@ export function createBaliteAudio(
     });
   };
 
-  const playRelicTrigger = (comboIndex = 0): void => {
+  const playRelicTrigger = (comboIndex = 0, isRetriggerAnnounce = false): void => {
     const out = prepareSfx();
     if (!out) return;
-    const pitch = comboPitchFactor(comboIndex);
+    const pitch = comboPitchFactor(comboIndex, isRetriggerAnnounce);
     scheduleTone(out.ctx, out.dest, {
       type: 'sine',
       startFreq: 587.33 * pitch,

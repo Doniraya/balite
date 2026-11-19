@@ -2,6 +2,7 @@ import type { AnimationSpeed } from '../engine/types';
 import {
   createMoveableState,
   juiceUp,
+  setMoveableZoom,
   setTarget,
   stepMoveable,
   type MoveableState,
@@ -60,6 +61,8 @@ export interface CardAnimatorOptions {
   readonly now?: () => number;
   /** Вызывается при старте каскадного вылета каждой карты из колоды или из руки. */
   readonly onCardDeal?: (index: number, zone: 'hand' | 'play') => void;
+  /** Вызывается при старте поочерёдного сброса уходящей карты. */
+  readonly onCardDepart?: (index: number, zone: 'hand' | 'play') => void;
 }
 
 /**
@@ -70,6 +73,8 @@ export interface AnimateFromSnapshotOptions {
   readonly animateDepartures?: boolean;
   readonly animateDeal?: boolean;
   readonly dealInitialDelaySeconds?: number;
+  readonly playInitialDelaySeconds?: number;
+  readonly departInitialDelaySeconds?: number;
   readonly triggerCardIds?: readonly string[];
 }
 
@@ -97,6 +102,7 @@ export interface CardAnimatorController {
   ) => number;
   pulseCard: (cardId: string, scaleDelta?: number, rotDelta?: number) => boolean;
   triggerJuice: (target: HTMLElement | null, options?: TriggerJuiceOptions) => boolean;
+  setHoverZoom?: (target: HTMLElement | null, hovered: boolean) => boolean;
   cancelAll: () => void;
   getActiveFlightCount: () => number;
   destroy: () => void;
@@ -275,6 +281,7 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
   const nowFn =
     options.now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()));
   const onCardDeal = options.onCardDeal;
+  const onCardDepart = options.onCardDepart;
 
   let destroyed = false;
   let rafId: number | null = null;
@@ -316,7 +323,6 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
     lastFrameMs = frameTimeMs;
 
     const reduced = prefersReducedMotion();
-    const speed = activeSpeed;
     const nextFlights: ActiveFlight[] = [];
 
     for (const flight of flights) {
@@ -343,7 +349,8 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
           flight.onLaunch();
           flight.onLaunch = undefined;
         }
-        flight.state = stepMoveable(flight.state, remDt, speed * flight.flightTempo, reduced);
+        // Пружины Moveable и juice_up всегда тикают по реальному времени REAL (C1)
+        flight.state = stepMoveable(flight.state, remDt, 1, reduced);
       } else {
         if (flight.kind === 'live') {
           delete flight.el.dataset.flightHidden;
@@ -355,11 +362,20 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
           flight.onLaunch();
           flight.onLaunch = undefined;
         }
-        flight.state = stepMoveable(flight.state, dtSeconds, speed * flight.flightTempo, reduced);
+        flight.state = stepMoveable(flight.state, dtSeconds, 1, reduced);
       }
 
       if (flight.state.settled) {
-        cleanupFlight(flight);
+        if (
+          flight.kind === 'live' &&
+          flight.state.zoom?.enabled &&
+          flight.state.zoom.hover
+        ) {
+          applyLiveTransform(flight);
+          nextFlights.push(flight);
+        } else {
+          cleanupFlight(flight);
+        }
       } else {
         if (flight.kind === 'live') {
           applyLiveTransform(flight);
@@ -371,7 +387,7 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
     }
 
     flights = nextFlights;
-    if (flights.length > 0) {
+    if (flights.some((flight) => !flight.state.settled || flight.delaySeconds > 0)) {
       rafId = requestFrame(tick);
     } else {
       lastFrameMs = null;
@@ -379,7 +395,8 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
   };
 
   const ensureLoopRunning = (): void => {
-    if (destroyed || flights.length === 0 || rafId !== null) return;
+    if (destroyed || rafId !== null) return;
+    if (!flights.some((flight) => !flight.state.settled || flight.delaySeconds > 0)) return;
     lastFrameMs = nowFn();
     rafId = requestFrame(tick);
   };
@@ -431,10 +448,35 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
 
     const animateDeal = animateOptions.animateDeal !== false;
     const animateDepartures = animateOptions.animateDepartures !== false;
-    const baseDealDelay = Math.max(0, animateOptions.dealInitialDelaySeconds ?? 0);
+    const basePlayDelay = Math.max(0, animateOptions.playInitialDelaySeconds ?? 0);
+    const baseDepartDelay = Math.max(0, animateOptions.departInitialDelaySeconds ?? 0);
     const triggerSet = new Set(animateOptions.triggerCardIds ?? []);
 
     const currentSlots = container.querySelectorAll<HTMLElement>(TRACKED_CARD_SELECTOR);
+    const presentIds = new Set<string>();
+    currentSlots.forEach((slotEl) => {
+      const cardId = slotEl.dataset.cardId;
+      const rawZone = slotEl.dataset.zone;
+      if (cardId && (rawZone === 'hand' || rawZone === 'play')) {
+        presentIds.add(cardId);
+      }
+    });
+    let departingCount = 0;
+    if (animateDepartures && flightLayer) {
+      snapshot.cards.forEach((entry) => {
+        if (!presentIds.has(entry.cardId) && entry.ghostNode && isNonZeroRect(entry.rect)) {
+          departingCount += 1;
+        }
+      });
+    }
+    // В оригинале перед добором новой руки после сброса стоит пауза delay(0.3) + по 0.1с на сброшенную карту
+    const autoDealDelayAfterDepart =
+      departingCount > 0 ? (departingCount - 1) * 0.1 + 0.3 : 0;
+    const baseDealDelay =
+      animateOptions.dealInitialDelaySeconds !== undefined
+        ? Math.max(0, animateOptions.dealInitialDelaySeconds)
+        : autoDealDelayAfterDepart;
+
     const currentCardIds = new Set<string>();
     const dealSourceRect = snapshot.deckRect ?? findDeckRect(container);
     let dealOrder = 0;
@@ -480,8 +522,8 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
         if (prev.zone === 'hand' && rawZone === 'play') {
           shouldJuice = true;
           const order = playOrder++;
-          delaySeconds = (order * 0.08) / activeSpeed;
-          flightTempo = 0.72;
+          delaySeconds = (basePlayDelay + order * 0.1) / activeSpeed;
+          flightTempo = 1;
           onLaunch = onCardDeal ? () => onCardDeal(order, 'play') : undefined;
         }
       } else if (
@@ -498,8 +540,8 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
             : 0.72;
         dR = -toFanAngleRad;
         const order = dealOrder++;
-        delaySeconds = (baseDealDelay + order * 0.11) / activeSpeed;
-        flightTempo = 0.52;
+        delaySeconds = (baseDealDelay + order * 0.1) / activeSpeed;
+        flightTempo = 1;
         hideUntilLaunch = delaySeconds > 0;
         onLaunch =
           (order > 0 || baseDealDelay > 0) && onCardDeal
@@ -589,8 +631,9 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
           cardId: entry.cardId,
           el: ghost,
           startDistance: Math.hypot(targetTransform.x, targetTransform.y),
-          delaySeconds: (order * 0.03) / activeSpeed,
-          flightTempo: 0.95,
+          delaySeconds: (baseDepartDelay + order * 0.1) / activeSpeed,
+          flightTempo: 1,
+          onLaunch: onCardDepart ? () => onCardDepart(order, entry.zone) : undefined,
           state: ghostState,
         };
         applyGhostTransform(ghostFlight);
@@ -686,6 +729,53 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
     return true;
   };
 
+  const setHoverZoom = (target: HTMLElement | null, hovered: boolean): boolean => {
+    if (destroyed || !target || !target.isConnected || prefersReducedMotion()) {
+      return false;
+    }
+
+    const existing = flights.find(
+      (f): f is ActiveLiveFlight => f.kind === 'live' && f.el === target,
+    );
+    if (existing) {
+      existing.state = setMoveableZoom(existing.state, { enabled: true, hover: hovered });
+      target.dataset.flightActive = 'true';
+      applyLiveTransform(existing);
+      ensureLoopRunning();
+      return true;
+    }
+
+    if (!hovered) {
+      return false;
+    }
+
+    const baseFanY =
+      target.classList.contains('play-zone__card') && target.classList.contains('is-highlighted')
+        ? -6
+        : parseFanOffsetY(target);
+    const baseFanDeg = parseFanAngleDeg(target);
+    const state = setMoveableZoom(
+      createMoveableState({ x: 0, y: 0, scale: 1, r: 0 }),
+      { enabled: true, hover: true, drag: false },
+    );
+    const flight: ActiveLiveFlight = {
+      kind: 'live',
+      cardId: target.dataset.cardId ?? target.dataset.relicUid ?? target.dataset.ref ?? 'hover',
+      el: target,
+      baseFanY,
+      baseFanDeg,
+      delaySeconds: 0,
+      flightTempo: 1,
+      state,
+    };
+
+    target.dataset.flightActive = 'true';
+    applyLiveTransform(flight);
+    flights.push(flight);
+    ensureLoopRunning();
+    return true;
+  };
+
   const destroy = (): void => {
     if (destroyed) return;
     destroyed = true;
@@ -697,8 +787,10 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
     animateFromSnapshot,
     pulseCard,
     triggerJuice,
+    setHoverZoom,
     cancelAll,
-    getActiveFlightCount: () => flights.length,
+    getActiveFlightCount: () =>
+      flights.filter((flight) => !flight.state.settled || flight.delaySeconds > 0).length,
     destroy,
   };
 }

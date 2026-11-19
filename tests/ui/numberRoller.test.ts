@@ -283,4 +283,46 @@ describe('createCashoutTimeline', () => {
 
     timeline.destroy();
   });
+
+  it('без явных rowStepMs/rollDurationMs использует неторопливый каноничный ритм Balatro (400мс старт + 180мс/монета + 850мс разделитель + 700мс строка)', () => {
+    const raf = createFakeRaf();
+    const row1 = document.createElement('div');
+    const val1 = document.createElement('strong');
+    const row2 = document.createElement('div');
+    const val2 = document.createElement('strong');
+    const btn = document.createElement('button');
+
+    const timeline = createCashoutTimeline({
+      rows: [
+        { rowElement: row1, valueElement: val1, amount: 3, formatAmount: (v) => `$${v}` },
+        { rowElement: row2, valueElement: val2, amount: 2, formatAmount: (v) => `$${v}` },
+      ],
+      totalElement: btn,
+      formatTotal: (v) => `Забрать $${v}`,
+      speed: 1,
+      reducedMotion: false,
+      now: raf.now,
+      requestFrame: raf.requestFrame,
+      cancelFrame: raf.cancelFrame,
+    });
+
+    timeline.start();
+    raf.flush(200);
+    // До 400мс 1-я строка ещё не раскрыта
+    expect(row1.dataset.cashoutRevealed).toBe('false');
+
+    raf.flush(220);
+    expect(row1.dataset.cashoutRevealed).toBe('true');
+    expect(row2.dataset.cashoutRevealed).toBe('false');
+
+    // Через 1500мс (меньше 3*180 + 850 + 700 = 2090мс) 2-я строка ещё ждёт
+    raf.flush(1500);
+    expect(row2.dataset.cashoutRevealed).toBe('false');
+
+    // После 2500мс раскрывается и 2-я строка
+    raf.flush(700);
+    expect(row2.dataset.cashoutRevealed).toBe('true');
+
+    timeline.destroy();
+  });
 });

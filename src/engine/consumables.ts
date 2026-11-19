@@ -1,5 +1,6 @@
+import { applyBossDebuffsToDeck } from './catalog';
 import { HAND_BASE_CONFIG, getHandLevelStats } from './handEval';
-import { nextFloat, pickElement, shuffleArray } from './prng';
+import { nextFloat, pickElement, shuffleDeckIds } from './prng';
 import {
   calculateRelicBuyCost,
   calculateRelicSellValue,
@@ -315,8 +316,9 @@ function destroyCardsFromState(
   destroyedIds: readonly string[],
   reason: 'scroll' | 'rune',
   events: TraceEvent[],
-): RunState {
+): { readonly nextState: RunState; readonly removedCards: PlayingCard[] } {
   const removedSet = new Set(destroyedIds);
+  const removedCards = state.deck.filter((card) => removedSet.has(card.id));
   for (const cardId of destroyedIds) {
     events.push({
       type: 'CARD_SHATTER',
@@ -326,21 +328,24 @@ function destroyCardsFromState(
   }
 
   return {
-    ...state,
-    deck: state.deck.filter((card) => !removedSet.has(card.id)),
-    handIds: state.handIds.filter((id) => !removedSet.has(id)),
-    drawPileIds: state.drawPileIds.filter((id) => !removedSet.has(id)),
-    discardPileIds: state.discardPileIds.filter((id) => !removedSet.has(id)),
-    booster: state.booster
-      ? {
-          ...state.booster,
-          drawnHandCardIds: state.booster.drawnHandCardIds.filter((id) => !removedSet.has(id)),
-        }
-      : null,
-    stats: {
-      ...state.stats,
-      cardsDestroyed: state.stats.cardsDestroyed + destroyedIds.length,
+    nextState: {
+      ...state,
+      deck: state.deck.filter((card) => !removedSet.has(card.id)),
+      handIds: state.handIds.filter((id) => !removedSet.has(id)),
+      drawPileIds: state.drawPileIds.filter((id) => !removedSet.has(id)),
+      discardPileIds: state.discardPileIds.filter((id) => !removedSet.has(id)),
+      booster: state.booster
+        ? {
+            ...state.booster,
+            drawnHandCardIds: state.booster.drawnHandCardIds.filter((id) => !removedSet.has(id)),
+          }
+        : null,
+      stats: {
+        ...state.stats,
+        cardsDestroyed: state.stats.cardsDestroyed + destroyedIds.length,
+      },
     },
+    removedCards,
   };
 }
 
@@ -475,6 +480,7 @@ export function applyConsumable(
     consumables: state.consumables.filter((item) => item.uid !== consumable.uid),
   };
   let addedCardsForHook: PlayingCard[] = [];
+  let removedCardsForHook: PlayingCard[] = [];
 
   if (consumable.kind === 'celestial') {
     const handType = CELESTIAL_HAND_MAP[consumable.id as CelestialId];
@@ -552,7 +558,9 @@ export function applyConsumable(
           break;
         }
         case 'c_hanged_man': {
-          workState = destroyCardsFromState(workState, targetCardIds, 'scroll', events);
+          const destroyed = destroyCardsFromState(workState, targetCardIds, 'scroll', events);
+          workState = destroyed.nextState;
+          removedCardsForHook = destroyed.removedCards;
           events.push({
             type: 'CONSUMABLE_TRIGGER',
             consumableUid: consumable.uid,
@@ -583,6 +591,8 @@ export function applyConsumable(
                     seal: source.seal,
                     bonusChips: source.bonusChips,
                     permaBonus: source.permaBonus,
+                    playedThisAnte: source.playedThisAnte,
+                    forcedSelection: source.forcedSelection,
                     debuffed: source.debuffed,
                   }
                 : card,
@@ -656,13 +666,13 @@ export function applyConsumable(
           break;
         }
         case 'c_wheel_of_fortune': {
-          const roll = nextFloat(workState.rngState, 'shop');
+          const roll = nextFloat(workState.rngState, 'wheel_of_fortune');
           let nextRng = roll.nextState;
           if (roll.value < workState.probabilitiesNormal / 4) {
             const eligible = workState.relics.filter((relic) => relic.edition === 'base');
-            const targetPick = pickElement(nextRng, 'shop', eligible);
+            const targetPick = pickElement(nextRng, 'wheel_of_fortune', eligible);
             nextRng = targetPick.nextState;
-            const edPick = pollEdition(nextRng, 'shop', workState.editionRate, {
+            const edPick = pollEdition(nextRng, 'wheel_of_fortune', workState.editionRate, {
               guaranteed: true,
               allowNegative: false,
             });
@@ -695,12 +705,18 @@ export function applyConsumable(
         }
         case 'c_judgement': {
           const relicPick = pickPoolRelic(workState, {
-            stream: 'shop',
+            rarityStream: `rarity${workState.ante}jud`,
+            keyAppend: 'jud',
             ...(options.relicRegistry ? { relicRegistry: options.relicRegistry } : {}),
           });
-          const edPick = pollEdition(relicPick.nextState, 'shop', workState.editionRate, {
-            allowNegative: true,
-          });
+          const edPick = pollEdition(
+            relicPick.nextState,
+            `edijud${workState.ante}`,
+            workState.editionRate,
+            {
+              allowNegative: true,
+            },
+          );
           const uid = `relic_${workState.nextCardUid}`;
           const newRelic = createRelicInstance(
             relicPick.value,
@@ -723,7 +739,7 @@ export function applyConsumable(
           break;
         }
         case 'c_aura': {
-          const edPick = pollEdition(workState.rngState, 'shop', workState.editionRate, {
+          const edPick = pollEdition(workState.rngState, 'aura', workState.editionRate, {
             guaranteed: true,
             allowNegative: false,
           });
@@ -752,9 +768,9 @@ export function applyConsumable(
             copies.push({
               ...source,
               id: `card_${uidCounter}`,
-              playedThisAnte: false,
+              playedThisAnte: source.playedThisAnte,
               facing: 'front',
-              forcedSelection: false,
+              forcedSelection: source.forcedSelection,
             });
             uidCounter += 1;
           }
@@ -789,10 +805,12 @@ export function applyConsumable(
         }
         case 'c_immolate': {
           const activeHandIds = getAccessibleHandIds(workState) ?? [];
-          const shuffled = shuffleArray(workState.rngState, 'shuffle', activeHandIds);
+          const shuffled = shuffleDeckIds(workState.rngState, 'immolate', activeHandIds);
           const destroyedIds = shuffled.value.slice(0, Math.min(5, shuffled.value.length));
           workState = { ...workState, rngState: shuffled.nextState };
-          workState = destroyCardsFromState(workState, destroyedIds, 'rune', events);
+          const destroyed = destroyCardsFromState(workState, destroyedIds, 'rune', events);
+          workState = destroyed.nextState;
+          removedCardsForHook = destroyed.removedCards;
           const totalDollars = workState.dollars + 20;
           workState = { ...workState, dollars: totalDollars };
           events.push({
@@ -812,7 +830,7 @@ export function applyConsumable(
         }
         case 'c_hex': {
           const eligible = workState.relics.filter((relic) => relic.edition === 'base');
-          const picked = pickElement(workState.rngState, 'shop', eligible);
+          const picked = pickElement(workState.rngState, 'hex', eligible);
           const chosenUid = picked.value.uid;
           const survivingRelics: RelicInstance[] = [];
 
@@ -871,6 +889,26 @@ export function applyConsumable(
           return { nextState: state, events: [] };
       }
     }
+
+    // Пересчитываем дебаффы Босса при модификации или копировании карт в бою (например, bl_club / bl_pillar)
+    const activeSlot = workState.anteBlinds[workState.currentBlindIndex];
+    if (
+      (workState.phase === 'playing' || workState.previousPhase === 'playing') &&
+      activeSlot.kind === 'boss'
+    ) {
+      workState = {
+        ...workState,
+        deck: applyBossDebuffsToDeck(
+          workState.deck,
+          activeSlot.bossId,
+          workState.activeBossDisabled,
+        ),
+      };
+      if (addedCardsForHook.length > 0) {
+        const addedIdSet = new Set(addedCardsForHook.map((card) => card.id));
+        addedCardsForHook = workState.deck.filter((card) => addedIdSet.has(card.id));
+      }
+    }
   }
 
   // Только Сферы и Свитки запоминаются для Свитка Эха (c_fool), Руны не перезаписывают память
@@ -892,6 +930,20 @@ export function applyConsumable(
       relicIndex: slotIndex,
       isBlueprintCopy: resolved.isBlueprintCopy,
       addedCards: added,
+    }));
+  }
+
+  // После c_hanged_man / c_immolate вызываем системный хук remove_playing_cards
+  if (removedCardsForHook.length > 0) {
+    const removed = removedCardsForHook;
+    workState = invokeConsumableRelicHooks(workState, options, events, (resolved, slotIndex, cur) => ({
+      hook: 'onRemovePlayingCards',
+      state: cur,
+      effectRelic: resolved.effectRelic,
+      stateRelic: resolved.stateRelic,
+      relicIndex: slotIndex,
+      isBlueprintCopy: resolved.isBlueprintCopy,
+      removedCards: removed,
     }));
   }
 

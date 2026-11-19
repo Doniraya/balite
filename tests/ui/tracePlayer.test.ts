@@ -7,8 +7,12 @@ import {
 } from '../../src/ui/backdropCanvas';
 import {
   DEFAULT_BASE_STEP_MS,
+  advanceComboAcc,
+  computeComboSpeedFactor,
+  getEventBaseDelayMs,
   getStepDelayMs,
   playTraceEvents,
+  quantizeBalatroStepDelayMs,
   resolveSpeed,
   type TracePlayerHandlers,
   type TracePopupPayload,
@@ -886,5 +890,82 @@ describe('Story 2.3: синхронизация onJuice и onFormulaDelta в Tra
       handle.skip();
       await handle.promise;
       expect(triggers).toHaveLength(1);
+    });
+  });
+
+  describe('Ускорение длинных комбо G.ACC / SPEEDFACTOR и дифференцированные паузы Balatro (C4, C5)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('возвращает каноничные базовые задержки для разных типов событий (C5)', () => {
+      expect(getEventBaseDelayMs({ type: 'CARD_TRIGGER', cardId: 'c1', retriggerIndex: 0, chipsDelta: 10 })).toBe(750);
+      expect(getEventBaseDelayMs({ type: 'CARD_TRIGGER', cardId: 'c1', retriggerIndex: 0, multDelta: 4 })).toBe(813);
+      expect(getEventBaseDelayMs({ type: 'CARD_TRIGGER', cardId: 'c1', retriggerIndex: 0, chipsDelta: 50, isEditionStep: true })).toBe(938);
+      expect(getEventBaseDelayMs({ type: 'RELIC_TRIGGER', relicId: 'j_joker', relicUid: 'r1', hook: 'onAfterScore', multDelta: 4 })).toBe(938);
+      expect(getEventBaseDelayMs({ type: 'RELIC_TRIGGER', relicId: 'j_mime', relicUid: 'r2', hook: 'onHoldCardRepetition', locKey: 'card_retrigger' })).toBe(563);
+      expect(getEventBaseDelayMs({ type: 'SCORE_UPDATE', chips: 10, mult: 2, handScore: 20, totalScore: 20, targetScore: 300, handType: 'Pair' })).toBe(2000);
+      expect(getEventBaseDelayMs({ type: 'SCORE_UPDATE', chips: 0, mult: 0, handScore: 0, totalScore: 0, targetScore: 300, handType: 'High Card' })).toBe(400);
+
+      // Квантование 60 Гц EventManager (1000/60 мс): 750 / 4 = 187.5 -> 12 + 1 = 13 кадров (~217мс)
+      expect(quantizeBalatroStepDelayMs(750, 4)).toBe(217);
+      expect(quantizeBalatroStepDelayMs(0, 4)).toBe(0);
+    });
+
+    it('накапливает G.ACC (потолок 16) и ускоряет длинную 25-шаговую цепочку сверх базовой скорости (C4)', async () => {
+      expect(computeComboSpeedFactor(1, 0)).toBe(1);
+      expect(computeComboSpeedFactor(1, 2)).toBe(1);
+      expect(computeComboSpeedFactor(1, 5)).toBe(4);
+      expect(advanceComboAcc(15.9, 5, 4)).toBe(16);
+
+      const translator = createTranslator('ru');
+      const events: TraceEvent[] = Array.from({ length: 30 }, (_, i) => ({
+        type: 'CARD_TRIGGER' as const,
+        cardId: `card_${i}`,
+        retriggerIndex: 0,
+        chipsDelta: 5,
+      }));
+
+      let completed = false;
+      const handle = playTraceEvents(events, 1, { translator });
+      void handle.promise.then(() => {
+        completed = true;
+      });
+
+      // Без ACC 30 шагов по 750мс заняли бы 22500мс; с G.ACC/SPEEDFACTOR всё завершается раньше 18500мс
+      await vi.advanceTimersByTimeAsync(18500);
+      expect(completed).toBe(true);
+    });
+
+    it('проигрывает вступительные шаги leadInSteps перед триггерами и корректно сбрасывает их по skip()', async () => {
+      const translator = createTranslator('ru');
+      const order: string[] = [];
+      const handle = playTraceEvents(
+        [{ type: 'CARD_TRIGGER', cardId: 'c1', retriggerIndex: 0, chipsDelta: 11 }],
+        1,
+        {
+          translator,
+          onPopup: () => order.push('popup'),
+        },
+        {
+          leadInSteps: [
+            { delayMs: 700, onTrigger: () => order.push('deal_wait') },
+            { delayMs: 100, highlightCardId: 'c1', onTrigger: () => order.push('highlight') },
+          ],
+        },
+      );
+
+      expect(order).toEqual(['deal_wait']);
+      await vi.advanceTimersByTimeAsync(750);
+      expect(order).toEqual(['deal_wait', 'highlight']);
+
+      handle.skip();
+      await handle.promise;
+      // Пропущенное событие CARD_TRIGGER не вызывает onPopup после skip()
+      expect(order).toEqual(['deal_wait', 'highlight']);
     });
   });

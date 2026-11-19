@@ -216,16 +216,20 @@ export interface RelicInstance {
  */
 export const RELIC_HOOK_NAMES = [
   'onBlindSelect',
+  'onPreDiscard',
   'onDiscard',
   'onBeforeScore',
+  'onDebuffedHand',
   'onScoreCard',
   'onScoreCardRepetition',
   'onHoldCard',
   'onHoldCardRepetition',
   'onScoreRelic',
+  'onAfterScore',
   'onRoundEnd',
   'onShopReroll',
   'onCardAdded',
+  'onRemovePlayingCards',
   'onUseConsumable',
 ] as const;
 
@@ -256,17 +260,29 @@ export type RelicHookContext =
       readonly blind: BlindSlotState;
     })
   | (RelicHookContextBase & {
+      readonly hook: 'onPreDiscard';
+      readonly fullHand: readonly PlayingCard[];
+      readonly isHookDiscard: boolean;
+    })
+  | (RelicHookContextBase & {
       readonly hook: 'onDiscard';
       readonly discardedCards: readonly PlayingCard[];
       readonly card?: PlayingCard;
       readonly cardIndex?: number;
       readonly isLastDiscardedCard?: boolean;
+      readonly isHookDiscard?: boolean;
     })
   | (RelicHookContextBase & {
       readonly hook: 'onBeforeScore';
       readonly playedCards: readonly PlayingCard[];
       readonly scoringCards: readonly PlayingCard[];
       readonly handCards: readonly PlayingCard[];
+      readonly handEvaluation: HandEvaluationResult;
+    })
+  | (RelicHookContextBase & {
+      readonly hook: 'onDebuffedHand';
+      readonly playedCards: readonly PlayingCard[];
+      readonly scoringCards: readonly PlayingCard[];
       readonly handEvaluation: HandEvaluationResult;
     })
   | (RelicHookContextBase & {
@@ -303,6 +319,16 @@ export type RelicHookContext =
       readonly scoringCards: readonly PlayingCard[];
       readonly handCards: readonly PlayingCard[];
       readonly handEvaluation: HandEvaluationResult;
+      /** Золото игрока до зачисления буфера текущей руки (для проверки `j_vagabond`). */
+      readonly dollarsBeforeBuffer?: number;
+      /** Золото, накопленное в текущем розыгрыше руки до финального зачисления (для `j_bull`). */
+      readonly dollarBuffer?: number;
+    })
+  | (RelicHookContextBase & {
+      readonly hook: 'onAfterScore';
+      readonly playedCards: readonly PlayingCard[];
+      readonly scoringCards: readonly PlayingCard[];
+      readonly handEvaluation: HandEvaluationResult;
     })
   | (RelicHookContextBase & {
       readonly hook: 'onRoundEnd';
@@ -316,6 +342,10 @@ export type RelicHookContext =
   | (RelicHookContextBase & {
       readonly hook: 'onCardAdded';
       readonly addedCards: readonly PlayingCard[];
+    })
+  | (RelicHookContextBase & {
+      readonly hook: 'onRemovePlayingCards';
+      readonly removedCards: readonly PlayingCard[];
     })
   | (RelicHookContextBase & {
       readonly hook: 'onUseConsumable';
@@ -342,6 +372,7 @@ export interface RelicEffectResult {
   readonly destroyedRelicUid?: string;
   readonly stripCardEnhancement?: boolean;
   readonly strippedCardIds?: readonly string[];
+  readonly removeCard?: boolean;
   readonly createConsumableKind?: ConsumableKind;
   readonly locKey?: string;
   readonly locParams?: Readonly<Record<string, string | number>>;
@@ -772,6 +803,8 @@ export interface RunState {
   readonly score: number;
   readonly targetScore: number;
   readonly dollars: number;
+  /** Нижний кредитный порог баланса (по умолчанию 0, может быть отрицательным). */
+  readonly bankruptAt?: number;
   readonly handsLeft: number;
   readonly maxHands: number;
   readonly discardsLeft: number;
@@ -878,6 +911,7 @@ export type TraceEvent =
       readonly edition?: Edition;
       readonly enhancement?: Enhancement;
       readonly seal?: Seal;
+      readonly isEditionStep?: boolean;
       readonly locKey?: string;
       readonly locParams?: Readonly<Record<string, string | number>>;
     }
@@ -1195,6 +1229,8 @@ export interface RunSnapshot {
   readonly score: number;
   readonly targetScore: number;
   readonly dollars: number;
+  /** Нижний кредитный порог баланса (по умолчанию 0, может быть отрицательным). */
+  readonly bankruptAt?: number;
   readonly handsLeft: number;
   readonly maxHands: number;
   readonly discardsLeft: number;

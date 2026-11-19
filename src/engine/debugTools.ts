@@ -12,6 +12,7 @@ import {
   resolveRelicTarget,
 } from './relics';
 import { evaluateRoundEnd } from './scoring';
+import { appendShopTopShelfOffer } from './shop';
 import type {
   CharterId,
   ConsumableId,
@@ -163,7 +164,14 @@ export function applyDebugVoucher(
   state: RunState,
   voucherId: VoucherId,
 ): RunState {
-  return redeemCharter(state, voucherId);
+  const next = redeemCharter(state, voucherId);
+  if (voucherId === 'v_overstock_norm' && next.shop) {
+    return appendShopTopShelfOffer(next, {
+      relicRegistry: getRelicDefinition,
+      resolveRelicTarget,
+    }).nextState;
+  }
+  return next;
 }
 
 /**
@@ -276,6 +284,8 @@ export function forceDebugBlindWin(state: RunState): RunState {
   );
 
   const idx = restored.currentBlindIndex;
+  const shouldAdvanceAnte =
+    idx === 2 && !(restored.ante === 8 && !restored.endlessMode);
   const nextBlinds: RunState['anteBlinds'] = [
     idx === 0
       ? { ...restored.anteBlinds[0], status: 'defeated' }
@@ -290,6 +300,7 @@ export function forceDebugBlindWin(state: RunState): RunState {
 
   return {
     ...restored,
+    ante: shouldAdvanceAnte ? restored.ante + 1 : restored.ante,
     anteBlinds: nextBlinds,
     drawPileIds: restored.deck.map((card) => card.id),
     handIds: [],

@@ -6,6 +6,7 @@ import {
   type AudioSampleKey,
 } from './sampleRegistry';
 import {
+  computeBalatroComboPitch,
   createBaliteAudio,
   dispatchTraceAudioEvent,
   type BaliteAudioController,
@@ -22,16 +23,14 @@ export interface HybridAudioOptions {
   readonly randomFn?: () => number;
 }
 
-const MAX_COMBO_PITCH_RATE = 1.85;
-const MAX_COMBO_STEP = 24;
 const MICRO_DETUNE_RANGE = 0.02;
 
-function computeComboPlaybackRate(comboIndex = 0): number {
-  if (typeof comboIndex !== 'number' || !Number.isFinite(comboIndex)) {
-    return 1;
-  }
-  const step = Math.max(0, Math.min(MAX_COMBO_STEP, Math.floor(comboIndex)));
-  return Math.min(MAX_COMBO_PITCH_RATE, Math.pow(2, step / 12));
+function computeComboPlaybackRate(
+  comboIndex = 0,
+  isRetriggerAnnounce = false,
+  randomFn: () => number = Math.random,
+): number {
+  return computeBalatroComboPitch(comboIndex, isRetriggerAnnounce, randomFn);
 }
 
 async function decodeSampleBuffer(
@@ -291,18 +290,23 @@ export function createHybridBaliteAudio(
       if (!playSample('card_deal', microVariationRate())) synth.playCardDeal();
     },
     playChipHit: (comboIndex = 0) => {
-      if (!playSample('chip_hit', computeComboPlaybackRate(comboIndex))) {
+      if (!playSample('chip_hit', computeComboPlaybackRate(comboIndex, false, randomFn))) {
         synth.playChipHit(comboIndex);
       }
     },
     playMultHit: (comboIndex = 0) => {
-      if (!playSample('mult_hit', computeComboPlaybackRate(comboIndex))) {
+      if (!playSample('mult_hit', computeComboPlaybackRate(comboIndex, false, randomFn))) {
         synth.playMultHit(comboIndex);
       }
     },
-    playRelicTrigger: (comboIndex = 0) => {
-      if (!playSample('relic_trigger', computeComboPlaybackRate(comboIndex))) {
-        synth.playRelicTrigger(comboIndex);
+    playRelicTrigger: (comboIndex = 0, isRetriggerAnnounce = false) => {
+      if (
+        !playSample(
+          'relic_trigger',
+          computeComboPlaybackRate(comboIndex, isRetriggerAnnounce, randomFn),
+        )
+      ) {
+        synth.playRelicTrigger(comboIndex, isRetriggerAnnounce);
       }
     },
     playGoldDelta: (positive = true) => {

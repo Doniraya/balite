@@ -4,6 +4,7 @@ import {
   createStandardDeck,
   getCardBaseChips,
   getCardEffectiveRank,
+  getCardNominal,
   getCardScoringChips,
   getRankBaseChips,
   isCardFace,
@@ -158,5 +159,44 @@ describe('Номиналы и свойства игральных карт (card
 
     const byOrder = sortCardsByOrder(byRank, ['c_st', 'c_kc', 'c_as', 'c_2s', 'c_ah']);
     expect(byOrder.map((c) => c.id)).toEqual(['c_st', 'c_kc', 'c_as', 'c_2s', 'c_ah']);
+  });
+
+  it('B5: вычисляет getCardNominal с множителем -1000 для Stone-карт и детерминированно сортирует несколько Stone-карт', () => {
+    const twoDiamonds = createPlayingCard({ id: 'c_2d', suit: 'diamonds', rank: 2 });
+    const stoneTwoDiamonds = createPlayingCard({
+      id: 'st_2d',
+      suit: 'diamonds',
+      rank: 2,
+      enhancement: 'stone',
+    });
+    const stoneAceSpades = createPlayingCard({
+      id: 'st_as',
+      suit: 'spades',
+      rank: 14,
+      enhancement: 'stone',
+    });
+
+    expect(getCardNominal(twoDiamonds, 'rank')).toBeGreaterThan(0);
+    expect(getCardNominal(stoneTwoDiamonds, 'rank')).toBeLessThan(0);
+    expect(getCardNominal(stoneAceSpades, 'rank')).toBeLessThan(0);
+    expect(getCardNominal(twoDiamonds, 'rank')).toBeGreaterThan(getCardNominal(stoneTwoDiamonds, 'rank'));
+    expect(getCardNominal(twoDiamonds, 'rank')).toBeGreaterThan(getCardNominal(stoneAceSpades, 'rank'));
+
+    // По рангу и масти 2♦ всегда опережает любые Каменные карты, а порядок Каменных определяется getCardNominal
+    const sortedRank = sortCardsByRank([stoneAceSpades, twoDiamonds, stoneTwoDiamonds]);
+    expect(sortedRank[0]?.id).toBe('c_2d');
+    const expectedSecondRank =
+      getCardNominal(stoneTwoDiamonds, 'rank') >= getCardNominal(stoneAceSpades, 'rank')
+        ? 'st_2d'
+        : 'st_as';
+    expect(sortedRank[1]?.id).toBe(expectedSecondRank);
+
+    const sortedSuit = sortCardsBySuit([stoneTwoDiamonds, stoneAceSpades, twoDiamonds]);
+    expect(sortedSuit[0]?.id).toBe('c_2d');
+    const expectedSecondSuit =
+      getCardNominal(stoneTwoDiamonds, 'suit') >= getCardNominal(stoneAceSpades, 'suit')
+        ? 'st_2d'
+        : 'st_as';
+    expect(sortedSuit[1]?.id).toBe(expectedSecondSuit);
   });
 });

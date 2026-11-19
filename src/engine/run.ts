@@ -18,11 +18,13 @@ import {
 } from './consumables';
 import { isDailyRunSeed } from './daily';
 import { createInitialHandLevels, getBlindAmount } from './handEval';
-import { createRngState, shuffleArray } from './prng';
+import { createRngState, shuffleDeckIds } from './prng';
 import { getRelicDefinition, resolveRelicTarget } from './relics';
 import { SAVE_SCHEMA_VERSION } from './save';
 import { evaluatePlay, evaluateRoundEnd } from './scoring';
 import {
+  appendShopTopShelfOffer,
+  canAffordCost,
   createShopState,
   freeRerollShopState,
   generateBoosterState,
@@ -212,37 +214,29 @@ function sortBoosterHandIfPresent(state: RunState): RunState {
 }
 
 /**
- * При изменении состава или характеристик карт после применения расходника
- * синхронизирует порядок карт в активной руке или руке бустера.
+ * Возвращает выжившие карты временной руки бустера в противоположный конец drawPileIds.
  */
-function sortAffectedHandAfterConsumable(
-  prevState: RunState,
-  nextState: RunState,
-): RunState {
-  const mode = nextState.handSortMode ?? 'rank';
-  let work = nextState;
-
-  if (
-    work.phase === 'playing' &&
-    work.handIds.length > 0 &&
-    (work.handIds !== prevState.handIds || work.deck !== prevState.deck)
-  ) {
-    work = {
-      ...work,
-      handIds: sortHandIdsByMode(work.deck, work.handIds, mode),
-    };
+function returnBoosterHandToDrawPile(state: RunState): RunState {
+  const drawn = state.booster?.drawnHandCardIds;
+  if (!drawn || drawn.length === 0 || state.previousPhase === 'playing') {
+    return state;
   }
 
-  if (
-    work.booster &&
-    work.booster.drawnHandCardIds.length > 0 &&
-    (work.booster.drawnHandCardIds !== prevState.booster?.drawnHandCardIds ||
-      work.deck !== prevState.deck)
-  ) {
-    work = sortBoosterHandIfPresent(work);
+  const deckSet = new Set(state.deck.map((card) => card.id));
+  const occupied = new Set([
+    ...state.drawPileIds,
+    ...state.handIds,
+    ...state.discardPileIds,
+  ]);
+  const returningIds = drawn.filter((id) => deckSet.has(id) && !occupied.has(id));
+  if (returningIds.length === 0) {
+    return state;
   }
 
-  return work;
+  return {
+    ...state,
+    drawPileIds: [...state.drawPileIds, ...returningIds],
+  };
 }
 
 /**
@@ -336,7 +330,12 @@ function applyNonScoringRelicEffects(
  * Вызывает указанный внебоевой/сбросовый хук слева направо по всем слотам Реликвий.
  */
 function runRelicHookSweep<
-  H extends 'onBlindSelect' | 'onDiscard' | 'onCardAdded',
+  H extends
+    | 'onBlindSelect'
+    | 'onPreDiscard'
+    | 'onDiscard'
+    | 'onCardAdded'
+    | 'onRemovePlayingCards',
 >(
   state: RunState,
   hook: H,
@@ -346,6 +345,7 @@ function runRelicHookSweep<
     currentState: RunState,
   ) => RelicHookContextFor<H>,
   events: TraceEvent[],
+  onResult?: (result: RelicEffectResult) => void,
 ): RunState {
   let current = state;
   const slotUids = current.relics.map((relic) => relic.uid);
@@ -365,6 +365,7 @@ function runRelicHookSweep<
     const result = handler(ctx as never);
     if (!result) continue;
 
+    onResult?.(result);
     current = applyNonScoringRelicEffects(current, resolved, result, events);
 
     if (
@@ -464,11 +465,13 @@ function openTagCharmBoosters(
  * Закрывает текущий бустер или открывает следующий отложенный бесплатный набор tag_charm.
  */
 function closeOrAdvanceBooster(state: RunState, events: TraceEvent[]): RunState {
-  if (state.booster?.fromTag && state.pendingTags.includes('tag_charm')) {
-    const returnPhase = state.previousPhase ?? 'blind_select';
+  const withReturnedHand = returnBoosterHandToDrawPile(state);
+
+  if (withReturnedHand.booster?.fromTag && withReturnedHand.pendingTags.includes('tag_charm')) {
+    const returnPhase = withReturnedHand.previousPhase ?? 'blind_select';
     const withTagConsumed: RunState = {
-      ...state,
-      pendingTags: removeFirstTag(state.pendingTags, 'tag_charm'),
+      ...withReturnedHand,
+      pendingTags: removeFirstTag(withReturnedHand.pendingTags, 'tag_charm'),
     };
     const packOffer = createFreeArcanaMegaPack(withTagConsumed.nextCardUid);
     const boosterRes = generateBoosterState(
@@ -484,7 +487,7 @@ function closeOrAdvanceBooster(state: RunState, events: TraceEvent[]): RunState 
     });
   }
 
-  const targetPhase = state.previousPhase ?? 'shop';
+  const targetPhase = withReturnedHand.previousPhase ?? 'shop';
   events.push({
     type: 'PHASE_CHANGED',
     from: 'booster',
@@ -492,7 +495,7 @@ function closeOrAdvanceBooster(state: RunState, events: TraceEvent[]): RunState 
   });
 
   return {
-    ...state,
+    ...withReturnedHand,
     phase: targetPhase,
     previousPhase: null,
     booster: null,
@@ -551,8 +554,14 @@ function finalizeWonRoundState(stateBeforeRoundEnd: RunState, roundEndState: Run
   );
 
   const allCardIds = restored.deck.map((card) => card.id);
+  const defeatedSlot = restored.anteBlinds[restored.currentBlindIndex];
+  // По правилам оригинала ease_ante(1) срабатывает сразу при победе над Боссом (кроме экрана победы Этапа 8)
+  const shouldAdvanceAnte =
+    defeatedSlot.kind === 'boss' && !(restored.ante === 8 && !restored.endlessMode);
+
   return {
     ...restored,
+    ante: shouldAdvanceAnte ? restored.ante + 1 : restored.ante,
     anteBlinds: updateBlindSlotStatus(
       restored.anteBlinds,
       restored.currentBlindIndex,
@@ -562,6 +571,32 @@ function finalizeWonRoundState(stateBeforeRoundEnd: RunState, roundEndState: Run
     handIds: [],
     discardPileIds: [],
   };
+}
+
+/**
+ * Переводит проигранный раунд в фазу game_over и восстанавливает временные эффекты Босса.
+ */
+function finalizeLostRoundState(state: RunState, events: TraceEvent[]): RunState {
+  const slot = state.anteBlinds[state.currentBlindIndex];
+  const cleaned = restoreBossEffectsOnRoundEnd(state, false);
+  const lostState: RunState = {
+    ...cleaned,
+    phase: 'game_over',
+    previousPhase: null,
+  };
+  events.push({
+    type: 'RUN_LOST',
+    ante: lostState.ante,
+    blindKind: slot.kind,
+    finalScore: lostState.score,
+    targetScore: lostState.targetScore,
+  });
+  events.push({
+    type: 'PHASE_CHANGED',
+    from: 'playing',
+    to: 'game_over',
+  });
+  return lostState;
 }
 
 /**
@@ -604,7 +639,8 @@ function advanceToNextBlindOrAnte(state: RunState): RunState {
     };
   }
 
-  const nextAnte = state.ante + 1;
+  // Анте уже увеличено при победе над Боссом (или при переходе в Бесконечный режим)
+  const nextAnte = state.ante;
   const bossRes = selectBossForAnte(nextAnte, state.bossUseCounts, state.rngState);
   const blindsRes = buildAnteBlinds(
     nextAnte,
@@ -640,12 +676,17 @@ export function createInitialRunState(deckId: DeckId, seed: string): RunState {
   const bossRes = selectBossForAnte(1, {}, initialRng);
   const blindsRes = buildAnteBlinds(1, bossRes.bossId, bossRes.nextRngState, 1);
   const deck = createStandardDeck(1);
-  const drawPileIds = deck.map((card) => card.id);
+  // Тасуем стартовую колоду, чтобы ранние бустеры (например, tag_charm) тянули случайные карты
+  const initialShuffle = shuffleDeckIds(
+    blindsRes.nextRngState,
+    'shuffle',
+    deck.map((card) => card.id),
+  );
 
   return {
     version: SAVE_SCHEMA_VERSION,
     seed,
-    rngState: blindsRes.nextRngState,
+    rngState: initialShuffle.nextState,
     deckId: starting.deckId,
     phase: 'blind_select',
     previousPhase: null,
@@ -677,7 +718,7 @@ export function createInitialRunState(deckId: DeckId, seed: string): RunState {
     discountPercent: starting.discountPercent,
     editionRate: starting.editionRate,
     deck,
-    drawPileIds,
+    drawPileIds: initialShuffle.value,
     handIds: [],
     handSortMode: 'rank',
     discardPileIds: [],
@@ -747,7 +788,11 @@ function handleSelectBlind(state: RunState): DispatchResult {
     to: 'playing',
   });
 
-  // Вызываем onBlindSelect (например, Ритуальный кинжал) до сдачи руки
+  // Сначала активируется Босс (дебаффы, 0 сбросов, -1 размер руки), затем хук Реликвий onBlindSelect
+  const bossRes = applyBossOnBlindSelect(work);
+  work = bossRes.nextState;
+  events.push(...bossRes.events);
+
   const activeSlot = work.anteBlinds[work.currentBlindIndex];
   work = runRelicHookSweep(
     work,
@@ -764,13 +809,27 @@ function handleSelectBlind(state: RunState): DispatchResult {
     events,
   );
 
-  const bossRes = applyBossOnBlindSelect(work);
-  work = bossRes.nextState;
-  events.push(...bossRes.events);
+  // Применяем отложенные tag_juggle перед первой сдачей руки нового раунда (round_start_bonus)
+  const juggleCount = work.pendingTags.filter((tag) => tag === 'tag_juggle').length;
+  if (juggleCount > 0) {
+    work = {
+      ...work,
+      pendingTags: work.pendingTags.filter((tag) => tag !== 'tag_juggle'),
+      tempHandSizeBonus: work.tempHandSizeBonus + 3 * juggleCount,
+    };
+    for (let i = 0; i < juggleCount; i += 1) {
+      events.push({
+        type: 'TAG_TRIGGER',
+        tagId: 'tag_juggle',
+        locKey: 'tag_activated',
+        locParams: { tagName: 'tag_juggle' },
+      });
+    }
+  }
 
-  const shuffled = shuffleArray(
+  const shuffled = shuffleDeckIds(
     work.rngState,
-    'shuffle',
+    `nr${work.ante}`,
     work.deck.map((card) => card.id),
   );
   work = {
@@ -782,6 +841,10 @@ function handleSelectBlind(state: RunState): DispatchResult {
   };
 
   work = replenishHandFromDrawPile(work);
+
+  if (work.handIds.length === 0) {
+    return { nextState: finalizeLostRoundState(work, events), events };
+  }
 
   const bellRes = applyFinalBellSelection(work);
   work = bellRes.nextState;
@@ -841,12 +904,12 @@ function handleRerollBoss(state: RunState): DispatchResult {
   if (!state.charters.includes('v_directors_cut') || state.bossRerollsThisAnte >= 1) {
     return { nextState: state, events: [] };
   }
-  if (state.dollars < 10) {
+  if (!canAffordCost(state, 10)) {
     return { nextState: state, events: [] };
   }
 
   const bossSlot = state.anteBlinds[2];
-  if (bossSlot.status !== 'upcoming') {
+  if (bossSlot.status !== 'upcoming' && bossSlot.status !== 'current') {
     return { nextState: state, events: [] };
   }
 
@@ -971,29 +1034,15 @@ function handlePlayHand(state: RunState, cardIds: readonly string[]): DispatchRe
   }
 
   if (work.handsLeft <= 0) {
-    const slot = work.anteBlinds[work.currentBlindIndex];
-    const cleaned = restoreBossEffectsOnRoundEnd(work, false);
-    const lostState: RunState = {
-      ...cleaned,
-      phase: 'game_over',
-      previousPhase: null,
-    };
-    events.push({
-      type: 'RUN_LOST',
-      ante: lostState.ante,
-      blindKind: slot.kind,
-      finalScore: lostState.score,
-      targetScore: lostState.targetScore,
-    });
-    events.push({
-      type: 'PHASE_CHANGED',
-      from: 'playing',
-      to: 'game_over',
-    });
-    return { nextState: lostState, events };
+    return { nextState: finalizeLostRoundState(work, events), events };
   }
 
   work = replenishHandFromDrawPile(work);
+
+  if (work.handIds.length === 0) {
+    return { nextState: finalizeLostRoundState(work, events), events };
+  }
+
   const bellRes = applyFinalBellSelection(work);
   work = bellRes.nextState;
   events.push(...bellRes.events);
@@ -1036,7 +1085,6 @@ function handleDiscardCards(state: RunState, cardIds: readonly string[]): Dispat
     ...state,
     discardsLeft: state.discardsLeft - 1,
     handIds: state.handIds.filter((id) => !discardedSet.has(id)),
-    discardPileIds: [...state.discardPileIds, ...cardIds],
     stats: {
       ...state.stats,
       discardsUsed: state.stats.discardsUsed + 1,
@@ -1045,11 +1093,34 @@ function handleDiscardCards(state: RunState, cardIds: readonly string[]): Dispat
   };
   work = clearStaleForcedSelections(work);
 
-  // Лиловая печать на незаблокированной сброшенной карте создаёт случайный Свиток при наличии слота
-  for (const card of discardedCards) {
+  // 1. Системный хук pre_discard до цикла по сбрасываемым картам
+  work = runRelicHookSweep(
+    work,
+    'onPreDiscard',
+    (resolved, slotIndex, currentState) => ({
+      hook: 'onPreDiscard',
+      state: currentState,
+      effectRelic: resolved.effectRelic,
+      stateRelic: resolved.stateRelic,
+      relicIndex: slotIndex,
+      isBlueprintCopy: resolved.isBlueprintCopy,
+      fullHand: discardedCards,
+      isHookDiscard: false,
+    }),
+    events,
+  );
+
+  // 2. В одном цикле для каждой карты: Лиловая печать -> onDiscard Реликвий -> перенос в сброс или удаление
+  const removedCards: PlayingCard[] = [];
+  const keptDiscardedIds: string[] = [];
+
+  for (let cardIndex = 0; cardIndex < discardedCards.length; cardIndex += 1) {
+    const card = discardedCards[cardIndex]!;
+    const isLastDiscardedCard = cardIndex === discardedCards.length - 1;
+
     if (!card.debuffed && card.seal === 'purple') {
       if (work.consumables.length < getEffectiveMaxConsumables(work)) {
-        const picked = pickPoolConsumable(work, 'scroll', { stream: 'shop' });
+        const picked = pickPoolConsumable(work, 'scroll', { stream: `Tarot8ba${work.ante}` });
         const created = createConsumableInstance(
           picked.value,
           `cons_${work.nextCardUid}`,
@@ -1072,12 +1143,8 @@ function handleDiscardCards(state: RunState, cardIds: readonly string[]): Dispat
         });
       }
     }
-  }
 
-  // Хуки onDiscard вызываются по одной карте слева направо, как в processBossHookDiscard
-  for (let cardIndex = 0; cardIndex < discardedCards.length; cardIndex += 1) {
-    const card = discardedCards[cardIndex]!;
-    const isLastDiscardedCard = cardIndex === discardedCards.length - 1;
+    let removed = false;
     work = runRelicHookSweep(
       work,
       'onDiscard',
@@ -1092,12 +1159,61 @@ function handleDiscardCards(state: RunState, cardIds: readonly string[]): Dispat
         discardedCards,
         cardIndex,
         isLastDiscardedCard,
+        isHookDiscard: false,
+      }),
+      events,
+      (res) => {
+        if (res.removeCard) {
+          removed = true;
+        }
+      },
+    );
+
+    if (removed) {
+      removedCards.push(card);
+    } else {
+      keptDiscardedIds.push(card.id);
+    }
+  }
+
+  if (removedCards.length > 0) {
+    const removedIdSet = new Set(removedCards.map((c) => c.id));
+    work = {
+      ...work,
+      deck: work.deck.filter((c) => !removedIdSet.has(c.id)),
+      discardPileIds: [...work.discardPileIds, ...keptDiscardedIds],
+      stats: {
+        ...work.stats,
+        cardsDestroyed: work.stats.cardsDestroyed + removedCards.length,
+      },
+    };
+    work = runRelicHookSweep(
+      work,
+      'onRemovePlayingCards',
+      (resolved, slotIndex, currentState) => ({
+        hook: 'onRemovePlayingCards',
+        state: currentState,
+        effectRelic: resolved.effectRelic,
+        stateRelic: resolved.stateRelic,
+        relicIndex: slotIndex,
+        isBlueprintCopy: resolved.isBlueprintCopy,
+        removedCards,
       }),
       events,
     );
+  } else {
+    work = {
+      ...work,
+      discardPileIds: [...work.discardPileIds, ...keptDiscardedIds],
+    };
   }
 
   work = replenishHandFromDrawPile(work);
+
+  if (work.handIds.length === 0 && work.score < work.targetScore) {
+    return { nextState: finalizeLostRoundState(work, events), events };
+  }
+
   const bellRes = applyFinalBellSelection(work);
   work = bellRes.nextState;
   events.push(...bellRes.events);
@@ -1230,9 +1346,19 @@ function handleUseConsumable(
     relicRegistry: getRelicDefinition,
     resolveRelicTarget,
   });
+  let nextState = applied.nextState;
+  const events = [...applied.events];
+  if (
+    nextState.phase === 'playing' &&
+    nextState.handIds.length === 0 &&
+    nextState.drawPileIds.length === 0 &&
+    nextState.score < nextState.targetScore
+  ) {
+    nextState = finalizeLostRoundState(nextState, events);
+  }
   return {
-    nextState: sortAffectedHandAfterConsumable(state, applied.nextState),
-    events: applied.events,
+    nextState,
+    events,
   };
 }
 
@@ -1311,6 +1437,14 @@ function handleClaimCashout(state: RunState): DispatchResult {
     events,
   );
 
+  // Тасуем колоду при выходе из награды (cash_out), чтобы бустеры магазина тянули без повторного шаффла
+  const cashoutShuffle = shuffleDeckIds(work.rngState, `cashout${work.ante}`, work.drawPileIds);
+  work = {
+    ...work,
+    rngState: cashoutShuffle.nextState,
+    drawPileIds: cashoutShuffle.value,
+  };
+
   // Грамота обновляется только после победы над Боссом Этапа (в остальных раундах Этапа сохраняется)
   const defeatedSlot = work.anteBlinds[work.currentBlindIndex];
   const preserveVoucher = defeatedSlot.kind !== 'boss' && Boolean(work.shop?.voucher);
@@ -1374,7 +1508,7 @@ function handleBuyShopOffer(
   }
 
   const offer = state.shop.offers.find((item) => item.uid === offerUid && !item.sold);
-  if (!offer || state.dollars < offer.cost) {
+  if (!offer || !canAffordCost(state, offer.cost)) {
     return { nextState: state, events: [] };
   }
 
@@ -1419,7 +1553,7 @@ function handleBuyShopOffer(
       });
       events.push(...applied.events);
       return {
-        nextState: sortAffectedHandAfterConsumable(paidPurchased, applied.nextState),
+        nextState: applied.nextState,
         events,
       };
     }
@@ -1475,7 +1609,11 @@ function handleBuyCharter(state: RunState): DispatchResult {
     return { nextState: state, events: [] };
   }
   const voucher = state.shop.voucher;
-  if (voucher.sold || state.dollars < voucher.cost || state.charters.includes(voucher.charterId)) {
+  if (
+    voucher.sold ||
+    !canAffordCost(state, voucher.cost) ||
+    state.charters.includes(voucher.charterId)
+  ) {
     return { nextState: state, events: [] };
   }
 
@@ -1490,6 +1628,16 @@ function handleBuyCharter(state: RunState): DispatchResult {
   });
   work = redeemCharter(work, voucher.charterId);
 
+  // Покупка v_overstock_norm немедленно добавляет +1 товар в текущий магазин
+  if (voucher.charterId === 'v_overstock_norm') {
+    const expanded = appendShopTopShelfOffer(work, {
+      relicRegistry: getRelicDefinition,
+      resolveRelicTarget,
+    });
+    work = expanded.nextState;
+    events.push(...expanded.events);
+  }
+
   return { nextState: work, events };
 }
 
@@ -1501,7 +1649,7 @@ function handleOpenPack(state: RunState, packUid: string): DispatchResult {
     return { nextState: state, events: [] };
   }
   const pack = state.shop.packs.find((item) => item.uid === packUid && !item.purchased);
-  if (!pack || state.dollars < pack.cost) {
+  if (!pack || !canAffordCost(state, pack.cost)) {
     return { nextState: state, events: [] };
   }
 
@@ -1618,10 +1766,7 @@ function handlePickBoosterItem(
       resolveRelicTarget,
     });
     events.push(...applied.events);
-    work = markBoosterChoicePicked(
-      sortAffectedHandAfterConsumable(work, applied.nextState),
-      choiceUid,
-    );
+    work = markBoosterChoicePicked(applied.nextState, choiceUid);
   }
 
   if (work.booster && work.booster.remainingPicks === 0) {
@@ -1708,7 +1853,7 @@ function handleReviveRun(state: RunState): DispatchResult {
   const effectiveHandSize = Math.max(0, work.handSize + work.tempHandSizeBonus);
   const missingCount = Math.max(0, effectiveHandSize - work.handIds.length);
   if (work.drawPileIds.length < missingCount && work.discardPileIds.length > 0) {
-    const shuffledDiscard = shuffleArray(work.rngState, 'shuffle', work.discardPileIds);
+    const shuffledDiscard = shuffleDeckIds(work.rngState, 'shuffle', work.discardPileIds);
     work = {
       ...work,
       rngState: shuffledDiscard.nextState,
@@ -1760,11 +1905,17 @@ function handleContinueEndless(state: RunState): DispatchResult {
     return { nextState: state, events: [] };
   }
 
+  // На экране победы Этапа 8 сохраняется ante = 8; при переходе в Бесконечный режим повышаем до 9
+  const advancedAnteState: RunState = {
+    ...state,
+    ante: state.ante + 1,
+    endlessMode: true,
+  };
+
   if (state.cashout !== null) {
     return {
       nextState: {
-        ...state,
-        endlessMode: true,
+        ...advancedAnteState,
         phase: 'cashout',
         previousPhase: null,
       },
@@ -1778,10 +1929,7 @@ function handleContinueEndless(state: RunState): DispatchResult {
     };
   }
 
-  const nextState = advanceToNextBlindOrAnte({
-    ...state,
-    endlessMode: true,
-  });
+  const nextState = advanceToNextBlindOrAnte(advancedAnteState);
   return {
     nextState,
     events: [

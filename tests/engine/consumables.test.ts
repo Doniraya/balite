@@ -18,7 +18,9 @@ import {
   type ConsumableInstance,
   type Edition,
   type PlayingCard,
+  type RelicDefinition,
   type RelicInstance,
+  type RelicRegistryLookup,
   type RunState,
 } from '../../src/engine/types';
 
@@ -545,5 +547,121 @@ describe('Расходники Balite (consumables.ts)', () => {
         expect(card.seal).toBe(expected.seal);
       }
     }
+  });
+
+  it('A8 и A9: пересчитывает дебаффы Босса после модификаций в бою и полностью копирует флаги в c_death и c_cryptid', () => {
+    // A8: против Босса bl_club c_lovers на Черве сразу накладывает debuffed, а c_tower на Трефе — снимает
+    const clubBossState = createTestRunState({
+      phase: 'playing',
+      currentBlindIndex: 2,
+      anteBlinds: [
+        { kind: 'small', bossId: null, targetScore: 300, reward: 3, status: 'defeated', skipTagId: null },
+        { kind: 'big', bossId: null, targetScore: 450, reward: 4, status: 'defeated', skipTagId: null },
+        { kind: 'boss', bossId: 'bl_club', targetScore: 600, reward: 5, status: 'current', skipTagId: null },
+      ],
+      handIds: ['h1', 'cl1'],
+      deck: [
+        createPlayingCard({ id: 'h1', suit: 'hearts', rank: 10, debuffed: false }),
+        createPlayingCard({ id: 'cl1', suit: 'clubs', rank: 9, debuffed: true }),
+      ],
+    });
+    const afterLovers = applyConsumable(clubBossState, makeConsumable('c_lovers'), ['h1']).nextState;
+    expect(afterLovers.deck.find((c) => c.id === 'h1')?.debuffed).toBe(true);
+    const afterTower = applyConsumable(afterLovers, makeConsumable('c_tower'), ['cl1']).nextState;
+    expect(afterTower.deck.find((c) => c.id === 'cl1')?.debuffed).toBe(false);
+
+    // A9 + A8: c_death и c_cryptid копируют playedThisAnte и forcedSelection, а под bl_pillar копии получают debuffed
+    const pillarBossState = createTestRunState({
+      phase: 'playing',
+      currentBlindIndex: 2,
+      anteBlinds: [
+        { kind: 'small', bossId: null, targetScore: 300, reward: 3, status: 'defeated', skipTagId: null },
+        { kind: 'big', bossId: null, targetScore: 450, reward: 4, status: 'defeated', skipTagId: null },
+        { kind: 'boss', bossId: 'bl_pillar', targetScore: 600, reward: 5, status: 'current', skipTagId: null },
+      ],
+      handIds: ['left', 'right'],
+      deck: [
+        createPlayingCard({ id: 'left', suit: 'diamonds', rank: 2, playedThisAnte: false, forcedSelection: false }),
+        createPlayingCard({
+          id: 'right',
+          suit: 'spades',
+          rank: 14,
+          playedThisAnte: true,
+          forcedSelection: true,
+          debuffed: true,
+        }),
+      ],
+    });
+
+    const afterDeath = applyConsumable(pillarBossState, makeConsumable('c_death'), ['left', 'right']).nextState;
+    const mutatedLeft = afterDeath.deck.find((c) => c.id === 'left')!;
+    expect(mutatedLeft.playedThisAnte).toBe(true);
+    expect(mutatedLeft.forcedSelection).toBe(true);
+    expect(mutatedLeft.debuffed).toBe(true);
+
+    const afterCryptid = applyConsumable(pillarBossState, makeConsumable('c_cryptid'), ['right']).nextState;
+    const copies = afterCryptid.deck.filter((c) => c.id !== 'left' && c.id !== 'right');
+    expect(copies).toHaveLength(2);
+    for (const copy of copies) {
+      expect(copy.playedThisAnte).toBe(true);
+      expect(copy.forcedSelection).toBe(true);
+      expect(copy.debuffed).toBe(true);
+    }
+  });
+
+  it('B4: c_hanged_man и c_immolate вызывают хук onRemovePlayingCards со списком удалённых карт', () => {
+    const removedBatches: string[][] = [];
+    const spyDef: RelicDefinition = {
+      id: 'j_joker',
+      rarity: 1,
+      baseCost: 2,
+      blueprintCompat: false,
+      perishableCompat: true,
+      eternalCompat: true,
+      initialState: { chips: 0, mult: 0, xMult: 1 },
+      hooks: {
+        onRemovePlayingCards: (ctx) => {
+          removedBatches.push(ctx.removedCards.map((c) => c.id));
+          return {
+            updatedEffectState: {
+              ...ctx.effectRelic.state,
+              xMult: ctx.effectRelic.state.xMult + ctx.removedCards.length,
+            },
+          };
+        },
+      },
+    };
+    const spyRegistry: RelicRegistryLookup = (id) => (id === 'j_joker' ? spyDef : undefined);
+    const spyRelic: RelicInstance = {
+      ...createRelicInstance('j_joker', 'r_spy'),
+    };
+
+    const baseState = createTestRunState({
+      phase: 'playing',
+      relics: [spyRelic],
+    });
+
+    // c_hanged_man удаляет выбранные карты и передаёт их в onRemovePlayingCards
+    const hangedRes = applyConsumable(
+      baseState,
+      makeConsumable('c_hanged_man'),
+      ['c1', 'c2'],
+      { relicRegistry: spyRegistry },
+    );
+    expect(removedBatches[0]).toEqual(['c1', 'c2']);
+    expect(hangedRes.nextState.relics[0]?.state.xMult).toBe(3);
+
+    // c_immolate удаляет случайные карты и также вызывает onRemovePlayingCards
+    const immolateRes = applyConsumable(
+      hangedRes.nextState,
+      makeConsumable('c_immolate'),
+      [],
+      { relicRegistry: spyRegistry },
+    );
+    expect(removedBatches).toHaveLength(2);
+    expect(removedBatches[1]!.length).toBeGreaterThan(0);
+    expect(immolateRes.nextState.relics[0]?.state.xMult).toBe(
+      3 + removedBatches[1]!.length,
+    );
   });
 });

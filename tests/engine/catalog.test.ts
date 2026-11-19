@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createPlayingCard } from '../../src/engine/cards';
+import { createConsumableInstance } from '../../src/engine/consumables';
 import {
   BOSS_DEFINITIONS,
   CHARTER_DEFINITIONS,
@@ -526,19 +527,19 @@ describe('Каталог 10 Знаков пропуска (TAG_DEFINITIONS, roll
     expect(grantSkipTag(createTestRunState({ dollars: 60 }), 'tag_economy').nextState.dollars).toBe(100);
     expect(grantSkipTag(createTestRunState({ dollars: -5 }), 'tag_economy').nextState.dollars).toBe(-5);
 
-    // tag_juggle: tempHandSizeBonus += 3
-    expect(grantSkipTag(createTestRunState(), 'tag_juggle').nextState.tempHandSizeBonus).toBe(3);
-
-    // tag_charm: флаг открытия бесплатного Мега-набора Свитков
-    const charmRes = grantSkipTag(createTestRunState(), 'tag_charm');
-    expect(charmRes.openFreeArcanaMegaPackCount).toBe(1);
-    expect(charmRes.shouldOpenArcanaMegaPack).toBe(true);
-
-    // Отложенные знаки добавляются в pendingTags
-    for (const deferred of ['tag_investment', 'tag_uncommon', 'tag_rare', 'tag_coupon', 'tag_d_six'] as const) {
+    // Отложенные знаки добавляются в pendingTags (включая tag_juggle — round_start_bonus до старта следующего раунда)
+    for (const deferred of [
+      'tag_investment',
+      'tag_uncommon',
+      'tag_rare',
+      'tag_coupon',
+      'tag_d_six',
+      'tag_juggle',
+    ] as const) {
       const res = grantSkipTag(createTestRunState(), deferred);
       expect(res.nextState.pendingTags).toEqual([deferred]);
     }
+    expect(grantSkipTag(createTestRunState(), 'tag_juggle').nextState.tempHandSizeBonus).toBe(0);
 
     // tag_double снимается из pendingTags и применяет следующий знак дважды (с copiedFromDouble: true у копии)
     const doubleBase = grantSkipTag(createTestRunState({ dollars: 10 }), 'tag_double');
@@ -652,5 +653,83 @@ describe('Каталог 10 Знаков пропуска (TAG_DEFINITIONS, roll
       handIds: [],
     });
     expect(applyFinalBellSelection(emptyBell).events).toEqual([]);
+  });
+
+  it('A4, A10, A13: v_clearance_sale пересчитывает sellValue инвентаря, bl_manacle опускает handSize до 0, disableActiveBoss завершает стену при достаточном счёте', () => {
+    // A4: уценка уже купленных Реликвий (сохраняя extraValue) и Расходников при v_clearance_sale
+    const ownedRelic = {
+      ...createRelicInstance('j_joker', 'rel_owned'),
+      baseCost: 10,
+      sellValue: 8, // 5 + 3 extraValue
+      extraValue: 3,
+    };
+    const ownedRune = {
+      ...createConsumableInstance('c_deja_vu', 'cons_rune'),
+      baseCost: 4,
+      sellValue: 2,
+    };
+    const clearanceState = createTestRunState({
+      relics: [ownedRelic],
+      consumables: [ownedRune],
+    });
+    const afterClearance = redeemCharter(clearanceState, 'v_clearance_sale');
+    expect(afterClearance.discountPercent).toBe(25);
+    // buyCost = floor(10 * 0.75) = 7 -> sellValue = floor(7 / 2) + 3 = 6
+    expect(afterClearance.relics[0]?.sellValue).toBe(6);
+    expect(afterClearance.relics[0]?.extraValue).toBe(3);
+    // buyCost руны = floor(4 * 0.75) = 3 -> sellValue = max(1, floor(3 / 2)) = 1
+    expect(afterClearance.consumables[0]?.sellValue).toBe(1);
+
+    // A10: bl_manacle снижает handSize до 0 без зажима в 1 и возвращает обратно при победе
+    const manacleOneCard = createTestRunState({
+      handSize: 1,
+      currentBlindIndex: 2,
+      anteBlinds: [
+        { kind: 'small', bossId: null, targetScore: 300, reward: 3, status: 'defeated', skipTagId: null },
+        { kind: 'big', bossId: null, targetScore: 450, reward: 4, status: 'defeated', skipTagId: null },
+        { kind: 'boss', bossId: 'bl_manacle', targetScore: 600, reward: 5, status: 'current', skipTagId: null },
+      ],
+    });
+    const afterManacle = applyBossOnBlindSelect(manacleOneCard).nextState;
+    expect(afterManacle.handSize).toBe(0);
+    expect(restoreBossEffectsOnRoundEnd(afterManacle, true).handSize).toBe(1);
+
+    // A13: disableActiveBoss на bl_wall / bl_final_vessel в бою при score >= targetScore/div эмитит BLIND_DEFEATED
+    const wallState = createTestRunState({
+      phase: 'playing',
+      currentBlindIndex: 2,
+      anteBlinds: [
+        { kind: 'small', bossId: null, targetScore: 300, reward: 3, status: 'defeated', skipTagId: null },
+        { kind: 'big', bossId: null, targetScore: 450, reward: 4, status: 'defeated', skipTagId: null },
+        { kind: 'boss', bossId: 'bl_wall', targetScore: 1200, reward: 5, status: 'current', skipTagId: null },
+      ],
+      score: 700,
+      targetScore: 1200,
+    });
+    const disabledWall = disableActiveBoss(wallState);
+    expect(disabledWall.nextState.targetScore).toBe(600);
+    expect(disabledWall.events).toContainEqual(
+      expect.objectContaining({
+        type: 'BLIND_DEFEATED',
+        bossId: 'bl_wall',
+        finalScore: 700,
+        targetScore: 600,
+      }),
+    );
+
+    const vesselLowScore = createTestRunState({
+      phase: 'playing',
+      currentBlindIndex: 2,
+      anteBlinds: [
+        wallState.anteBlinds[0],
+        wallState.anteBlinds[1],
+        { kind: 'boss', bossId: 'bl_final_vessel', targetScore: 3000, reward: 8, status: 'current', skipTagId: null },
+      ],
+      score: 500,
+      targetScore: 3000,
+    });
+    const disabledVessel = disableActiveBoss(vesselLowScore);
+    expect(disabledVessel.nextState.targetScore).toBe(1000);
+    expect(disabledVessel.events.some((e) => e.type === 'BLIND_DEFEATED')).toBe(false);
   });
 });

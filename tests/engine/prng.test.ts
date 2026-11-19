@@ -2,12 +2,16 @@ import { describe, expect, it } from 'vitest';
 import {
   Mulberry32,
   RNG_STREAM_NAMES,
+  SEED_ALPHABET,
   createRngState,
+  generateRandomSeed,
   hashSeed,
   nextFloat,
   nextInt,
   pickElement,
+  pseudohash,
   shuffleArray,
+  shuffleDeckIds,
   type RngState,
 } from '../../src/engine/prng';
 
@@ -179,5 +183,55 @@ describe('Многопоточный иммутабельный PRNG (RngState)'
     expect([...resA.value].sort((a, b) => a - b)).toEqual(ordered);
     expect(shuffleArray(state, 'shuffle', []).value).toEqual([]);
     expect(shuffleArray(state, 'shuffle', [42]).value).toEqual([42]);
+  });
+
+  it('B1: поддерживает pseudohash, алфавит SEED_ALPHABET и порядок-независимое shuffleDeckIds с динамическими ключами', () => {
+    // SEED_ALPHABET содержит 1..9, A..N, P..Z и исключает 0 и O
+    expect(SEED_ALPHABET).toBe('123456789ABCDEFGHIJKLMNPQRSTUVWXYZ');
+    expect(SEED_ALPHABET.includes('0')).toBe(false);
+    expect(SEED_ALPHABET.includes('O')).toBe(false);
+
+    for (let i = 0; i < 20; i += 1) {
+      const seed = generateRandomSeed(8);
+      expect(seed).toHaveLength(8);
+      expect(seed.includes('0')).toBe(false);
+      expect(seed.includes('O')).toBe(false);
+      expect([...seed].every((ch) => SEED_ALPHABET.includes(ch))).toBe(true);
+    }
+
+    // pseudohash детерминирован и чувствителен к символам и их позиции
+    const h1 = pseudohash('lucky_multBALITE01');
+    const h2 = pseudohash('lucky_moneyBALITE01');
+    const h3 = pseudohash('ABBALITE');
+    const h4 = pseudohash('BABALITE');
+    expect(h1).toBe(pseudohash('lucky_multBALITE01'));
+    expect(h1).not.toBe(h2);
+    expect(h3).not.toBe(h4);
+    expect(h1).toBeGreaterThanOrEqual(0);
+    expect(h1).toBeLessThan(1);
+
+    // Динамические ключи (lucky_mult, lucky_money, cdt1, Voucher1) полностью изолированы
+    const baseRng = createRngState('BALITE42');
+    const rMult = nextFloat(baseRng, 'lucky_mult');
+    const rMoneyDirect = nextFloat(baseRng, 'lucky_money');
+    const rMoneyAfterMult = nextFloat(rMult.nextState, 'lucky_money');
+    const rVoucherAfterMult = nextFloat(rMult.nextState, 'Voucher1');
+    expect(rMoneyAfterMult.value).toBe(rMoneyDirect.value);
+    expect(rVoucherAfterMult.value).toBe(nextFloat(baseRng, 'Voucher1').value);
+    expect(rMult.nextState.streams['cdt1']).toBeUndefined();
+
+    // Идентичная последовательность после JSON-сериализации/десериализации
+    const restored = JSON.parse(JSON.stringify(rMult.nextState)) as RngState;
+    expect(nextFloat(restored, 'lucky_mult').value).toBe(
+      nextFloat(rMult.nextState, 'lucky_mult').value,
+    );
+
+    // shuffleDeckIds не зависит от порядка входных ID карт (предварительно сортирует по sort_id)
+    const idsOrderA = ['c_10', 'c_2', 'c_a', 'deck_14', 'deck_3', 'card_1'];
+    const idsOrderB = ['deck_3', 'c_a', 'card_1', 'c_2', 'deck_14', 'c_10'];
+    const shuffledA = shuffleDeckIds(baseRng, 'nr1', idsOrderA);
+    const shuffledB = shuffleDeckIds(baseRng, 'nr1', idsOrderB);
+    expect(shuffledA.value).toEqual(shuffledB.value);
+    expect(new Set(shuffledA.value)).toEqual(new Set(idsOrderA));
   });
 });
