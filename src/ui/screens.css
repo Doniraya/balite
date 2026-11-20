@@ -19,8 +19,10 @@
   --screen-mult-highlight: #ef4444;
   --screen-success: #2e7d32;
   --screen-danger: #a82020;
-  --parchment-bg: #f5ecd5;
-  --parchment-card-bg: linear-gradient(180deg, rgba(46, 31, 20, 0.96) 0%, rgba(24, 16, 11, 0.98) 100%);
+  --parchment-bg: #f2dfb4;
+  --parchment-ink: #2a180d;
+  --parchment-ink-muted: #5e3c24;
+  --parchment-card-bg: linear-gradient(180deg, #f3e2bb 0%, #ead29c 100%);
 
   position: relative;
   display: grid;
@@ -36,14 +38,18 @@
   box-sizing: border-box;
   overflow: hidden;
   color: var(--screen-text);
-  background: radial-gradient(
-    circle at 50% 24%,
-    rgba(58, 32, 18, 0.76) 0%,
-    rgba(34, 18, 10, 0.84) 60%,
-    rgba(18, 9, 5, 0.92) 100%
-  );
+  /* Деревянная доска с Canvas-освещением просвечивает через сцену; в бою чуть глубже ради карт */
+  background: transparent;
   font-family: var(--font-ui, 'Pixellari', 'Segoe UI', system-ui, sans-serif);
   -webkit-tap-highlight-color: transparent;
+}
+
+.run-shell[data-phase='playing'] {
+  background: radial-gradient(
+    circle at 50% 42%,
+    rgba(22, 12, 6, 0.22) 0%,
+    rgba(12, 6, 3, 0.5) 100%
+  );
 }
 
 /* На фазах без руки карт Арена забирает всё свободное место, а Пояс 4 сжимается под строку с кнопкой Колоды */
@@ -59,12 +65,12 @@
 .belt {
   position: relative;
   min-height: 0;
-  border: 2px solid var(--screen-border);
-  border-radius: 8px;
-  background: var(--screen-panel);
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.65),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  border: 8px solid transparent;
+  border-image: url('../assets/ui/wood-frame-9slice.webp') 38 / 8px / 0 stretch;
+  border-radius: 0;
+  background: rgba(26, 15, 9, 0.92);
+  background-clip: padding-box;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.62);
   padding: clamp(4px, 0.6dvh, 6px) clamp(6px, 0.8vw, 8px);
   box-sizing: border-box;
 }
@@ -74,6 +80,7 @@
 .belt--hand {
   background: transparent;
   border: none;
+  border-image: none;
   box-shadow: none;
 }
 
@@ -97,25 +104,24 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 8px 12px;
-  border: 2px solid var(--screen-border);
-  border-radius: 7px;
-  background: var(--screen-panel-alt);
+  padding: 8px 14px;
+  border: 0 solid transparent;
+  border-image: url('../assets/ui/wood-btn-slate.webp') 32 48 32 48 fill / 10px 14px / 0 stretch;
+  background: transparent;
   color: var(--screen-text);
+  text-shadow: 0 2px 0 rgba(20, 10, 4, 0.9);
   font-family: inherit;
   font-size: 13px;
   font-weight: 700;
   line-height: 1.15;
   text-align: center;
-  box-shadow:
-    0 3px 0 rgba(10, 5, 2, 0.92),
-    inset 0 1px 0 rgba(255, 255, 255, 0.16);
-  transition: transform 0.08s ease, box-shadow 0.08s ease, opacity 0.15s ease, border-color 0.15s ease;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.5));
+  transition: transform 0.08s ease, opacity 0.15s ease, filter 0.15s ease;
 }
 
 .ui-btn:active:not(:disabled) {
   transform: translateY(2px);
-  box-shadow: 0 1px 0 rgba(10, 5, 2, 0.92);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5)) brightness(0.95);
 }
 
 .ui-btn:focus-visible {
@@ -124,38 +130,31 @@
 }
 
 .ui-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.65;
+  filter: saturate(0.45) brightness(0.76) drop-shadow(0 2px 3px rgba(0, 0, 0, 0.4));
   cursor: not-allowed;
 }
 
 .ui-btn--primary {
-  background: linear-gradient(180deg, #2d8759 0%, #1e6240 100%);
-  border-color: rgba(137, 232, 180, 0.62);
-  box-shadow:
-    0 3px 0 #103924,
-    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  border-image: url('../assets/ui/wood-btn-emerald.webp') 32 48 32 48 fill / 10px 14px / 0 stretch;
+  color: #fffaf0;
 }
 
 .ui-btn--accent {
-  background: linear-gradient(180deg, #e5b242 0%, #b58322 100%);
-  color: #191308;
-  border-color: #ffe39a;
-  box-shadow:
-    0 3px 0 #6e4e11,
-    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  border-image: url('../assets/ui/wood-btn-9slice.webp') 32 48 32 48 fill / 10px 14px / 0 stretch;
+  color: #fffaf0;
+  text-shadow: 0 2px 0 rgba(56, 26, 4, 0.92);
 }
 
 .ui-btn--danger {
-  background: linear-gradient(180deg, #c94c4c 0%, #962f2f 100%);
-  border-color: rgba(255, 166, 166, 0.65);
-  box-shadow:
-    0 3px 0 #5b1919,
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  border-image: url('../assets/ui/wood-btn-crimson.webp') 32 48 32 48 fill / 10px 14px / 0 stretch;
+  color: #fff6f2;
 }
 
 .ui-btn--compact {
-  padding: 6px 10px;
+  padding: 6px 11px;
   font-size: 12px;
+  border-image-width: 8px 11px;
 }
 
 .hud-refs-standby {
@@ -262,7 +261,7 @@
   padding: clamp(3px, 0.45dvh, 7px);
   border-radius: 10px;
   border: 2px solid var(--screen-border);
-  background: rgba(22, 46, 37, 0.9);
+  background: rgba(38, 22, 13, 0.92);
   color: var(--screen-text);
   text-align: left;
   cursor: pointer;
@@ -271,18 +270,27 @@
 }
 
 .hud-boss-btn--small {
-  border-color: #2b4c7e;
-  background: linear-gradient(180deg, #1b365d 0%, #10213a 100%);
+  border-color: rgba(212, 163, 72, 0.55);
+  background: linear-gradient(180deg, rgba(46, 26, 14, 0.96) 0%, rgba(24, 14, 8, 0.98) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 227, 158, 0.14),
+    0 4px 10px rgba(0, 0, 0, 0.45);
 }
 
 .hud-boss-btn--big {
-  border-color: #9c6a24;
-  background: linear-gradient(180deg, #4b3214 0%, #2b1c0a 100%);
+  border-color: rgba(245, 185, 66, 0.72);
+  background: linear-gradient(180deg, rgba(64, 38, 16, 0.96) 0%, rgba(32, 18, 9, 0.98) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 227, 158, 0.18),
+    0 4px 10px rgba(0, 0, 0, 0.45);
 }
 
 .hud-boss-btn--boss {
   border-color: rgba(226, 98, 98, 0.72);
-  background: linear-gradient(160deg, rgba(84, 24, 28, 0.96), rgba(35, 16, 20, 0.96));
+  background: linear-gradient(160deg, rgba(72, 22, 22, 0.96), rgba(32, 13, 12, 0.98));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 200, 180, 0.14),
+    0 4px 10px rgba(0, 0, 0, 0.5);
 }
 
 .hud-boss-btn__header {
@@ -370,8 +378,8 @@
   min-width: 0;
   padding: clamp(2px, 0.35dvh, 6px) clamp(3px, 0.5vw, 7px);
   border-radius: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(6, 12, 16, 0.72);
+  border: 1px solid rgba(212, 163, 72, 0.3);
+  background: rgba(18, 10, 5, 0.86);
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.65);
   text-align: center;
 }
@@ -411,7 +419,7 @@
   color: var(--screen-text);
   opacity: 0.9;
   display: -webkit-box;
-  -webkit-line-clamp: 1;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   line-height: 1.1;
@@ -432,8 +440,8 @@
   min-width: 0;
   padding: clamp(2px, 0.4dvh, 4px) clamp(4px, 0.6vw, 8px);
   border-radius: 10px;
-  background: rgba(7, 15, 12, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(18, 10, 5, 0.84);
+  border: 1px solid rgba(212, 163, 72, 0.25);
 }
 
 .hud-score-box {
@@ -676,9 +684,9 @@
   min-height: 0;
   padding: clamp(6px, 0.8dvh, 10px) clamp(10px, 1.2vw, 14px);
   border-radius: 12px;
-  background: rgba(0, 0, 0, 0.24);
-  border: none;
-  box-shadow: none;
+  background: rgba(20, 11, 6, 0.56);
+  border: 1.5px solid rgba(212, 163, 72, 0.28);
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.5);
 }
 
 .inventory-strip__head {
@@ -895,17 +903,20 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: clamp(3px, 0.5dvh, 4px);
-  padding: clamp(6px, 0.8dvh, 8px) clamp(8px, 1vw, 10px);
-  border-radius: 10px;
-  border: 1px solid var(--screen-border);
-  background: rgba(14, 31, 24, 0.92);
+  padding: clamp(8px, 1dvh, 12px) clamp(10px, 1.2vw, 14px);
+  border-radius: 4px;
+  border: 6px solid transparent;
+  border-image: url('../assets/ui/wood-frame-9slice.webp') 38 / 8px / 0 stretch;
+  background: rgba(32, 19, 11, 0.94);
+  background-clip: padding-box;
   color: var(--screen-text);
   text-align: left;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5);
 }
 
 .deck-option.is-selected {
-  border-color: var(--screen-gold);
-  box-shadow: 0 0 0 2px rgba(244, 197, 82, 0.32);
+  background: rgba(54, 33, 16, 0.96);
+  box-shadow: 0 0 0 2px rgba(245, 185, 66, 0.6), 0 8px 18px rgba(0, 0, 0, 0.6);
 }
 
 .deck-option:disabled {
@@ -950,11 +961,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: clamp(8px, 1.1dvh, 12px) clamp(10px, 1.2vw, 14px);
-  border-radius: 10px;
-  border: 1.5px solid var(--screen-gold);
-  background: linear-gradient(135deg, rgba(52, 36, 14, 0.92) 0%, rgba(14, 31, 24, 0.95) 100%);
-  box-shadow: 0 3px 12px rgba(244, 197, 82, 0.16);
+  padding: clamp(10px, 1.3dvh, 14px) clamp(12px, 1.4vw, 16px);
+  border-radius: 4px;
+  border: 8px solid transparent;
+  border-image: url('../assets/ui/wood-frame-9slice.webp') 38 / 10px / 0 stretch;
+  background: linear-gradient(135deg, rgba(64, 42, 18, 0.95) 0%, rgba(30, 18, 10, 0.96) 100%);
+  background-clip: padding-box;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55), 0 0 12px rgba(245, 185, 66, 0.18);
 }
 
 .daily-run-card__info {
@@ -1026,9 +1039,9 @@
   min-width: 120px;
   min-height: 44px;
   padding: 6px 10px;
-  border-radius: 10px;
-  border: 1px solid var(--screen-border);
-  background: rgba(5, 12, 9, 0.88);
+  border-radius: 8px;
+  border: 1.5px solid var(--screen-border);
+  background: rgba(18, 10, 5, 0.9);
   color: var(--screen-text);
   font-size: clamp(12.5px, min(2.8vw, 1.6dvh), 14px);
   box-sizing: border-box;
@@ -1044,7 +1057,7 @@
   flex: 1;
 }
 
-/* Призыв к выбору Стража (как G.blind_prompt_box + DynaText в Balatro) */
+/* Призыв к выбору Заказа на деревянной доске */
 .hud-choose-prompt {
   display: none;
   flex-wrap: wrap;
@@ -1053,18 +1066,18 @@
   align-content: center;
   gap: 0 0.28em;
   padding: clamp(6px, 0.9dvh, 10px) clamp(8px, 1vw, 12px);
-  border-radius: 10px;
-  border: 2px solid rgba(147, 197, 253, 0.32);
-  background: rgba(8, 16, 20, 0.88);
+  border-radius: 8px;
+  border: 2px solid rgba(212, 163, 72, 0.45);
+  background: rgba(24, 14, 8, 0.9);
   box-shadow:
-    inset 0 3px 8px rgba(0, 0, 0, 0.75),
-    0 2px 0 rgba(255, 255, 255, 0.08);
-  color: #f8fafc;
+    inset 0 3px 8px rgba(0, 0, 0, 0.72),
+    0 2px 0 rgba(255, 224, 140, 0.1);
+  color: #fff6e5;
   font-size: clamp(12px, 2.5vw, 15px);
   font-weight: 800;
   line-height: 1.22;
   text-align: center;
-  text-shadow: 0 2px 0 rgba(5, 10, 14, 0.9);
+  text-shadow: 0 2px 0 rgba(18, 9, 4, 0.92);
   animation: blind-prompt-box-in calc(320ms / var(--anim-speed, 1))
     cubic-bezier(0.2, 1.2, 0.3, 1)
     calc(var(--blind-intro-delay, 0ms) / var(--anim-speed, 1)) both;
@@ -1192,13 +1205,15 @@
   }
 }
 
-/* Выбор Стража */
+/* Выбор Стража (Доска заказов с пергаментными листками) */
 .blinds-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: clamp(5px, 0.7dvh, 8px);
+  align-items: center;
+  gap: clamp(6px, 0.9dvh, 12px);
   flex: 1;
   min-height: 0;
+  padding: clamp(8px, 1dvh, 12px) 4px 4px;
 }
 
 /* Слой бесшовных переходов между фазами забега (внутри stageEl поверх экрана, под полётами карт) */
@@ -1398,55 +1413,100 @@
 }
 
 .blind-card {
+  --blind-tilt: 0deg;
+  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   align-items: stretch;
   gap: clamp(4px, 0.6dvh, 8px);
   min-width: 0;
-  padding: clamp(5px, 0.8dvh, 8px);
-  border-radius: 10px;
-  border: 2px solid var(--screen-border);
+  height: min(100%, 490px);
+  padding: 4px 4px;
+  border-style: solid;
+  border-color: transparent;
+  border-width: 38px 20px 36px 20px;
+  border-image: url('../assets/ui/parchment-order.webp') 88 60 88 60 fill / 38px 20px 36px 20px / 0 stretch;
+  border-radius: 0;
   background: var(--parchment-card-bg);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  background-clip: padding-box;
+  box-shadow: none;
+  box-sizing: border-box;
+  filter: drop-shadow(0 8px 14px rgba(10, 4, 1, 0.74));
+  transform: rotate(var(--blind-tilt, 0deg));
   animation: blind-card-rise calc(380ms / var(--anim-speed, 1))
     cubic-bezier(0.2, 1.22, 0.3, 1)
     calc((var(--blind-intro-delay, 0ms) + var(--blind-index, 0) * 75ms) / var(--anim-speed, 1))
     both;
 }
 
+.blind-card--small {
+  --blind-tilt: -1deg;
+}
+
+.blind-card--big {
+  --blind-tilt: 0.75deg;
+}
+
+.blind-card--boss {
+  --blind-tilt: -0.6deg;
+  gap: clamp(2px, 0.4dvh, 5px);
+  background: transparent;
+  border-width: 48px 22px 54px 22px;
+  border-image: url('../assets/ui/parchment-boss.webp') 100 56 84 56 fill / 48px 22px 54px 22px / 0 stretch;
+  padding: 2px 6px 4px;
+}
+
+/* Кованый железный гвоздь, прибивающий обычный заказ к деревянной доске */
+.blind-card:not(.blind-card--boss)::before {
+  content: '';
+  position: absolute;
+  top: -33px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: clamp(20px, 2.8vw, 28px);
+  height: clamp(20px, 2.8vw, 28px);
+  background: url('../assets/ui/pin-nail.webp') center / contain no-repeat;
+  pointer-events: none;
+  z-index: 4;
+  filter: drop-shadow(0 3px 3px rgba(24, 12, 4, 0.65));
+}
+
 @keyframes blind-card-rise {
   0% {
     opacity: 0;
-    transform: translate3d(0, 125%, 0);
+    transform: translate3d(0, 125%, 0) rotate(0deg);
   }
   1% {
     opacity: 1;
-    transform: translate3d(0, 125%, 0);
+    transform: translate3d(0, 125%, 0) rotate(0deg);
   }
   74% {
     opacity: 1;
-    transform: translate3d(0, -10px, 0);
+    transform: translate3d(0, -10px, 0) rotate(var(--blind-tilt, 0deg));
   }
   100% {
     opacity: 1;
-    transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0) rotate(var(--blind-tilt, 0deg));
   }
 }
 
 .blind-card--current {
-  border-color: var(--screen-gold);
-  background: linear-gradient(180deg, rgba(54, 36, 22, 0.98) 0%, rgba(28, 18, 12, 0.99) 100%);
-  box-shadow: 0 4px 18px rgba(245, 185, 66, 0.28), 0 4px 0 rgba(10, 5, 2, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  --blind-tilt: 0deg;
+  z-index: 2;
+  filter:
+    drop-shadow(0 12px 22px rgba(0, 0, 0, 0.8))
+    drop-shadow(0 0 12px rgba(245, 185, 66, 0.45));
 }
 
 .blind-card--upcoming {
-  border-color: rgba(210, 165, 82, 0.45);
+  filter: drop-shadow(0 8px 14px rgba(10, 4, 1, 0.72));
 }
 
 .blind-card--defeated,
 .blind-card--skipped {
-  opacity: 0.62;
+  opacity: 0.68;
+  filter: grayscale(0.28) brightness(0.82) drop-shadow(0 5px 10px rgba(10, 4, 1, 0.65));
 }
 
 .blind-card__top {
@@ -1459,14 +1519,10 @@
   min-height: 44px;
   padding: 6px 8px;
   font-size: clamp(11px, min(2.4vw, 1.4dvh), 14px);
-  background: linear-gradient(180deg, #d97706 0%, #a14304 100%);
-  border: 2px solid #ffd584;
-  color: #fffdf7;
-  text-shadow: 0 2px 0 rgba(74, 32, 0, 0.85);
-  box-shadow:
-    0 4px 0 #78350f,
-    0 6px 14px rgba(217, 119, 6, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  border-image: url('../assets/ui/wood-btn-9slice.webp') 32 48 32 48 fill / 9px 13px / 0 stretch;
+  color: #fffaf0;
+  text-shadow: 0 2px 0 rgba(56, 26, 4, 0.92);
+  filter: drop-shadow(0 3px 5px rgba(42, 24, 13, 0.55));
 }
 
 .blind-card__status-pill {
@@ -1474,22 +1530,23 @@
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 32px;
-  padding: 4px 6px;
-  border-radius: 7px;
-  border: 2px solid rgba(212, 163, 72, 0.25);
-  background: rgba(28, 16, 10, 0.88);
-  font-size: clamp(11px, 2.3vw, 13px);
-  font-weight: 700;
-  color: rgba(203, 180, 153, 0.82);
+  min-height: 30px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1.5px dashed rgba(94, 60, 36, 0.48);
+  background: rgba(94, 60, 36, 0.13);
+  font-size: clamp(10.5px, 2.2vw, 12.5px);
+  font-weight: 800;
+  color: #4a2c18;
   text-align: center;
+  letter-spacing: 0.03em;
 }
 
 .blind-card__body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(4px, 0.65dvh, 8px);
+  gap: clamp(3px, 0.55dvh, 7px);
   flex: 1;
   min-height: 0;
   text-align: center;
@@ -1501,23 +1558,28 @@
   justify-content: center;
   width: 100%;
   padding: 4px 8px;
-  border-radius: 999px;
-  border: 2px solid rgba(147, 197, 253, 0.5);
-  background: linear-gradient(180deg, rgba(28, 42, 58, 0.92) 0%, rgba(14, 22, 32, 0.96) 100%);
-  color: #f8fafc;
+  border-radius: 6px;
+  border: 2px solid #5e3c24;
+  background: rgba(247, 234, 200, 0.88);
+  color: #2a180d;
   font-size: clamp(11px, min(2.5vw, 1.45dvh), 14px);
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1.15;
+  box-shadow: 0 2px 0 rgba(94, 60, 36, 0.25);
 }
 
 .blind-card--big .blind-card__name-pill {
-  border-color: rgba(245, 185, 66, 0.7);
-  background: linear-gradient(180deg, rgba(58, 38, 14, 0.94) 0%, rgba(32, 20, 6, 0.96) 100%);
+  border-color: #ffd584;
+  background: linear-gradient(180deg, #b8860b 0%, #80570a 100%);
+  color: #fffaf0;
+  text-shadow: 0 1px 0 rgba(42, 24, 10, 0.85);
 }
 
 .blind-card--boss .blind-card__name-pill {
-  border-color: rgba(248, 113, 113, 0.75);
-  background: linear-gradient(180deg, rgba(68, 16, 20, 0.94) 0%, rgba(38, 8, 10, 0.96) 100%);
+  border-color: #f5b942;
+  background: linear-gradient(180deg, #8b1e24 0%, #561015 100%);
+  color: #fff6e5;
+  text-shadow: 0 1px 0 rgba(20, 4, 4, 0.9);
 }
 
 .blind-card__token {
@@ -1526,7 +1588,7 @@
   justify-content: center;
   flex: 1;
   min-height: 0;
-  padding: clamp(4px, 0.6dvh, 10px) 0;
+  padding: clamp(2px, 0.45dvh, 8px) 0;
 }
 
 .blind-card__token .blind-card__emblem {
@@ -1541,16 +1603,17 @@
   align-items: center;
   gap: 2px;
   width: 100%;
-  padding: clamp(4px, 0.6dvh, 8px) 6px;
-  border-radius: 8px;
-  border: 1px solid rgba(212, 163, 72, 0.32);
-  background: rgba(14, 8, 4, 0.74);
-  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.55);
+  padding: clamp(4px, 0.55dvh, 7px) 6px;
+  border-radius: 6px;
+  border: 1.5px solid rgba(94, 60, 36, 0.42);
+  background: rgba(168, 130, 74, 0.14);
+  box-shadow: none;
 }
 
 .blind-card__target-caption {
-  font-size: clamp(11px, 2.3vw, 13px);
-  color: var(--screen-muted);
+  font-size: clamp(10.5px, 2.2vw, 12.5px);
+  font-weight: 700;
+  color: var(--parchment-ink-muted);
 }
 
 .blind-card__target-value-row {
@@ -1562,32 +1625,39 @@
 
 .blind-card__score-gem {
   font-size: clamp(12px, min(2.6vw, 1.5dvh), 16px);
-  color: #60a5fa;
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.7);
+  color: #1e58b8;
+  text-shadow: none;
 }
 
 .blind-card__target-number {
   font-size: clamp(15px, min(3.4vw, 2.1dvh), 22px);
-  font-weight: 700;
-  color: #ff5b52;
+  font-weight: 900;
+  color: #8f1d1d;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 2px 0 rgba(40, 8, 8, 0.85);
+  text-shadow: none;
 }
 
 .blind-card__reward {
   font-size: clamp(10px, min(2.2vw, 1.3dvh), 13px);
-  font-weight: 700;
-  color: var(--screen-gold);
+  font-weight: 800;
+  color: #7c4d08;
 }
 
 .blind-card__badge {
   display: inline-block;
   padding: 2px 6px;
-  border-radius: 6px;
-  background: rgba(217, 70, 62, 0.2);
-  color: #ffc3c3;
-  font-size: clamp(11px, 2.3vw, 12.5px);
-  font-weight: 700;
+  border-radius: 5px;
+  border: 1px solid rgba(139, 30, 36, 0.42);
+  background: rgba(139, 30, 36, 0.15);
+  color: #6b141a;
+  font-size: clamp(10.5px, 2.2vw, 12px);
+  font-weight: 800;
+}
+
+.blind-card__boss-badge {
+  padding: 2px 5px;
+  font-size: clamp(9px, 1.8vw, 11px);
+  line-height: 1.15;
 }
 
 .blind-card__boss-inspect {
@@ -1597,11 +1667,12 @@
   justify-content: center;
   width: 100%;
   padding: 4px 6px;
-  border-radius: 8px;
-  border: 1px dashed rgba(244, 197, 82, 0.45);
-  background: rgba(0, 0, 0, 0.24);
-  color: var(--screen-text);
+  border-radius: 6px;
+  border: 1.5px dashed rgba(139, 30, 36, 0.45);
+  background: rgba(139, 30, 36, 0.08);
+  color: #3a1414;
   font-size: clamp(10px, min(2.2vw, 1.3dvh), 12px);
+  font-weight: 700;
   text-align: center;
 }
 
@@ -1614,10 +1685,21 @@
 }
 
 .blind-card__or {
-  font-size: clamp(10px, min(2.2vw, 1.25dvh), 13px);
-  font-weight: 700;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: clamp(10px, min(2.1vw, 1.2dvh), 12.5px);
+  font-weight: 800;
   letter-spacing: 0.06em;
-  color: #e2e8f0;
+  color: var(--parchment-ink-muted);
+}
+
+.blind-card__or::before,
+.blind-card__or::after {
+  content: '';
+  flex: 1;
+  border-top: 1.5px dashed rgba(94, 60, 36, 0.45);
 }
 
 .blind-card__skip-row {
@@ -1632,24 +1714,27 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  border: 2px solid #93c5fd;
-  background: linear-gradient(180deg, #f8fafc 0%, #cbd5e1 100%);
-  color: #d97706;
-  box-shadow: 0 2px 0 rgba(15, 23, 42, 0.85);
+  width: 34px;
+  height: 44px;
+  border: none;
+  border-radius: 0;
+  background: url('../assets/ui/tag-ticket.webp') center / contain no-repeat;
+  color: #7c4d08;
+  box-shadow: none;
+  filter: drop-shadow(0 3px 3px rgba(42, 24, 13, 0.45));
 }
 
 .blind-card__tag-glyph {
-  font-size: 18px;
+  font-size: 14px;
   line-height: 1;
+  margin-top: 11px;
+  text-shadow: 0 1px 0 rgba(255, 246, 229, 0.7);
 }
 
 .blind-card__skip-btn {
   width: 100%;
   padding: 6px 6px;
-  font-size: clamp(11.5px, 2.5vw, 13.5px);
+  font-size: clamp(11px, 2.4vw, 13px);
   font-weight: 800;
 }
 
@@ -1663,12 +1748,14 @@
 
 .blind-card__stage-advance-title {
   font-size: clamp(11px, min(2.4vw, 1.45dvh), 15px);
-  color: var(--screen-gold);
+  font-weight: 900;
+  color: #7c2d12;
 }
 
 .blind-card__stage-advance-desc {
-  font-size: clamp(10.5px, 2.2vw, 12px);
-  color: var(--screen-muted);
+  font-size: clamp(10px, 2.1vw, 12px);
+  font-weight: 700;
+  color: #4a2c18;
   line-height: 1.2;
 }
 
@@ -1826,12 +1913,32 @@
 }
 
 .cashout-container {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: min(100%, 720px);
   margin: 0 auto;
-  gap: clamp(12px, 1.6dvh, 20px);
+  padding: clamp(14px, 2dvh, 22px) clamp(16px, 2.2vw, 26px);
+  gap: clamp(10px, 1.4dvh, 16px);
+  border: 14px solid transparent;
+  border-image: url('../assets/ui/wood-frame-9slice.webp') 38 / 14px / 0 stretch;
+  border-radius: 0;
+  background: rgba(28, 16, 10, 0.94);
+  background-clip: padding-box;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.72);
   box-sizing: border-box;
+}
+
+.cashout-container::after {
+  content: '';
+  position: absolute;
+  top: clamp(8px, 1.2dvh, 14px);
+  right: clamp(10px, 1.5vw, 18px);
+  width: clamp(36px, 4.4vw, 52px);
+  height: clamp(36px, 4.4vw, 52px);
+  background: url('../assets/ui/wax-seal.webp') center / contain no-repeat;
+  pointer-events: none;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.55));
 }
 
 .arena-stage[data-phase='cashout'] .arena-header {
@@ -1944,25 +2051,19 @@
   font-size: clamp(18px, 1.7vw, 24px);
   font-weight: 900;
   letter-spacing: 0.03em;
-  background: linear-gradient(180deg, #fde047 0%, #d97706 100%);
-  color: #1a1202;
-  border: 1px solid #fef08a;
-  border-radius: 12px;
-  box-shadow:
-    0 4px 0 #78350f,
-    0 8px 18px rgba(217, 119, 6, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5);
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+  border: 0 solid transparent;
+  border-image: url('../assets/ui/wood-btn-9slice.webp') 32 48 32 48 fill / 12px 18px / 0 stretch;
+  background: transparent;
+  color: #fffaf0;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.55));
+  text-shadow: 0 2px 0 rgba(56, 26, 4, 0.92);
   cursor: pointer;
-  transition: transform 0.1s ease, filter 0.1s ease, box-shadow 0.1s ease;
+  transition: transform 0.1s ease, filter 0.1s ease;
 }
 
 .claim-cashout-btn:active {
   transform: translateY(2px);
-  box-shadow:
-    0 2px 0 #78350f,
-    0 4px 8px rgba(217, 119, 6, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5)) brightness(0.94);
 }
 
 /* Лавка (shop) */
@@ -2038,9 +2139,10 @@
   min-width: 84px;
   min-height: 44px;
   padding: clamp(5px, 0.7dvh, 8px);
-  border-radius: 10px;
-  border: 1px solid var(--screen-border);
-  background: rgba(16, 35, 27, 0.9);
+  border-radius: 8px;
+  border: 1.5px solid var(--screen-border);
+  background: rgba(34, 20, 12, 0.9);
+  box-shadow: inset 0 1px 0 rgba(255, 224, 150, 0.08), 0 4px 10px rgba(0, 0, 0, 0.45);
   color: var(--screen-text);
 }
 
@@ -2106,9 +2208,10 @@
   min-width: 96px;
   max-width: 140px;
   padding: clamp(5px, 0.7dvh, 8px);
-  border-radius: 10px;
-  border: 1px solid var(--screen-border);
-  background: rgba(14, 31, 24, 0.92);
+  border-radius: 8px;
+  border: 1.5px solid var(--screen-border);
+  background: rgba(34, 20, 12, 0.92);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.48);
 }
 
 .discovery-new-badge {
@@ -2152,10 +2255,13 @@
   display: flex;
   flex-direction: column;
   gap: clamp(10px, 1.4dvh, 16px);
-  padding: clamp(12px, 1.8dvh, 22px);
-  border-radius: 12px;
-  border: 1px solid var(--screen-border);
-  background: rgba(11, 24, 19, 0.94);
+  padding: clamp(14px, 2dvh, 24px);
+  border-radius: 0;
+  border: 14px solid transparent;
+  border-image: url('../assets/ui/wood-frame-9slice.webp') 38 / 14px / 0 stretch;
+  background: rgba(28, 16, 10, 0.96);
+  background-clip: padding-box;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.74);
   width: min(100%, 720px);
   margin: 0 auto;
   box-sizing: border-box;
@@ -2310,8 +2416,8 @@
   gap: 10px;
   padding: clamp(8px, 1.2dvh, 14px) clamp(10px, 1.2vw, 16px);
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(8, 17, 13, 0.72);
+  border: 1px solid rgba(212, 163, 72, 0.3);
+  background: rgba(18, 10, 5, 0.84);
   font-size: clamp(13px, 1.2vw, 16px);
 }
 
@@ -2347,10 +2453,9 @@
 
 .run-end-actions .run-end-revive-btn {
   flex: 1 1 100%;
-  background: linear-gradient(180deg, #f59e0b 0%, #b45309 100%);
-  border-color: #fde68a;
+  border-image: url('../assets/ui/wood-btn-9slice.webp') 32 48 32 48 fill / 11px 16px / 0 stretch;
   color: #fffdf7;
-  text-shadow: 0 2px 0 rgba(69, 26, 3, 0.85);
+  text-shadow: 0 2px 0 rgba(56, 26, 4, 0.92);
 }
 
 /* ==================== ПОЯС 4: РУКА И ДЕЙСТВИЯ ==================== */
@@ -2446,10 +2551,13 @@
 .hand-actions {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: center;
   gap: clamp(4px, 0.6dvh, 6px);
 }
 
-.hand-actions .ui-btn {
+.hand-actions .ui-btn:not(.deck-stack-btn) {
+  min-height: 46px;
+  max-height: 54px;
   padding: 6px clamp(4px, 0.8vw, 8px);
   font-size: clamp(12px, 2.5vw, 14px);
   font-weight: 700;
@@ -2471,13 +2579,9 @@
 
 .hand-actions__sort-rank.is-active,
 .hand-actions__sort-suit.is-active {
-  background: linear-gradient(180deg, #2d6fb8 0%, #1d4a7d 100%);
-  border-color: var(--screen-gold);
-  color: #fff6d6;
-  box-shadow:
-    0 3px 0 #102a49,
-    0 0 10px rgba(244, 197, 82, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  border-image: url('../assets/ui/wood-btn-9slice.webp') 32 48 32 48 fill / 8px 11px / 0 stretch;
+  color: #fffaf0;
+  filter: drop-shadow(0 0 8px rgba(245, 185, 66, 0.45));
 }
 
 .hand-actions--deck-only {
@@ -2519,6 +2623,31 @@
   }
 }
 
+@media (max-width: 540px) {
+  .blind-card {
+    border-width: 26px 14px;
+    border-image-width: 26px 14px;
+    padding: 2px;
+  }
+
+  .blind-card--boss {
+    border-width: 34px 14px 30px 14px;
+    border-image-width: 34px 14px 30px 14px;
+    padding: 2px;
+  }
+
+  .blind-card:not(.blind-card--boss)::before {
+    top: -24px;
+    width: 18px;
+    height: 18px;
+  }
+
+  .blind-card__token .blind-card__emblem {
+    width: clamp(56px, 14vw, 88px);
+    height: clamp(56px, 14vw, 88px);
+  }
+}
+
 @media (max-width: 400px) {
   .arena-stage[data-phase='blind_select'] {
     overflow-y: auto;
@@ -2527,6 +2656,32 @@
 
   .blinds-grid {
     grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .blind-card {
+    --blind-tilt: 0deg;
+    height: auto;
+    border-width: 34px 20px;
+    border-image-width: 34px 20px;
+    padding: 4px;
+  }
+
+  .blind-card--boss {
+    border-width: 44px 20px 38px 20px;
+    border-image-width: 44px 20px 38px 20px;
+    padding: 4px;
+  }
+
+  .blind-card:not(.blind-card--boss)::before {
+    top: -31px;
+    width: 22px;
+    height: 22px;
+  }
+
+  .blind-card__token .blind-card__emblem {
+    width: 88px;
+    height: 88px;
   }
 
   .hand-actions {
@@ -2537,21 +2692,34 @@
 /* ==================== ЭМБЛЕМЫ СТРАЖЕЙ, ВЫВЕСКА МАГАЗИНА И КАРТОЧКА ИТОГА ==================== */
 
 .hud-shop-sign {
+  position: relative;
   display: none;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
-  padding: clamp(4px, 0.7dvh, 10px) 6px;
-  border-radius: 12px;
-  border: 2px solid #e84a5f;
-  background: linear-gradient(180deg, rgba(84, 22, 34, 0.97), rgba(32, 10, 16, 0.98));
-  box-shadow:
-    inset 0 0 0 2px rgba(245, 185, 66, 0.5),
-    0 6px 18px rgba(0, 0, 0, 0.5);
+  padding: clamp(6px, 0.9dvh, 12px) 10px;
+  border: 8px solid transparent;
+  border-image: url('../assets/ui/wood-frame-9slice.webp') 38 / 10px / 0 stretch;
+  border-radius: 4px;
+  background: linear-gradient(180deg, rgba(84, 22, 28, 0.97), rgba(38, 12, 16, 0.98));
+  background-clip: padding-box;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
   text-align: center;
   flex: 1;
   min-height: 0;
+}
+
+.hud-shop-sign::after {
+  content: '';
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  width: clamp(24px, 2.8vw, 38px);
+  height: clamp(24px, 2.8vw, 38px);
+  background: url('../assets/ui/wax-seal.webp') center / contain no-repeat;
+  pointer-events: none;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.6));
 }
 
 .run-shell[data-phase='shop'] .hud-shop-sign {
@@ -2706,7 +2874,7 @@
       'hud arena';
   }
 
-  /* Левая панель HUD во всю высоту экрана без верхней и нижней границ (как в Balatro) */
+  /* Левая панель HUD во всю высоту экрана с деревянно-латунной окантовкой */
   .belt--hud {
     grid-area: hud;
     display: flex;
@@ -2714,13 +2882,14 @@
     justify-content: space-between;
     height: 100%;
     padding: clamp(10px, 1.3dvh, 16px) clamp(12px, 1.2vw, 16px);
-    background: rgba(24, 15, 10, 0.96);
-    border-top: none;
-    border-bottom: none;
-    border-left: 3px solid var(--screen-border);
-    border-right: 3px solid var(--screen-border);
+    background: rgba(24, 15, 10, 0.95);
+    background-clip: padding-box;
+    border-style: solid;
+    border-color: transparent;
+    border-width: 0 10px;
+    border-image: url('../assets/ui/wood-frame-9slice.webp') 38 / 0 10px / 0 stretch;
     border-radius: 0;
-    box-shadow: 6px 0 24px rgba(0, 0, 0, 0.65);
+    box-shadow: 8px 0 26px rgba(0, 0, 0, 0.72);
   }
 
   .hud-title-bar {
@@ -2913,16 +3082,13 @@
   }
 
   .hud-buttons-row .ui-btn:first-child {
-    background: linear-gradient(180deg, #e04d46 0%, #b3302b 100%);
-    border-color: #fda4af;
-    box-shadow: 0 4px 0 #701916;
+    border-image: url('../assets/ui/wood-btn-crimson.webp') 32 48 32 48 fill / 10px 14px / 0 stretch;
+    color: #fff6f2;
   }
 
   .hud-buttons-row .ui-btn:last-child {
-    background: linear-gradient(180deg, #f3a120 0%, #c97100 100%);
+    border-image: url('../assets/ui/wood-btn-9slice.webp') 32 48 32 48 fill / 10px 14px / 0 stretch;
     color: #fffef8;
-    border-color: #fde68a;
-    box-shadow: 0 4px 0 #7a4200;
   }
 
   .hud-stats-row {
@@ -3040,9 +3206,24 @@
   }
 
   .blind-card {
-    padding: clamp(12px, 1.5dvh, 20px) clamp(10px, 1.1vw, 16px);
-    gap: clamp(8px, 1.1dvh, 14px);
-    border-radius: 12px;
+    height: 100%;
+    padding: 4px 6px;
+    border-width: 44px 26px;
+    border-image-width: 44px 26px;
+    gap: clamp(6px, 0.9dvh, 12px);
+    border-radius: 0;
+  }
+
+  .blind-card--boss {
+    border-width: 54px 26px 46px 26px;
+    border-image-width: 54px 26px 46px 26px;
+    padding: 4px 6px;
+  }
+
+  .blind-card:not(.blind-card--boss)::before {
+    top: -40px;
+    width: clamp(24px, 2.4vw, 32px);
+    height: clamp(24px, 2.4vw, 32px);
   }
 
   .blind-card__battle-btn {
@@ -3180,10 +3361,13 @@
   .arena-stage[data-phase='shop'] .shop-row--offers {
     grid-column: 2;
     grid-row: 1;
-    padding: 8px 12px;
-    border-radius: 10px;
-    background: rgba(20, 11, 7, 0.65);
-    border: 1px solid rgba(212, 163, 72, 0.2);
+    padding: 10px 14px;
+    border-radius: 0;
+    border: 12px solid transparent;
+    border-image: url('../assets/ui/wood-frame-9slice.webp') 38 / 12px / 0 stretch;
+    background: rgba(24, 14, 8, 0.9);
+    background-clip: padding-box;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.55);
   }
 
   .arena-stage[data-phase='shop'] .shop-offers-grid {
@@ -3199,10 +3383,13 @@
   }
 
   .arena-stage[data-phase='shop'] .shop-bottom-grid > .shop-row {
-    padding: 8px 12px;
-    border-radius: 10px;
-    background: rgba(20, 11, 7, 0.65);
-    border: 1px solid rgba(212, 163, 72, 0.2);
+    padding: 10px 14px;
+    border-radius: 0;
+    border: 12px solid transparent;
+    border-image: url('../assets/ui/wood-frame-9slice.webp') 38 / 12px / 0 stretch;
+    background: rgba(24, 14, 8, 0.9);
+    background-clip: padding-box;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.55);
   }
 
   .arena-stage[data-phase='shop'] .shop-slot-btn .card-frame {
@@ -3385,11 +3572,7 @@
   }
 
   .claim-cashout-btn:not(:disabled):hover {
-    filter: brightness(1.08);
-    box-shadow:
-      0 5px 0 #78350f,
-      0 10px 22px rgba(217, 119, 6, 0.55),
-      inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.6)) brightness(1.08);
   }
 
   .blind-card:hover .blind-card__token .blind-card__emblem {
@@ -3397,15 +3580,15 @@
   }
 }
 
-/* Адаптивное уплотнение карточек заказов и верхней полки на невысоких окнах ПК (600-780px высоты) */
-@media (min-width: 960px) and (orientation: landscape) and (max-height: 780px) {
+/* Адаптивное уплотнение карточек заказов и верхней полки на невысоких окнах ПК (600-860px высоты) */
+@media (min-width: 960px) and (orientation: landscape) and (max-height: 860px) {
   .belt--inventory {
-    --card-compact-width: clamp(52px, min(5vw, 8.8dvh), 82px);
-    padding: 6px clamp(6px, 0.8vw, 12px) 2px;
+    --card-compact-width: clamp(50px, min(4.8vw, 8.2dvh), 76px);
+    padding: 4px clamp(6px, 0.8vw, 12px) 2px;
   }
 
   .inventory-strip {
-    padding: 5px 10px;
+    padding: 4px 10px;
   }
 
   .inventory-strip__items {
@@ -3413,27 +3596,41 @@
   }
 
   .blind-card {
-    padding: clamp(6px, 1dvh, 12px) clamp(8px, 1vw, 14px);
-    gap: clamp(3px, 0.55dvh, 8px);
+    border-width: 34px 18px;
+    border-image-width: 34px 18px;
+    padding: 2px 4px;
+    gap: clamp(2px, 0.45dvh, 6px);
+  }
+
+  .blind-card--boss {
+    border-width: 44px 18px 44px 18px;
+    border-image-width: 44px 18px 44px 18px;
+    padding: 2px 4px;
+  }
+
+  .blind-card:not(.blind-card--boss)::before {
+    top: -31px;
+    width: 24px;
+    height: 24px;
   }
 
   .blind-card__battle-btn {
-    min-height: clamp(44px, 5.4dvh, 52px);
-    font-size: clamp(14px, min(1.4vw, 2.2dvh), 19px);
+    min-height: clamp(44px, 5.2dvh, 50px);
+    font-size: clamp(13px, min(1.3vw, 2dvh), 17px);
   }
 
   .blind-card__status-pill {
-    min-height: clamp(36px, 4.6dvh, 46px);
-    font-size: clamp(13px, min(1.3vw, 2dvh), 18px);
+    min-height: clamp(30px, 4dvh, 38px);
+    font-size: clamp(12px, min(1.2vw, 1.8dvh), 16px);
   }
 
   .blind-card__body {
-    gap: clamp(3px, 0.45dvh, 6px);
+    gap: clamp(2px, 0.4dvh, 5px);
   }
 
   .blind-card__name-pill {
-    padding: 4px 10px;
-    font-size: clamp(13px, min(1.3vw, 2dvh), 18px);
+    padding: 3px 8px;
+    font-size: clamp(12.5px, min(1.25vw, 1.9dvh), 17px);
   }
 
   .blind-card__token {
@@ -3441,64 +3638,69 @@
   }
 
   .blind-card__token .blind-card__emblem {
-    width: clamp(72px, min(9.5vw, 14.5dvh), 124px);
-    height: clamp(72px, min(9.5vw, 14.5dvh), 124px);
+    width: clamp(78px, min(9vw, 13dvh), 116px);
+    height: clamp(78px, min(9vw, 13dvh), 116px);
   }
 
   .blind-card__boss-inspect {
-    padding: 4px 8px;
-    font-size: clamp(11px, min(1.05vw, 1.65dvh), 14.5px);
+    padding: 3px 6px;
+    font-size: clamp(10.5px, min(1vw, 1.55dvh), 13.5px);
   }
 
   .blind-card__target-box {
-    padding: clamp(4px, 0.7dvh, 8px) 8px;
-    gap: 2px;
+    padding: clamp(3px, 0.55dvh, 6px) 8px;
+    gap: 1px;
   }
 
   .blind-card__target-caption {
-    font-size: clamp(11px, min(1.05vw, 1.65dvh), 14.5px);
+    font-size: clamp(10.5px, min(1vw, 1.55dvh), 13.5px);
   }
 
   .blind-card__score-gem {
-    font-size: clamp(15px, 1.45vw, 22px);
+    font-size: clamp(14px, 1.35vw, 20px);
   }
 
   .blind-card__target-number {
-    font-size: clamp(18px, min(2vw, 3dvh), 28px);
+    font-size: clamp(17px, min(1.85vw, 2.7dvh), 24px);
   }
 
   .blind-card__reward {
-    font-size: clamp(11px, min(1.05vw, 1.65dvh), 15px);
+    font-size: clamp(10.5px, min(1vw, 1.55dvh), 14px);
   }
 
   .blind-card__footer {
-    gap: 3px;
+    gap: 2px;
   }
 
   .blind-card__or {
-    font-size: clamp(11px, min(1.1vw, 1.65dvh), 15px);
+    font-size: clamp(10px, min(1vw, 1.5dvh), 13px);
   }
 
   .blind-card__tag-icon {
-    width: 38px;
+    width: 30px;
     height: 38px;
+  }
+
+  .blind-card__tag-glyph {
+    font-size: 12px;
+    margin-top: 9px;
   }
 
   .blind-card__skip-btn {
     min-height: 44px;
-    font-size: clamp(12px, min(1.1vw, 1.65dvh), 15px);
+    font-size: clamp(11px, min(1vw, 1.5dvh), 13.5px);
   }
 
   .blind-card__stage-advance-title {
-    font-size: clamp(13px, min(1.3vw, 1.9dvh), 18px);
+    font-size: clamp(12px, min(1.2vw, 1.75dvh), 16px);
   }
 
   .blind-card__stage-advance-desc {
-    font-size: clamp(11px, min(1vw, 1.55dvh), 14px);
+    font-size: clamp(10px, min(0.95vw, 1.45dvh), 13px);
   }
 
   .blind-card__badge {
-    font-size: 11px;
+    font-size: 10.5px;
     padding: 2px 6px;
   }
 }

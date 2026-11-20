@@ -139,7 +139,7 @@
   50% { transform: rotate(90deg) translateY(-8px); }
 }
 
-/* 3. Кнопка быстрого пропуска в верхнем правом углу (Balatro white/gray 3D button) */
+/* 3. Кнопка быстрого пропуска в верхнем правом углу (бумажная бирка-табличка) */
 .tut-skip-top-btn {
   position: fixed;
   top: 16px;
@@ -151,34 +151,34 @@
   gap: 6px;
   min-height: 44px;
   min-width: 44px;
-  padding: 8px 16px;
-  background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
-  border: 2px solid #94a3b8;
+  padding: 8px 18px;
+  background: linear-gradient(180deg, #f6e7c4 0%, #dfc48e 100%);
+  border: 2px solid #5e3c24;
   border-radius: 8px;
-  box-shadow: 0 3px 0 #64748b, 0 6px 14px rgba(0, 0, 0, 0.45);
-  color: #334155;
+  box-shadow: 0 3px 0 #3d2315, 0 6px 14px rgba(0, 0, 0, 0.52);
+  color: #2a180d;
   font-family: inherit;
   font-size: 14px;
   font-weight: 800;
   cursor: pointer;
-  transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.1s ease, box-shadow 0.1s ease, filter 0.15s ease;
 }
 
-.tut-skip-top-btn:hover {
-  background: #ffffff;
-  border-color: #cbd5e1;
-  color: #1e293b;
+@media (hover: hover) and (pointer: fine) {
+  .tut-skip-top-btn:hover {
+    filter: brightness(1.06);
+  }
 }
 
 .tut-skip-top-btn:active {
   transform: translateY(2px);
-  box-shadow: 0 1px 0 #64748b;
+  box-shadow: 0 1px 0 #3d2315;
 }
 
 .tut-skip-icon {
   font-size: 15px;
   font-weight: 900;
-  color: #64748b;
+  color: #704a14;
   margin-left: 2px;
 }
 
@@ -195,6 +195,7 @@
   box-shadow: none;
   padding: 0;
   width: min(calc(100vw - 32px), 480px);
+  max-height: calc(100vh - 24px);
   pointer-events: auto;
   box-sizing: border-box;
   transition:
@@ -204,27 +205,20 @@
     transform 0.32s cubic-bezier(0.2, 0, 0.2, 1);
 }
 
-/* 5. Речевое облачко Balatro (ВВЕРХУ) */
+/* 5. Пергаментная записка с репликой Миры (ВВЕРХУ) */
 .tut-speech-bubble {
   position: relative;
   width: 100%;
-  background:
-    repeating-linear-gradient(
-      0deg,
-      rgba(0, 0, 0, 0.02) 0px,
-      rgba(0, 0, 0, 0.02) 1px,
-      transparent 1px,
-      transparent 3px
-    ),
-    linear-gradient(180deg, #ffffff 0%, #f6f8fa 100%);
-  border: 2.5px solid #2f3640;
-  border-radius: 12px;
+  background: linear-gradient(180deg, #f7e9c8 0%, #ebd19c 100%);
+  border: 2.5px solid #5e3c24;
+  border-radius: 10px;
   box-shadow:
-    0 4px 0 rgba(20, 28, 38, 0.35),
-    0 12px 28px rgba(0, 0, 0, 0.45);
+    0 4px 0 rgba(42, 24, 13, 0.65),
+    0 12px 28px rgba(0, 0, 0, 0.55),
+    inset 0 0 14px rgba(122, 79, 43, 0.22);
   padding: 14px 18px 16px 18px;
   box-sizing: border-box;
-  color: #1e293b;
+  color: #2a180d;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -240,7 +234,7 @@
   height: 0;
   border-left: 9px solid transparent;
   border-right: 9px solid transparent;
-  border-top: 10px solid #2f3640;
+  border-top: 10px solid #5e3c24;
   pointer-events: none;
 }
 
@@ -253,7 +247,7 @@
   height: 0;
   border-left: 7px solid transparent;
   border-right: 7px solid transparent;
-  border-top: 8px solid #ffffff;
+  border-top: 8px solid #ebd19c;
 }
 
 /* Мета шапки облачка */
@@ -270,7 +264,7 @@
 .tut-step-counter {
   font-size: 11px;
   font-weight: 800;
-  color: #64748b;
+  color: #5e3c24;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -278,9 +272,9 @@
 .tut-avatar-name {
   font-size: 11px;
   font-weight: 800;
-  color: #b7791f;
-  background: rgba(245, 185, 66, 0.15);
-  border: 1px solid rgba(245, 185, 66, 0.4);
+  color: #7c4d08;
+  background: rgba(184, 134, 11, 0.16);
+  border: 1px solid rgba(140, 93, 30, 0.45);
   padding: 1px 7px;
   border-radius: 4px;
   letter-spacing: 0.04em;
@@ -291,7 +285,7 @@
   margin: 0;
   font-size: clamp(16px, 2.2vw, 19px);
   font-weight: 800;
-  color: #1e293b;
+  color: #2a180d;
   line-height: 1.25;
 }
 
@@ -299,9 +293,9 @@
 .tut-card-body {
   font-size: clamp(14px, 1.8vw, 15.5px);
   line-height: 1.5;
-  color: #1e293b;
+  color: #3d2315;
   font-weight: 600;
-  max-height: min(35vh, 320px);
+  max-height: min(28vh, 260px);
   overflow-y: auto;
   padding-right: 2px;
   -webkit-overflow-scrolling: touch;
@@ -415,8 +409,8 @@
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: clamp(280px, 33vh, 345px);
-  margin: 6px 0;
+  height: clamp(190px, 26vh, 310px);
+  margin: 4px 0;
   pointer-events: none;
 }
 
@@ -477,7 +471,7 @@
 }
 
 .tut-avatar-frame svg {
-  height: clamp(260px, 30vh, 320px);
+  height: clamp(175px, 24vh, 290px);
   width: auto;
   max-width: 210px;
   display: block;
@@ -487,7 +481,7 @@
 
 /* Спрайт Миры: заметный парящий чиби-маскот на всю высоту карт */
 .tut-avatar-img {
-  height: clamp(270px, 32vh, 335px);
+  height: clamp(185px, 25vh, 300px);
   width: auto;
   max-width: clamp(260px, 30vw, 330px);
   object-fit: contain;
@@ -551,53 +545,42 @@
   cursor: pointer;
 }
 
-/* Главная красная Balatro 3D-кнопка «Дальше» */
+/* Главная рубиновая табличка-кнопка «Дальше» */
 .tut-btn--next {
   min-height: 54px;
   min-width: 210px;
   padding: 13px 40px;
   font-size: 21px;
-  background: linear-gradient(180deg, #f24444 0%, #d63031 100%);
-  border: 2px solid #ff7675;
-  color: #ffffff;
-  box-shadow:
-    0 5px 0 #801d1d,
-    0 12px 24px rgba(0, 0, 0, 0.45);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-  transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.15s ease, border-color 0.15s ease;
-}
-
-.tut-btn--next:hover {
-  background: linear-gradient(180deg, #ff576c 0%, #e84141 100%);
-  border-color: #ffa8a8;
+  border: 0 solid transparent;
+  border-image: url('../assets/ui/wood-btn-crimson.webp') 32 48 32 48 fill / 12px 18px / 0 stretch;
+  background: transparent;
+  color: #fff6e5;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.55));
+  text-shadow: 0 2px 0 rgba(28, 10, 4, 0.9);
+  transition: transform 0.1s ease, filter 0.15s ease;
 }
 
 .tut-btn--next:active {
   transform: translateY(2px);
-  box-shadow:
-    0 2px 0 #801d1d,
-    0 5px 12px rgba(0, 0, 0, 0.45);
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5)) brightness(0.94);
 }
 
-/* Режим ожидания действия (пульсирующая золотистая подсказка) */
+/* Режим ожидания действия (пульсирующая золотистая табличка-подсказка) */
 .tut-btn--action-hint {
-  background: linear-gradient(180deg, #f5b942 0%, #d48800 100%);
-  border: 2px solid #ffeaa7;
-  color: #1a1608;
-  box-shadow:
-    0 5px 0 #8a5800,
-    0 12px 26px rgba(245, 185, 66, 0.45);
+  border-image: url('../assets/ui/wood-btn-9slice.webp') 32 48 32 48 fill / 12px 18px / 0 stretch;
+  color: #fff6e5;
+  filter: drop-shadow(0 0 12px rgba(245, 185, 66, 0.55));
   animation: tut-action-pulse 1.6s infinite ease-in-out;
 }
 
 @keyframes tut-action-pulse {
   0%, 100% {
     transform: scale(1);
-    box-shadow: 0 5px 0 #8a5800, 0 12px 26px rgba(245, 185, 66, 0.45);
+    filter: drop-shadow(0 0 10px rgba(245, 185, 66, 0.48));
   }
   50% {
     transform: scale(1.03);
-    box-shadow: 0 5px 0 #8a5800, 0 14px 32px rgba(245, 185, 66, 0.7);
+    filter: drop-shadow(0 0 18px rgba(245, 185, 66, 0.85));
   }
 }
 
@@ -620,7 +603,7 @@
 .tut-btn--skip {
   background: transparent;
   border: none;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 246, 229, 0.78);
   font-size: 13px;
   font-weight: 700;
   min-height: 36px;
@@ -632,8 +615,13 @@
   transition: color 0.15s ease;
 }
 
-.tut-btn--skip:hover {
-  color: #ffffff;
+@media (hover: hover) and (pointer: fine) {
+  .tut-btn--next:hover {
+    filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.55)) brightness(1.08);
+  }
+  .tut-btn--skip:hover {
+    color: #ffffff;
+  }
 }
 
 .tut-btn--skip:active {

@@ -273,6 +273,7 @@ function isTerminalRunPhase(phase: RunPhase): boolean {
 function resolveBackdropMood(state: RunState): BackdropMood {
   switch (state.phase) {
     case 'deck_select':
+    case 'blind_select':
       return 'menu';
     case 'shop':
     case 'booster':
@@ -282,7 +283,6 @@ function resolveBackdropMood(state: RunState): BackdropMood {
       return 'victory';
     case 'game_over':
       return 'defeat';
-    case 'blind_select':
     case 'playing': {
       const slot = state.anteBlinds[state.currentBlindIndex];
       return slot?.kind === 'boss' ? 'boss' : 'battle';

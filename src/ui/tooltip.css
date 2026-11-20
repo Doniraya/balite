@@ -9,13 +9,13 @@
   min-width: clamp(230px, 20vw, 290px);
   max-width: min(clamp(340px, 32vw, 440px), calc(100vw - 24px));
   padding: clamp(12px, 1.4dvh, 16px) clamp(14px, 1.4vw, 18px);
-  border-radius: 14px;
-  border: 2.5px solid var(--panel-border, rgba(235, 200, 118, 0.35));
-  background: rgba(11, 23, 20, 0.96);
-  color: var(--text-main, #f3efe6);
+  border-radius: 10px;
+  border: 2.5px solid var(--panel-border, rgba(212, 163, 72, 0.58));
+  background: rgba(28, 16, 10, 0.96);
+  color: var(--text-main, #fff6e5);
   box-shadow:
-    0 12px 30px rgba(0, 0, 0, 0.68),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    0 12px 30px rgba(0, 0, 0, 0.72),
+    inset 0 1px 0 rgba(255, 232, 179, 0.14);
   pointer-events: none;
   user-select: none;
   display: flex;
@@ -53,8 +53,8 @@
 }
 
 .hover-tooltip[data-hidden='true'] {
-  border-color: rgba(148, 163, 184, 0.48);
-  background: rgba(14, 22, 28, 0.96);
+  border-color: rgba(212, 163, 72, 0.45);
+  background: rgba(22, 13, 8, 0.96);
 }
 
 .hover-tooltip__header {
@@ -110,7 +110,7 @@
   margin: 0;
   font-size: clamp(14px, 1.2vw, 16.5px);
   line-height: 1.45;
-  color: #e2e8e4;
+  color: #efe2cc;
 }
 
 .hover-tooltip__badges {

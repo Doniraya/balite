@@ -42,13 +42,13 @@
 :root {
   color-scheme: dark;
   --font-ui: 'Pixellari', 'Segoe UI', system-ui, sans-serif;
-  --bg-outer: #0d1d1b;
-  --bg-felt: #142823;
-  --bg-felt-deep: #0c1816;
-  --panel-bg: rgba(15, 29, 25, 0.9);
-  --panel-border: rgba(235, 200, 118, 0.28);
-  --text-main: #f3efe6;
-  --text-muted: #a6b7ad;
+  --bg-outer: #1a0e07;
+  --bg-felt: #2a160c;
+  --bg-felt-deep: #120905;
+  --panel-bg: rgba(28, 16, 10, 0.94);
+  --panel-border: rgba(212, 163, 72, 0.45);
+  --text-main: #fff6e5;
+  --text-muted: #c9b499;
   --accent-gold: #f5b942;
   --accent-red: #e84a5f;
   --accent-blue: #3a86ff;
@@ -92,8 +92,12 @@ body {
   font-family: var(--font-ui);
   font-synthesis: none;
   color: var(--text-main);
-  /* Базовый цветной фон на случай задержки первого кадра canvas */
-  background: radial-gradient(circle at 50% 25%, #193832 0%, var(--bg-outer) 78%);
+  /* Бесшовные дубовые доски Гильдии приключенцев поверх всего поля сцены */
+  background-color: var(--bg-outer);
+  background-image: url('./assets/ui/guild-wood-tile.webp');
+  background-repeat: repeat;
+  background-size: 288px 288px;
+  background-position: top center;
 }
 
 #app {
@@ -131,15 +135,16 @@ body {
     max(env(safe-area-inset-right, 0px), var(--vk-inset-right, 0px))
     max(env(safe-area-inset-bottom, 0px), var(--vk-inset-bottom, 0px))
     max(env(safe-area-inset-left, 0px), var(--vk-inset-left, 0px));
-  /* Полупрозрачный изумрудный стол, чтобы живой алхимический фон canvas мягко просвечивал внутри портрета */
+  /* Полупрозрачная тёмно-дубовая тень на портрете, чтобы сквозь неё жила текстура дерева */
   background: radial-gradient(
-    circle at 50% 24%,
-    rgba(16, 40, 34, 0.72) 0%,
-    rgba(9, 20, 18, 0.84) 84%
+    circle at 50% 34%,
+    rgba(30, 17, 10, 0.14) 0%,
+    rgba(14, 7, 3, 0.44) 90%
   );
-  border: 1px solid var(--panel-border);
-  border-radius: 14px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.56);
+  border: 8px solid transparent;
+  border-image: url('./assets/ui/wood-frame-9slice.webp') 38 / 8px / 0 stretch;
+  border-radius: 0;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.65);
   overflow: hidden;
 }
 
@@ -210,8 +215,8 @@ body {
   letter-spacing: 0.02em;
   white-space: nowrap;
   color: #ffffff;
-  background: rgba(15, 28, 24, 0.92);
-  border: 2px solid rgba(255, 255, 255, 0.55);
+  background: rgba(28, 16, 10, 0.94);
+  border: 2px solid rgba(255, 232, 179, 0.72);
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.82);
   box-shadow:
     0 4px 0 rgba(0, 0, 0, 0.52),
@@ -303,6 +308,7 @@ body {
 @media (max-width: 540px) {
   .stage-portrait {
     border: none;
+    border-image: none;
     border-radius: 0;
     box-shadow: none;
   }
@@ -316,6 +322,7 @@ body {
     max-width: none;
     aspect-ratio: auto;
     border: none;
+    border-image: none;
     border-radius: 0;
     box-shadow: none;
     background: transparent;
@@ -448,11 +455,13 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  padding: 24px 20px;
-  border-radius: 14px;
-  background: rgba(15, 29, 25, 0.92);
-  border: 1.5px solid var(--panel-border);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  padding: 22px 20px;
+  border-radius: 0;
+  background: rgba(28, 16, 10, 0.95);
+  background-clip: padding-box;
+  border: 14px solid transparent;
+  border-image: url('./assets/ui/wood-frame-9slice.webp') 38 / 14px / 0 stretch;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.65);
   text-align: center;
 }
 
@@ -481,16 +490,18 @@ body {
 
 .boot-retry-btn {
   min-width: 160px;
-  min-height: 46px;
-  padding: 10px 20px;
-  border-radius: 10px;
-  border: 2px solid #fde68a;
-  background: linear-gradient(180deg, #f5b942 0%, #d97706 100%);
-  color: #142823;
+  min-height: 48px;
+  padding: 10px 22px;
+  border: 0 solid transparent;
+  border-image: url('./assets/ui/wood-btn-9slice.webp') 32 48 32 48 fill / 11px 16px / 0 stretch;
+  background: transparent;
+  color: #fff6e5;
+  text-shadow: 0 2px 0 rgba(28, 12, 4, 0.92);
   font-size: 15px;
   font-weight: 900;
   cursor: pointer;
   touch-action: manipulation;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
 }
 
 .boot-retry-btn:active {

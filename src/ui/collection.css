@@ -3,14 +3,16 @@
 .modal-sheet--collection {
   width: min(100%, 680px);
   max-height: min(94vh, 1160px);
-  padding: 16px;
-  background: var(--panel-bg, #13251e);
-  border: 2px solid var(--panel-border, #26483a);
-  border-radius: 12px;
+  padding: 14px 16px;
+  background: rgba(28, 16, 10, 0.96);
+  background-clip: padding-box;
+  border: 14px solid transparent;
+  border-image: url('../assets/ui/wood-frame-9slice.webp') 38 / 14px / 0 stretch;
+  border-radius: 0;
   box-shadow:
-    0 8px 36px rgba(0, 0, 0, 0.78),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  color: var(--text-main, #f3f0e6);
+    0 12px 42px rgba(0, 0, 0, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: var(--text-main, #fff6e5);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -56,12 +58,12 @@
   gap: 2px;
   min-height: 48px;
   padding: 6px 10px;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%);
-  border: 2px solid #f87171;
-  box-shadow: 0 4px 0 #7f1d1d;
-  color: #ffffff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+  border: 0 solid transparent;
+  border-image: url('../assets/ui/wood-btn-crimson.webp') 32 48 32 48 fill / 10px 14px / 0 stretch;
+  background: transparent;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.45));
+  color: #fff6e5;
+  text-shadow: 0 1px 0 rgba(20, 10, 4, 0.9);
   font-family: inherit;
   cursor: pointer;
   touch-action: manipulation;
@@ -71,7 +73,7 @@
 
 .collection-hub-btn:active {
   transform: translateY(2px);
-  box-shadow: 0 2px 0 #7f1d1d;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45)) brightness(0.95);
 }
 
 .collection-hub-btn--large {
@@ -96,10 +98,10 @@
 .collection-hub__consumables {
   display: flex;
   gap: 6px;
-  background: rgba(7, 18, 14, 0.45);
-  padding: 6px 8px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(18, 10, 5, 0.65);
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(212, 163, 72, 0.25);
   box-sizing: border-box;
 }
 
@@ -131,33 +133,30 @@
 }
 
 .collection-hub-btn--scrolls {
-  background: linear-gradient(180deg, #a855f7 0%, #7e22ce 100%);
-  border-color: #c084fc;
-  box-shadow: 0 4px 0 #581c87;
+  border-image: url('../assets/ui/wood-btn-slate.webp') 32 48 32 48 fill / 10px 14px / 0 stretch;
+  color: #f3e8ff;
 }
 
 .collection-hub-btn--scrolls:active {
-  box-shadow: 0 2px 0 #581c87;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45)) brightness(0.95);
 }
 
 .collection-hub-btn--celestials {
-  background: linear-gradient(180deg, #06b6d4 0%, #0e7490 100%);
-  border-color: #67e8f9;
-  box-shadow: 0 4px 0 #164e63;
+  border-image: url('../assets/ui/wood-btn-emerald.webp') 32 48 32 48 fill / 10px 14px / 0 stretch;
+  color: #ecfdf5;
 }
 
 .collection-hub-btn--celestials:active {
-  box-shadow: 0 2px 0 #164e63;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45)) brightness(0.95);
 }
 
 .collection-hub-btn--runes {
-  background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
-  border-color: #93c5fd;
-  box-shadow: 0 4px 0 #1e3a8a;
+  border-image: url('../assets/ui/wood-btn-9slice.webp') 32 48 32 48 fill / 10px 14px / 0 stretch;
+  color: #fff6e5;
 }
 
 .collection-hub-btn--runes:active {
-  box-shadow: 0 2px 0 #1e3a8a;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45)) brightness(0.95);
 }
 
 /* ==========================================================================
@@ -201,15 +200,15 @@
 .collection-back-btn {
   width: 100%;
   min-height: 48px;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
-  border: 2px solid #fde68a;
-  box-shadow: 0 4px 0 #92400e;
-  color: #ffffff;
+  border: 0 solid transparent;
+  border-image: url('../assets/ui/wood-btn-9slice.webp') 32 48 32 48 fill / 10px 14px / 0 stretch;
+  background: transparent;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.45));
+  color: #fff6e5;
   font-family: inherit;
   font-size: 17px;
   font-weight: 900;
-  text-shadow: 0 2px 0 rgba(74, 32, 0, 0.7);
+  text-shadow: 0 2px 0 rgba(42, 20, 6, 0.85);
   cursor: pointer;
   touch-action: manipulation;
   transition: transform 0.05s, filter 0.12s;
@@ -221,7 +220,7 @@
 
 .collection-back-btn:active {
   transform: translateY(2px);
-  box-shadow: 0 2px 0 #92400e;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45)) brightness(0.95);
 }
 
 /* ==========================================================================
@@ -291,8 +290,8 @@
 
 /* Неоткрытые карты с темным силуэтом и ? */
 .card-frame--undiscovered {
-  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
-  border: 2px solid rgba(148, 163, 184, 0.32);
+  background: linear-gradient(180deg, rgba(50, 30, 17, 0.94) 0%, rgba(28, 16, 9, 0.96) 100%);
+  border: 2px solid rgba(212, 163, 72, 0.34);
   border-radius: 8px;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
   display: flex;
@@ -315,15 +314,15 @@
 .collection-undiscovered-qmark {
   font-size: clamp(26px, 3.5vw, 36px);
   font-weight: 900;
-  color: rgba(148, 163, 184, 0.45);
+  color: rgba(226, 206, 170, 0.48);
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
   user-select: none;
 }
 
 /* Заблокированные ваучеры Т2 с замком и цепью */
 .card-frame--locked {
-  background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
-  border: 2px solid rgba(156, 163, 175, 0.35);
+  background: linear-gradient(180deg, rgba(42, 24, 14, 0.95) 0%, rgba(24, 13, 7, 0.98) 100%);
+  border: 2px solid rgba(212, 163, 72, 0.36);
   border-radius: 8px;
   position: relative;
   display: flex;
@@ -366,11 +365,12 @@
   min-width: 44px;
   min-height: 40px;
   padding: 0 16px;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%);
-  border: 2px solid #f87171;
-  box-shadow: 0 3px 0 #7f1d1d;
-  color: #ffffff;
+  border: 0 solid transparent;
+  border-image: url('../assets/ui/wood-btn-crimson.webp') 32 48 32 48 fill / 10px 14px / 0 stretch;
+  background: transparent;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.45));
+  color: #fff6e5;
+  text-shadow: 0 1px 0 rgba(20, 10, 4, 0.9);
   font-family: inherit;
   font-size: 16px;
   font-weight: 900;
@@ -384,23 +384,25 @@
 
 .collection-page-btn:active:not(:disabled) {
   transform: translateY(2px);
-  box-shadow: 0 1px 0 #7f1d1d;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45)) brightness(0.95);
 }
 
 .collection-page-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
-  box-shadow: none;
+  filter: none;
 }
 
 .collection-page-indicator {
   min-height: 40px;
   padding: 0 20px;
   border-radius: 8px;
-  background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%);
-  border: 2px solid #f87171;
-  box-shadow: 0 3px 0 #7f1d1d;
-  color: #ffffff;
+  background: rgba(34, 19, 10, 0.94);
+  border: 2px solid rgba(212, 163, 72, 0.52);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 227, 158, 0.12),
+    0 3px 6px rgba(0, 0, 0, 0.45);
+  color: #fff6e5;
   font-family: inherit;
   font-size: 15px;
   font-weight: 800;
@@ -419,7 +421,7 @@
   text-align: center;
   font-size: clamp(12px, 1.1vw, 14px);
   font-weight: 700;
-  color: #cbd5e1;
+  color: #e2ceaa;
   line-height: 1.3;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 }
@@ -429,32 +431,39 @@
    ========================================================================== */
 
 .collection-tag-slot {
-  width: 52px;
-  height: 52px;
-  border-radius: 10px;
-  background: #1e3a34;
-  border: 2px solid #36655b;
+  width: 56px;
+  height: 56px;
+  border-radius: 0;
+  background: url('../assets/ui/tag-ticket.webp') center / contain no-repeat;
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   position: relative;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+  box-shadow: none;
+  filter: drop-shadow(0 3px 5px rgba(20, 10, 4, 0.55));
   touch-action: manipulation;
 }
 
 .collection-tag-slot--undiscovered {
-  background: #1e293b;
-  border-color: rgba(148, 163, 184, 0.3);
-  color: rgba(148, 163, 184, 0.4);
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  background: rgba(34, 19, 10, 0.92);
+  border: 2px solid rgba(212, 163, 72, 0.3);
+  color: rgba(226, 206, 170, 0.45);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+  filter: none;
   font-weight: 900;
   font-size: 20px;
 }
 
 .collection-tag-glyph {
-  font-size: 22px;
-  color: #f5b942;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+  padding-top: 6px;
+  font-size: 20px;
+  color: #7c4d08;
+  filter: drop-shadow(0 1px 0 rgba(255, 240, 200, 0.55));
 }
 
 /* ==========================================================================
@@ -473,10 +482,10 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-  background: rgba(0, 0, 0, 0.32);
+  background: rgba(24, 13, 8, 0.72);
   padding: 10px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(212, 163, 72, 0.28);
   box-sizing: border-box;
 }
 
@@ -485,8 +494,8 @@
   justify-content: space-between;
   font-weight: 900;
   font-size: 13px;
-  color: #f59e0b;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f5b942;
+  border-bottom: 1px solid rgba(212, 163, 72, 0.24);
   padding-bottom: 6px;
   margin-bottom: 4px;
   letter-spacing: 0.05em;
@@ -499,7 +508,7 @@
   font-size: 13px;
   font-weight: 700;
   padding: 3px 0;
-  color: #cbd5e1;
+  color: #e2ceaa;
 }
 
 .collection-blinds-score {
@@ -530,9 +539,9 @@
 }
 
 .collection-blind-token--undiscovered {
-  background: #1e293b;
-  border: 2px solid rgba(148, 163, 184, 0.35);
-  color: rgba(148, 163, 184, 0.5);
+  background: rgba(34, 19, 10, 0.92);
+  border: 2px solid rgba(212, 163, 72, 0.3);
+  color: rgba(226, 206, 170, 0.45);
   font-weight: 900;
   font-size: 18px;
 }
@@ -553,11 +562,12 @@
 .collection-deck-arrow {
   min-width: 48px;
   min-height: 180px;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%);
-  border: 2px solid #f87171;
-  box-shadow: 0 4px 0 #7f1d1d;
-  color: #ffffff;
+  border: 0 solid transparent;
+  border-image: url('../assets/ui/wood-btn-crimson.webp') 32 48 32 48 fill / 10px 14px / 0 stretch;
+  background: transparent;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.45));
+  color: #fff6e5;
+  text-shadow: 0 1px 0 rgba(20, 10, 4, 0.9);
   font-family: inherit;
   font-size: 24px;
   font-weight: 900;
@@ -571,7 +581,7 @@
 
 .collection-deck-arrow:active {
   transform: translateY(2px);
-  box-shadow: 0 2px 0 #7f1d1d;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45)) brightness(0.95);
 }
 
 .collection-deck-showcase {
@@ -579,10 +589,10 @@
   display: flex;
   align-items: center;
   gap: 16px;
-  background: rgba(0, 0, 0, 0.38);
+  background: rgba(22, 12, 7, 0.78);
   padding: 14px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(212, 163, 72, 0.25);
   box-sizing: border-box;
 }
 
@@ -605,16 +615,16 @@
 .deck-stack-3d__layer--bottom {
   top: 8px;
   left: 8px;
-  background: #090d16;
-  border: 2px solid rgba(255, 255, 255, 0.06);
+  background: #1a0f08;
+  border: 2px solid rgba(212, 163, 72, 0.14);
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.6);
 }
 
 .deck-stack-3d__layer--mid {
   top: 4px;
   left: 4px;
-  background: #131d2e;
-  border: 2px solid rgba(255, 255, 255, 0.1);
+  background: #2c190e;
+  border: 2px solid rgba(212, 163, 72, 0.22);
 }
 
 .deck-stack-3d__top {
@@ -633,20 +643,21 @@
 }
 
 .collection-deck-title {
-  background: #0f172a;
-  color: #ffffff;
+  background: rgba(32, 18, 10, 0.96);
+  color: #fff6e5;
   padding: 8px 14px;
   border-radius: 8px;
   font-weight: 900;
   font-size: 17px;
   text-align: center;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(212, 163, 72, 0.45);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
 .collection-deck-card {
-  background: #ffffff;
-  color: #1e293b;
+  background: linear-gradient(180deg, #f6e7c4 0%, #e7ce96 100%);
+  color: #2a180d;
+  border: 2px solid #8b5a2b;
   padding: 16px;
   border-radius: 8px;
   font-weight: 700;
@@ -657,7 +668,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.42);
   box-sizing: border-box;
 }
 

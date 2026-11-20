@@ -90,11 +90,22 @@ export const MOOD_PALETTES: Readonly<Record<BackdropMood, MoodPalette>> = {
   },
 };
 
-const AMBIENT_SPARK_COUNT = 24;
+const AMBIENT_SPARK_COUNT = 26;
 const MAX_PULSES = 8;
 const MAX_BURST_PARTICLES = 160;
-const SPIRAL_ARM_COUNT = 4;
-const SPIRAL_SEGMENT_COUNT = 26;
+
+/**
+ * Прозрачность атмосферной вуали поверх деревянной доски для каждого настроения:
+ * на Доске и в Меню дерево максимально читается, а в Бою сильнее приглушается ради контраста карт.
+ */
+const MOOD_OVERLAY_ALPHAS: Readonly<Record<BackdropMood, { readonly center: number; readonly edge: number; readonly glow: number }>> = {
+  menu: { center: 0.08, edge: 0.56, glow: 0.14 },
+  battle: { center: 0.42, edge: 0.78, glow: 0.16 },
+  boss: { center: 0.44, edge: 0.84, glow: 0.22 },
+  shop: { center: 0.22, edge: 0.64, glow: 0.18 },
+  victory: { center: 0.16, edge: 0.58, glow: 0.22 },
+  defeat: { center: 0.48, edge: 0.84, glow: 0.1 },
+};
 
 const NOOP_CONTROLLER: BackdropController = {
   setMood: () => {},
@@ -215,6 +226,9 @@ export function createBackdropCanvas(canvas: HTMLCanvasElement): BackdropControl
   let currentOuter: [number, number, number] = [...MOOD_PALETTES.menu.outer];
   let currentSwirlA: [number, number, number] = [...MOOD_PALETTES.menu.swirlA];
   let currentSwirlB: [number, number, number] = [...MOOD_PALETTES.menu.swirlB];
+  let currentCenterAlpha = MOOD_OVERLAY_ALPHAS.menu.center;
+  let currentEdgeAlpha = MOOD_OVERLAY_ALPHAS.menu.edge;
+  let currentGlowAlpha = MOOD_OVERLAY_ALPHAS.menu.glow;
 
   // Лёгкий локальный генератор псевдослучайных чисел только для визуальных искр
   let visualSeed = 0x9e3779b9;
@@ -266,11 +280,15 @@ export function createBackdropCanvas(canvas: HTMLCanvasElement): BackdropControl
     }
 
     const targetPalette = MOOD_PALETTES[targetMood];
+    const targetAlpha = MOOD_OVERLAY_ALPHAS[targetMood];
     const blend = Math.min(1, dtSec * 3.5);
     currentInner = lerpRgb(currentInner, targetPalette.inner, blend);
     currentOuter = lerpRgb(currentOuter, targetPalette.outer, blend);
     currentSwirlA = lerpRgb(currentSwirlA, targetPalette.swirlA, blend);
     currentSwirlB = lerpRgb(currentSwirlB, targetPalette.swirlB, blend);
+    currentCenterAlpha += (targetAlpha.center - currentCenterAlpha) * blend;
+    currentEdgeAlpha += (targetAlpha.edge - currentEdgeAlpha) * blend;
+    currentGlowAlpha += (targetAlpha.glow - currentGlowAlpha) * blend;
 
     elapsed += dtSec;
 
@@ -278,62 +296,39 @@ export function createBackdropCanvas(canvas: HTMLCanvasElement): BackdropControl
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+
     const cx = cssWidth * 0.5;
-    const cy = cssHeight * 0.44;
+    const cy = cssHeight * 0.42;
     const minDim = Math.min(cssWidth, cssHeight);
     const maxRadius = Math.hypot(cssWidth, cssHeight) * 0.68;
 
-    // 1. Основная цветная алхимическая подложка без чёрных или белых краёв
-    const bgGrad = ctx.createRadialGradient(cx, cy, maxRadius * 0.04, cx, cy, maxRadius);
-    bgGrad.addColorStop(0, toRgba(currentInner, 1));
-    bgGrad.addColorStop(0.55, toRgba(lerpRgb(currentInner, currentOuter, 0.55), 1));
-    bgGrad.addColorStop(1, toRgba(currentOuter, 1));
+    // 1. Полупрозрачное тонирование и глубокая виньетка поверх деревянной доски (без спирали)
+    const bgGrad = ctx.createRadialGradient(cx, cy, maxRadius * 0.06, cx, cy, maxRadius);
+    const midAlpha = (currentCenterAlpha + currentEdgeAlpha) * 0.5;
+    bgGrad.addColorStop(0, toRgba(currentInner, currentCenterAlpha));
+    bgGrad.addColorStop(0.56, toRgba(lerpRgb(currentInner, currentOuter, 0.58), midAlpha));
+    bgGrad.addColorStop(1, toRgba(currentOuter, currentEdgeAlpha));
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, cssWidth, cssHeight);
 
-    // 2. Плавная процедурная спираль с гармоническими завихрениями
-    ctx.save();
-    for (let arm = 0; arm < SPIRAL_ARM_COUNT; arm += 1) {
-      const armOffset = (arm / SPIRAL_ARM_COUNT) * Math.PI * 2;
-      const isPrimary = arm % 2 === 0;
-      const armColor = isPrimary ? currentSwirlA : currentSwirlB;
-      ctx.beginPath();
-
-      for (let seg = 0; seg <= SPIRAL_SEGMENT_COUNT; seg += 1) {
-        const frac = seg / SPIRAL_SEGMENT_COUNT;
-        const radius = frac * maxRadius * 0.96;
-        const twist = frac * 3.8 + elapsed * (isPrimary ? 0.32 : -0.24);
-        const ripple = Math.sin(elapsed * 1.4 + frac * 6.5 + armOffset) * 0.14;
-        const angle = armOffset + twist + ripple;
-        const px = cx + Math.cos(angle) * radius;
-        const py = cy + Math.sin(angle) * radius;
-
-        if (seg === 0) {
-          ctx.moveTo(px, py);
-        } else {
-          ctx.lineTo(px, py);
-        }
-      }
-
-      ctx.strokeStyle = toRgba(armColor, isPrimary ? 0.19 : 0.15);
-      ctx.lineWidth = Math.max(8, minDim * (isPrimary ? 0.085 : 0.06));
-      ctx.stroke();
-    }
-
-    // 3. Деликатные астрологические дуги вокруг центра
-    const ringRadiusA = minDim * 0.28;
-    const ringRadiusB = minDim * 0.41;
-    ctx.lineWidth = Math.max(1.2, minDim * 0.004);
-    ctx.strokeStyle = toRgba(currentSwirlB, 0.18);
-    ctx.beginPath();
-    ctx.arc(cx, cy, ringRadiusA, elapsed * 0.22, elapsed * 0.22 + Math.PI * 1.35);
-    ctx.stroke();
-
-    ctx.strokeStyle = toRgba(currentSwirlA, 0.14);
-    ctx.beginPath();
-    ctx.arc(cx, cy, ringRadiusB, -elapsed * 0.17, -elapsed * 0.17 + Math.PI * 1.2);
-    ctx.stroke();
-    ctx.restore();
+    // 2. Мягкое дышащее тепло факела/светильника гильдии без геометрии Balatro
+    const glowPulse = 0.86 + 0.14 * Math.sin(elapsed * 1.15);
+    const glowCenterX = cx + Math.sin(elapsed * 0.35) * minDim * 0.04;
+    const glowCenterY = cssHeight * 0.34 + Math.cos(elapsed * 0.42) * minDim * 0.03;
+    const lanternGrad = ctx.createRadialGradient(
+      glowCenterX,
+      glowCenterY,
+      0,
+      glowCenterX,
+      glowCenterY,
+      maxRadius * 0.62,
+    );
+    lanternGrad.addColorStop(0, toRgba(currentSwirlB, currentGlowAlpha * glowPulse));
+    lanternGrad.addColorStop(0.5, toRgba(currentSwirlA, currentGlowAlpha * 0.45 * glowPulse));
+    lanternGrad.addColorStop(1, toRgba(currentOuter, 0));
+    ctx.fillStyle = lanternGrad;
+    ctx.fillRect(0, 0, cssWidth, cssHeight);
 
     // 4. Активные импульсы от триггеров подсчёта/босса
     for (let i = pulses.length - 1; i >= 0; i -= 1) {
@@ -498,10 +493,14 @@ export function createBackdropCanvas(canvas: HTMLCanvasElement): BackdropControl
       // До первого кадра применяем новую палитру сразу, чтобы избежать вспышки стартового цвета
       if (elapsed === 0) {
         const palette = MOOD_PALETTES[mood];
+        const alpha = MOOD_OVERLAY_ALPHAS[mood];
         currentInner = [...palette.inner];
         currentOuter = [...palette.outer];
         currentSwirlA = [...palette.swirlA];
         currentSwirlB = [...palette.swirlB];
+        currentCenterAlpha = alpha.center;
+        currentEdgeAlpha = alpha.edge;
+        currentGlowAlpha = alpha.glow;
       }
     },
 

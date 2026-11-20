@@ -1320,7 +1320,8 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       expect(screensCss).toMatch(/min-height:\s*(?:44|4[5-9]|[5-9]\d)px/);
       expect(screensCss).toMatch(/min-width:\s*(?:44|4[5-9]|[5-9]\d)px/);
       expect(stripFineHoverMedia(styleCss)).not.toMatch(/:hover\b/);
-      expect(styleCss).toMatch(/\.stage-portrait[\s\S]*rgba\(\s*16\s*,\s*40\s*,\s*34\s*,\s*0\.\d+\s*\)/);
+      expect(styleCss).toContain('guild-wood-tile.webp');
+      expect(styleCss).toMatch(/\.stage-portrait[\s\S]*rgba\(\s*30\s*,\s*17\s*,\s*10\s*,\s*0\.\d+\s*\)/);
     });
 
     it('присваивает стабильные DOM-ключи слотам карт руки, Play Zone, стопке колоды, реликвиям и расходникам', () => {

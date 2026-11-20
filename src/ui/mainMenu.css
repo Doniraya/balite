@@ -27,15 +27,16 @@
 }
 
 .main-menu__version {
-  padding: 4px 10px;
+  padding: 5px 12px;
   border-radius: 6px;
-  background: rgba(11, 18, 22, 0.68);
-  border: 2px solid rgba(255, 255, 255, 0.18);
+  background: rgba(28, 16, 10, 0.88);
+  border: 2px solid rgba(212, 163, 72, 0.48);
   font-family: var(--font-ui, 'Pixellari', monospace);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: rgba(243, 239, 230, 0.88);
+  color: #fff6e5;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
 }
 
 .main-menu__hero {
@@ -61,11 +62,11 @@
   font-size: clamp(42px, min(11vw, 13dvh), 108px);
   font-weight: 900;
   letter-spacing: 0.05em;
-  color: #f8f5ee;
+  color: #fff6e5;
   text-shadow:
-    0 4px 0 #1e293b,
-    0 8px 0 rgba(8, 16, 20, 0.85),
-    0 14px 28px rgba(0, 0, 0, 0.6);
+    0 4px 0 #5c3114,
+    0 8px 0 rgba(18, 9, 5, 0.92),
+    0 14px 28px rgba(0, 0, 0, 0.65);
 }
 
 .main-menu__card-wrap {
@@ -90,12 +91,13 @@
   position: relative;
   width: clamp(74px, min(18vw, 16dvh), 132px);
   aspect-ratio: 5 / 7;
-  border-radius: 12px;
-  background: linear-gradient(160deg, #fbf7ec 0%, #ede2c9 100%);
+  border-radius: 10px;
+  background: linear-gradient(160deg, #f5e6c3 0%, #dec48e 100%);
   border: 3px solid #f5b942;
   box-shadow:
-    0 6px 0 #8a6420,
-    0 18px 34px rgba(0, 0, 0, 0.58);
+    0 6px 0 #704a14,
+    0 18px 34px rgba(0, 0, 0, 0.65),
+    inset 0 0 10px rgba(122, 79, 43, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -122,15 +124,15 @@
 
 .main-menu__subtitle {
   margin: 0;
-  padding: 6px 16px;
+  padding: 7px 18px;
   border-radius: 999px;
-  background: rgba(10, 20, 18, 0.72);
-  border: 1px solid rgba(245, 185, 66, 0.36);
-  color: #f3efe6;
+  background: rgba(28, 16, 10, 0.88);
+  border: 2px solid rgba(245, 185, 66, 0.52);
+  color: #fff6e5;
   font-size: clamp(12px, min(2.8vw, 1.9dvh), 15px);
   font-weight: 700;
   letter-spacing: 0.04em;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.48);
 }
 
 /* Нижняя панель кнопок по центру + переключатель языка справа */
@@ -149,13 +151,14 @@
   justify-content: center;
   gap: 10px;
   padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(20, 31, 36, 0.92);
-  border: 2px solid rgba(148, 163, 184, 0.42);
+  border-radius: 0;
+  background: rgba(28, 16, 10, 0.94);
+  background-clip: padding-box;
+  border: 14px solid transparent;
+  border-image: url('../assets/ui/wood-frame-9slice.webp') 38 / 14px / 0 stretch;
   box-shadow:
-    0 6px 0 rgba(9, 14, 18, 0.94),
-    0 16px 36px rgba(0, 0, 0, 0.52),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    0 14px 36px rgba(0, 0, 0, 0.68),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .main-menu__btn,
@@ -166,9 +169,11 @@
   gap: 8px;
   min-width: 44px;
   min-height: 44px;
-  border-radius: 8px;
-  border: 2px solid rgba(255, 255, 255, 0.28);
-  color: #ffffff;
+  border: 0 solid transparent;
+  border-image: url('../assets/ui/wood-btn-slate.webp') 32 48 32 48 fill / 11px 16px / 0 stretch;
+  background: transparent;
+  color: #fff6e5;
+  text-shadow: 0 2px 0 rgba(20, 10, 4, 0.92);
   font-family: inherit;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -176,18 +181,20 @@
   cursor: pointer;
   touch-action: manipulation;
   box-sizing: border-box;
-  transition: transform 0.08s ease, opacity 0.14s ease;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.45));
+  transition: transform 0.08s ease, opacity 0.14s ease, filter 0.14s ease;
 }
 
 .main-menu__btn {
   min-height: 54px;
-  padding: 10px 22px;
+  padding: 12px 24px;
   font-size: clamp(14px, 1.8vw, 18px);
 }
 
 .main-menu__btn:active:not(:disabled),
 .main-menu__lang-btn:active:not(:disabled) {
   transform: translateY(2px) scale(0.98);
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45)) brightness(0.95);
 }
 
 .main-menu__btn:focus-visible,
@@ -198,24 +205,18 @@
 
 .main-menu__btn--play {
   min-width: clamp(150px, 18vw, 200px);
-  background: linear-gradient(180deg, #1b9bff 0%, #0074dc 100%);
-  border-color: #7cc6ff;
-  box-shadow: 0 4px 0 #004e96;
+  border-image: url('../assets/ui/wood-btn-emerald.webp') 32 48 32 48 fill / 11px 16px / 0 stretch;
   font-size: clamp(16px, 2.2vw, 21px);
 }
 
 .main-menu__btn--settings {
-  background: linear-gradient(180deg, #f39a1f 0%, #c86f00 100%);
-  border-color: #ffd084;
-  box-shadow: 0 4px 0 #8a4a00;
+  border-image: url('../assets/ui/wood-btn-9slice.webp') 32 48 32 48 fill / 11px 16px / 0 stretch;
 }
 
 .main-menu__btn--collection {
   position: relative;
-  background: linear-gradient(180deg, #358972 0%, #246352 100%);
-  border-color: rgba(134, 239, 172, 0.42);
-  box-shadow: 0 4px 0 #174135;
-  padding: 10px 24px;
+  border-image: url('../assets/ui/wood-btn-crimson.webp') 32 48 32 48 fill / 11px 16px / 0 stretch;
+  padding: 12px 26px;
 }
 
 .main-menu__alert-badge {
@@ -249,10 +250,8 @@
 
 .main-menu__lang-btn {
   min-height: 54px;
-  padding: 10px 16px;
-  background: rgba(27, 41, 47, 0.92);
-  border-color: rgba(148, 163, 184, 0.42);
-  box-shadow: 0 4px 0 rgba(9, 14, 18, 0.92);
+  padding: 10px 18px;
+  border-image: url('../assets/ui/wood-btn-slate.webp') 32 48 32 48 fill / 11px 16px / 0 stretch;
   font-size: 14px;
   text-transform: none;
 }

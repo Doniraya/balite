@@ -2,7 +2,8 @@
 
 > **Статус:** Актуализированный дизайн-документ (v1.1, «Гильдия приключенцев», 8 Этажей подземелья)
 > **Базовый референс:** `reference/INDEX.md` и исходные Lua-таблицы в `reference/balatro_lua/` (Balatro `1.0.1o-FULL`)
-> **Базовая инфраструктура проекта:** `docs/superpowers/specs/2026-11-12-project-base-design.md`
+> **Базовая инфраструктура проекта:** `docs/superpowers/specs/2026-11-12-project-base-design.md`  
+> **Визуальный стиль и арт-гайд:** [art-style-guide.md](art-style-guide.md) (32-bit Hi-Bit палитра и шаблоны генерации пиксель-арта)
 
 ---
 
