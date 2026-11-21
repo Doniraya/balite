@@ -17,6 +17,7 @@ export const AUDIO_SAMPLE_KEYS = [
   'shatter',
   'debuff',
   'flame_surge',
+  'flame_loop',
   'win',
   'lose',
   'dialogue',

@@ -259,11 +259,20 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
     textEl.classList.remove('is-revealing');
   };
 
+  const computeCharRevealStepMs = (charCount: number): number => {
+    if (charCount <= 135) {
+      return 16;
+    }
+    // Для длинных реплик (150–250+ символов) плавно ускоряем шаг, сохраняя посимвольную печать до конца (~2.2–2.8 с)
+    const targetSpanMs = Math.min(2700, 2160 + (charCount - 135) * 4);
+    return Number((targetSpanMs / charCount).toFixed(2));
+  };
+
   /**
    * Оборачивает текстовые узлы внутри отформатированной реплики в посимвольные
    * DynaText-спаны, сохраняя целостность слов при переносах и все цветовые обёртки.
    */
-  const applyDynaTextReveal = (rootEl: HTMLElement): number => {
+  const applyDynaTextReveal = (rootEl: HTMLElement): { readonly charCount: number; readonly stepMs: number } => {
     let charIndex = 0;
 
     const walk = (node: Node): void => {
@@ -294,6 +303,11 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
         return;
       }
       if (node.nodeType === 1) {
+        const el = node as HTMLElement;
+        if (el.classList.contains('tut-hl') || el.classList.contains('tut-badge')) {
+          // Плашка/рамка синхронизируется по задержке со своим первым видимым символом
+          el.style.setProperty('--char-i', String(charIndex));
+        }
         const children = Array.from(node.childNodes);
         for (const child of children) {
           walk(child);
@@ -302,28 +316,39 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
     };
 
     walk(rootEl);
-    return charIndex;
+    const stepMs = computeCharRevealStepMs(charIndex);
+    rootEl.style.setProperty('--char-step-ms', `${stepMs}ms`);
+    return { charCount: charIndex, stepMs };
   };
 
-  const scheduleDialogueChatter = (charCount: number): void => {
+  const scheduleDialogueChatter = (charCount: number, stepMs: number): void => {
     clearRevealTimers();
-    if (charCount <= 4 || !options.audio) {
+    if (charCount <= 0) {
+      completeTextReveal();
       return;
     }
-    // Тихие посимвольные слоги с плавным ростом питча (как DynaText в text.lua:201)
-    const maxSyllables = Math.min(10, Math.floor(charCount / 5));
-    const stepMs = 68;
-    for (let i = 1; i <= maxSyllables; i += 1) {
-      const progress = i / Math.max(1, maxSyllables);
-      const pitchRate = 0.88 + progress * 0.24;
-      const timerId = globalThis.setTimeout(() => {
-        if (!isVisible || isRevealComplete) return;
-        options.audio?.playDialogue(pitchRate);
-      }, i * stepMs);
-      revealTimers.push(timerId);
+
+    const revealSpanMs = Math.max(0, (charCount - 1) * stepMs);
+
+    if (charCount > 4 && options.audio) {
+      // Равномерные посимвольные слоги речи на всю длительность печати без раннего обрыва
+      const syllableIntervalMs = Math.max(68, Math.min(88, Math.round(stepMs * 5)));
+      const syllableCount = Math.max(1, Math.floor(revealSpanMs / syllableIntervalMs));
+      for (let i = 1; i <= syllableCount; i += 1) {
+        const progress = i / Math.max(1, syllableCount);
+        const pitchRate = 0.9 + Math.sin(progress * Math.PI) * 0.12 + progress * 0.1;
+        const delayMs = Math.round(i * syllableIntervalMs);
+        if (delayMs > revealSpanMs) break;
+        const timerId = globalThis.setTimeout(() => {
+          if (!isVisible || isRevealComplete) return;
+          options.audio?.playDialogue(pitchRate);
+        }, delayMs);
+        revealTimers.push(timerId);
+      }
     }
 
-    const totalMs = Math.min(1400, charCount * 16 + 180);
+    // Завершаем печать строго после окончания CSS-анимации последнего символа и плашки (160ms + 40ms запас)
+    const totalMs = Math.ceil(revealSpanMs + 200);
     const doneTimer = globalThis.setTimeout(() => {
       completeTextReveal();
     }, totalMs);
@@ -911,11 +936,11 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
       // 4. Текст с подсветкой терминов и посимвольным появлением (DynaText)
       textEl.innerHTML = formatTutorialText(step.text);
       if (isNewStep && !isReducedMotion()) {
-        const charCount = applyDynaTextReveal(textEl);
+        const { charCount, stepMs } = applyDynaTextReveal(textEl);
         isRevealComplete = false;
         textEl.classList.remove('is-reveal-complete');
         textEl.classList.add('is-revealing');
-        scheduleDialogueChatter(charCount);
+        scheduleDialogueChatter(charCount, stepMs);
       } else {
         completeTextReveal();
       }

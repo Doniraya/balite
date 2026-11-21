@@ -187,10 +187,12 @@ describe('sampleRegistry и createHybridBaliteAudio', () => {
     });
   });
 
-  it('автоматически регистрирует подключённые bgm.mp3 и dialogue.ogg из src/assets/audio/', () => {
+  it('автоматически регистрирует подключённые bgm.mp3, dialogue.ogg и flame_loop.ogg из src/assets/audio/', () => {
     expect(AUDIO_SAMPLE_REGISTRY.bgm).toMatch(/bgm.*\.mp3$/);
     expect(AUDIO_SAMPLE_KEYS).toContain('dialogue');
     expect(AUDIO_SAMPLE_REGISTRY.dialogue).toMatch(/dialogue.*\.ogg$/);
+    expect(AUDIO_SAMPLE_KEYS).toContain('flame_loop');
+    expect(AUDIO_SAMPLE_REGISTRY.flame_loop).toMatch(/flame_loop.*\.ogg$/);
     const allowedKeys = new Set<string>(AUDIO_SAMPLE_KEYS);
     for (const key of Object.keys(AUDIO_SAMPLE_REGISTRY)) {
       expect(allowedKeys.has(key)).toBe(true);
@@ -446,5 +448,72 @@ describe('sampleRegistry и createHybridBaliteAudio', () => {
     }).not.toThrow();
 
     audio.dispose();
+  });
+
+  it('использует сэмпл flame_loop вместо процедурного гула, масштабирует питч/громкость и мгновенно глушится при рекламе/сбросе', async () => {
+    const { FakeAudioContext, instances } = createFakeAudioContextClass();
+    vi.stubGlobal('AudioContext', FakeAudioContext);
+
+    const fetchSpy = vi.fn(async () => ({
+      ok: true,
+      arrayBuffer: async () => new ArrayBuffer(16),
+    }));
+
+    const platformAudio = createAudioUnlockController();
+    platformAudio.install();
+
+    const audio = createHybridBaliteAudio(
+      platformAudio,
+      { soundEnabled: true, sfxVolume: 0.8, musicVolume: 0 },
+      {
+        sampleRegistry: {
+          flame_loop: '/audio/flame_loop.ogg',
+        },
+        fetchFn: fetchSpy as unknown as typeof fetch,
+      },
+    );
+
+    audio.unlock();
+    await flushMicrotasks();
+
+    const ctx = instances[0]!;
+    const oscBeforeFlame = ctx.oscillators.length;
+    const sourcesBeforeFlame = ctx.bufferSources.length;
+
+    audio.setFlameIntensity?.(0.25);
+    expect(ctx.bufferSources.length).toBe(sourcesBeforeFlame + 1);
+    // Процедурный осциллятор не запускается при активном сэмпле flame_loop
+    expect(ctx.oscillators.length).toBe(oscBeforeFlame);
+
+    const flameSrc = ctx.bufferSources[sourcesBeforeFlame]!;
+    expect(flameSrc.loop).toBe(true);
+    expect(flameSrc.start).toHaveBeenCalled();
+    expect(flameSrc.playbackRate.value).toBeCloseTo(0.94 + 0.25 * 0.2, 3);
+
+    // Повторное изменение интенсивности обновляет существующий источник плавно без пересоздания
+    audio.setFlameIntensity?.(0.9);
+    expect(ctx.bufferSources.length).toBe(sourcesBeforeFlame + 1);
+    expect(flameSrc.playbackRate.setTargetAtTime).toHaveBeenCalledWith(
+      0.94 + 0.9 * 0.2,
+      expect.any(Number),
+      expect.any(Number),
+    );
+
+    // При рекламе цикл огня мгновенно останавливается, а после окончания рекламы возобновляется
+    platformAudio.onAdStart();
+    expect(flameSrc.stop).toHaveBeenCalled();
+
+    const sourcesBeforeResume = ctx.bufferSources.length;
+    platformAudio.onAdEnd();
+    expect(ctx.bufferSources.length).toBe(sourcesBeforeResume + 1);
+    const resumedFlameSrc = ctx.bufferSources[sourcesBeforeResume]!;
+    expect(resumedFlameSrc.loop).toBe(true);
+
+    // Сброс интенсивности ниже порога 0.02 останавливает петлю огня
+    audio.setFlameIntensity?.(0);
+    expect(resumedFlameSrc.stop).toHaveBeenCalled();
+
+    audio.dispose();
+    platformAudio.dispose();
   });
 });

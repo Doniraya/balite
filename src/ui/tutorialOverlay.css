@@ -693,13 +693,34 @@
   opacity: 0;
   transform: translateY(3px) scale(0.76);
   animation: tut-char-pop 140ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  animation-delay: min(1200ms, calc(var(--char-i, 0) * 16ms));
+  animation-delay: calc(var(--char-i, 0) * var(--char-step-ms, 16ms));
 }
 
-.tut-text.is-reveal-complete .tut-char {
+.tut-text.is-revealing .tut-hl,
+.tut-text.is-revealing .tut-badge {
+  opacity: 0;
+  transform: translateY(3px) scale(0.95);
+  animation: tut-pill-reveal 160ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: calc(var(--char-i, 0) * var(--char-step-ms, 16ms));
+}
+
+.tut-text.is-reveal-complete .tut-char,
+.tut-text.is-reveal-complete .tut-hl,
+.tut-text.is-reveal-complete .tut-badge {
   opacity: 1;
   transform: none;
   animation: none;
+}
+
+@keyframes tut-pill-reveal {
+  0% {
+    opacity: 0;
+    transform: translateY(3px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @keyframes tut-char-pop {
@@ -718,6 +739,8 @@
 }
 
 [data-reduced-motion='true'] .tut-text.is-revealing .tut-char,
+[data-reduced-motion='true'] .tut-text.is-revealing .tut-hl,
+[data-reduced-motion='true'] .tut-text.is-revealing .tut-badge,
 [data-reduced-motion='true'] .tut-spotlight,
 [data-reduced-motion='true'] .tut-arrow {
   opacity: 1;
@@ -726,7 +749,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tut-text.is-revealing .tut-char {
+  .tut-text.is-revealing .tut-char,
+  .tut-text.is-revealing .tut-hl,
+  .tut-text.is-revealing .tut-badge {
     opacity: 1;
     transform: none;
     animation: none;

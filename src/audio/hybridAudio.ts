@@ -44,6 +44,7 @@ export const SAMPLE_MIX_GAINS: Readonly<Record<Exclude<AudioSampleKey, 'bgm'>, n
   mult_hit: 0.23,
   booster_open: 0.24,
   flame_surge: 0.24,
+  flame_loop: 0.24,
   lose: 0.24,
   shatter: 0.25,
   win: 0.26,
@@ -171,11 +172,20 @@ export function createHybridBaliteAudio(
 
   let lastMuted = false;
   let lastUnlocked = false;
+  let lastSfxVolume = initialSettings?.sfxVolume ?? 0.8;
   let lastMusicVolume = initialSettings?.musicVolume ?? 0.4;
+  let flameIntensity = 0;
+  let flameSource: AudioBufferSourceNode | null = null;
+  let flameMixGain: GainNode | null = null;
+  const fadingFlameSources = new Set<{
+    readonly source: AudioBufferSourceNode;
+    readonly gain: GainNode | null;
+  }>();
   let loadStarted = false;
   let disposed = false;
 
   const hasBgmBuffer = (): boolean => decodedBuffers.has('bgm');
+  const hasFlameBuffer = (): boolean => decodedBuffers.has('flame_loop');
 
   const applyBgmMood = (immediate: boolean): void => {
     if (!audioCtx || !bgmSource) return;
@@ -291,6 +301,191 @@ export function createHybridBaliteAudio(
     }
   };
 
+  const stopFlameSample = (immediate: boolean): void => {
+    if (immediate) {
+      for (const item of fadingFlameSources) {
+        try {
+          if (typeof item.source.stop === 'function') {
+            item.source.stop();
+          }
+        } catch {
+          // Узел уже остановлен
+        }
+        try {
+          item.source.disconnect();
+        } catch {
+          // Узел уже отключён
+        }
+        try {
+          item.gain?.disconnect();
+        } catch {
+          // Узел уже отключён
+        }
+      }
+      fadingFlameSources.clear();
+    }
+
+    if (!flameSource) return;
+    const src = flameSource;
+    const mix = flameMixGain;
+    flameSource = null;
+    flameMixGain = null;
+
+    if (immediate || !audioCtx) {
+      if (mix?.gain) {
+        const now = typeof audioCtx?.currentTime === 'number' ? audioCtx.currentTime : 0;
+        applySmoothParam(mix.gain, 0, now, 0, true);
+      }
+      try {
+        if (typeof src.stop === 'function') {
+          src.stop();
+        }
+      } catch {
+        // Источник пламени уже остановлен
+      }
+      try {
+        src.disconnect();
+      } catch {
+        // Игнорируем ошибку отсоединения
+      }
+      try {
+        mix?.disconnect();
+      } catch {
+        // Игнорируем ошибку отсоединения
+      }
+      return;
+    }
+
+    const now = typeof audioCtx.currentTime === 'number' ? audioCtx.currentTime : 0;
+    if (mix?.gain) {
+      applySmoothParam(mix.gain, 0, now, 0.08, false);
+    }
+
+    const fadingEntry = { source: src, gain: mix };
+    fadingFlameSources.add(fadingEntry);
+    src.onended = () => {
+      fadingFlameSources.delete(fadingEntry);
+      try {
+        src.disconnect();
+      } catch {
+        // Узел уже отключён
+      }
+      try {
+        mix?.disconnect();
+      } catch {
+        // Узел уже отключён
+      }
+    };
+
+    try {
+      if (typeof src.stop === 'function') {
+        src.stop(now + 0.09);
+      }
+    } catch {
+      fadingFlameSources.delete(fadingEntry);
+      try {
+        src.disconnect();
+      } catch {
+        // Игнорируем ошибку отсоединения
+      }
+      try {
+        mix?.disconnect();
+      } catch {
+        // Игнорируем ошибку отсоединения
+      }
+    }
+  };
+
+  const syncFlameSample = (): void => {
+    const mustMuteImmediately = disposed || lastMuted || !lastUnlocked || lastSfxVolume <= 0;
+    const canPlaySample =
+      !mustMuteImmediately &&
+      flameIntensity > 0.02 &&
+      Boolean(audioCtx) &&
+      Boolean(sfxGain) &&
+      hasFlameBuffer() &&
+      typeof audioCtx?.createBufferSource === 'function';
+
+    if (!canPlaySample) {
+      stopFlameSample(mustMuteImmediately);
+      if (mustMuteImmediately || hasFlameBuffer()) {
+        synth.setFlameIntensity?.(0);
+      } else {
+        synth.setFlameIntensity?.(flameIntensity);
+      }
+      return;
+    }
+
+    // При наличии живого сэмпла flame_loop процедурный шум пламени отключается
+    synth.setFlameIntensity?.(0);
+
+    const active = Math.min(1, flameIntensity);
+    const targetMixGain = SAMPLE_MIX_GAINS.flame_loop * (0.45 + active * 0.85);
+    const targetRate = 0.94 + active * 0.2;
+    const ctx = audioCtx!;
+    const now = typeof ctx.currentTime === 'number' ? ctx.currentTime : 0;
+
+    if (flameSource) {
+      applySmoothParam(flameSource.playbackRate, targetRate, now, 0.14, false);
+      if (flameMixGain) {
+        applySmoothParam(flameMixGain.gain, targetMixGain, now, 0.14, false);
+      }
+      return;
+    }
+
+    const flameBuffer = decodedBuffers.get('flame_loop');
+    if (!flameBuffer || !sfxGain) return;
+
+    try {
+      const source = ctx.createBufferSource();
+      source.buffer = flameBuffer;
+      source.loop = true;
+      if (source.playbackRate && typeof source.playbackRate === 'object') {
+        source.playbackRate.value = targetRate;
+      }
+
+      let mixGain: GainNode | null = null;
+      if (typeof ctx.createGain === 'function') {
+        mixGain = ctx.createGain();
+        if (mixGain.gain) {
+          if (typeof mixGain.gain.setValueAtTime === 'function') {
+            mixGain.gain.setValueAtTime(Math.min(0.015, targetMixGain), now);
+          }
+          applySmoothParam(mixGain.gain, targetMixGain, now, 0.1, false);
+        }
+        source.connect(mixGain);
+        mixGain.connect(sfxGain);
+      } else {
+        source.connect(sfxGain);
+      }
+
+      source.onended = () => {
+        try {
+          source.disconnect();
+        } catch {
+          // Узел уже отключён
+        }
+        try {
+          mixGain?.disconnect();
+        } catch {
+          // Узел уже отключён
+        }
+        if (flameSource === source) {
+          flameSource = null;
+          flameMixGain = null;
+        }
+      };
+
+      flameSource = source;
+      flameMixGain = mixGain;
+      if (typeof source.start === 'function') {
+        source.start(now);
+      }
+    } catch {
+      stopFlameSample(true);
+    }
+  };
+
   const synth = createBaliteAudio(platformAudio, initialSettings, {
     suppressAmbient: hasBgmBuffer,
     onContextReady: (nodes) => {
@@ -304,7 +499,10 @@ export function createHybridBaliteAudio(
       musicGain = state.musicGain;
       lastMuted = state.muted;
       lastUnlocked = state.unlocked;
+      lastSfxVolume = state.sfxVolume;
       lastMusicVolume = state.musicVolume;
+
+      syncFlameSample();
 
       if (state.muted || !state.unlocked || state.musicVolume <= 0 || disposed) {
         stopBgmSource(true);
@@ -317,6 +515,8 @@ export function createHybridBaliteAudio(
     },
     onDispose: () => {
       disposed = true;
+      flameIntensity = 0;
+      stopFlameSample(true);
       stopBgmSource(false);
       decodedBuffers.clear();
       audioCtx = null;
@@ -343,6 +543,8 @@ export function createHybridBaliteAudio(
       if (key === 'bgm') {
         // Останавливаем процедурный эмбиент и запускаем сэмпл BGM через общий sync
         synth.setSettings({});
+      } else if (key === 'flame_loop') {
+        syncFlameSample();
       }
     } catch {
       // При любой ошибке сети или декодирования остаётся фолбэк на процедурный синтезатор
@@ -445,7 +647,8 @@ export function createHybridBaliteAudio(
 
   const setFlameIntensity = (intensity: number): void => {
     if (disposed) return;
-    synth.setFlameIntensity?.(intensity);
+    flameIntensity = Number.isFinite(intensity) ? Math.max(0, Math.min(1, intensity)) : 0;
+    syncFlameSample();
   };
 
   const controller: BaliteAudioController = {

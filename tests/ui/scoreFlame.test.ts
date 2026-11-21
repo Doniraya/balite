@@ -186,6 +186,70 @@ describe('createScoreFlame', () => {
     controller.destroy();
   });
 
+  it('при минимальной интенсивности 0.15 ярко рисует пиксели огня над верхним краем обеих плиток', () => {
+    const { formula, chips, mult } = createHudFixture();
+    const raf = createFakeRaf();
+
+    formula.getBoundingClientRect = () =>
+      ({ left: 20, top: 100, width: 240, height: 64, right: 260, bottom: 164, x: 20, y: 100, toJSON: () => ({}) }) as DOMRect;
+    chips.getBoundingClientRect = () =>
+      ({ left: 20, top: 100, width: 106, height: 64, right: 126, bottom: 164, x: 20, y: 100, toJSON: () => ({}) }) as DOMRect;
+    mult.getBoundingClientRect = () =>
+      ({ left: 154, top: 100, width: 106, height: 64, right: 260, bottom: 164, x: 154, y: 100, toJSON: () => ({}) }) as DOMRect;
+
+    const drawnRects: Array<{ x: number; y: number }> = [];
+    const fakeCtx = {
+      clearRect: vi.fn(),
+      fillRect: vi.fn((rx: number, ry: number) => drawnRects.push({ x: rx, y: ry })),
+      beginPath: vi.fn(),
+      rect: vi.fn((rx: number, ry: number) => drawnRects.push({ x: rx, y: ry })),
+      arc: vi.fn(),
+      fill: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      scale: vi.fn(),
+      imageSmoothingEnabled: true,
+      globalAlpha: 1,
+      fillStyle: '#000',
+    } as unknown as CanvasRenderingContext2D;
+
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(fakeCtx);
+
+    const controller = createScoreFlame({
+      container: formula,
+      chipsAnchor: chips,
+      multAnchor: mult,
+      reducedMotion: false,
+      now: raf.now,
+      requestFrame: raf.requestFrame,
+      cancelFrame: raf.cancelFrame,
+    });
+
+    controller.setIntensity(0.15);
+    // Продвигаем на 10 кадров, чтобы пламя вышло на рабочую высоту при 0.15
+    for (let i = 0; i < 10; i += 1) {
+      raf.flushFrame(16);
+    }
+
+    const padTop = Math.abs(Number.parseFloat(controller.element.style.top));
+    expect(padTop).toBeGreaterThanOrEqual(44);
+
+    // В координатах canvas верхний край обеих плиток находится ровно на y = padTop
+    const abovePillRects = drawnRects.filter((r) => r.y >= 0 && r.y < padTop);
+    expect(abovePillRects.length).toBeGreaterThan(20);
+
+    // Должны гореть обе стороны: левая плитка «Сила» и правая плитка «Множ»
+    const midX = (240 + Math.abs(Number.parseFloat(controller.element.style.left)) * 2) * 0.5;
+    expect(abovePillRects.some((r) => r.x < midX)).toBe(true);
+    expect(abovePillRects.some((r) => r.x > midX)).toBe(true);
+
+    // Высота видимых языков над верхним краем плиток не менее 15px даже на минимальном пороге 0.15
+    const minY = Math.min(...abovePillRects.map((r) => r.y));
+    expect(padTop - minY).toBeGreaterThanOrEqual(15);
+
+    controller.destroy();
+  });
+
   it('в режиме prefers-reduced-motion: reduce не запускает rAF и включает статичное свечение', () => {
     const { formula, chips, mult } = createHudFixture();
     const raf = createFakeRaf();

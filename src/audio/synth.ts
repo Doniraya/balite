@@ -135,7 +135,6 @@ interface AmbientState {
 
 interface FlameLoopState {
   readonly source: AudioBufferSourceNode;
-  readonly toneOsc: OscillatorNode | null;
   readonly gainNode: GainNode;
   readonly filterNode: BiquadFilterNode | null;
   readonly nodes: readonly AudioNode[];
@@ -740,15 +739,6 @@ export function createBaliteAudio(
     } catch {
       // Источник шума уже остановлен
     }
-    if (flameLoop.toneOsc) {
-      try {
-        if (typeof flameLoop.toneOsc.stop === 'function') {
-          flameLoop.toneOsc.stop();
-        }
-      } catch {
-        // Осциллятор уже остановлен
-      }
-    }
     for (const node of flameLoop.nodes) {
       safeDisconnect(node);
     }
@@ -767,16 +757,13 @@ export function createBaliteAudio(
     }
 
     const now = getSafeTime(ctx);
-    const targetGain = 0.018 + activeIntensity * 0.052;
-    const targetFilterFreq = 320 + activeIntensity * 720;
+    const targetGain = 0.02 + activeIntensity * 0.048;
+    const targetFilterFreq = 460 + activeIntensity * 900;
 
     if (flameLoop) {
       setParamImmediate(flameLoop.gainNode.gain, targetGain, now);
       if (flameLoop.filterNode?.frequency) {
         setParamImmediate(flameLoop.filterNode.frequency, targetFilterFreq, now);
-      }
-      if (flameLoop.toneOsc?.frequency) {
-        setParamImmediate(flameLoop.toneOsc.frequency, 146.83 + activeIntensity * 28, now);
       }
       return;
     }
@@ -808,31 +795,13 @@ export function createBaliteAudio(
           filterNode.frequency.value = targetFilterFreq;
         }
         if (filterNode.Q) {
-          filterNode.Q.value = 1.25;
+          filterNode.Q.value = 1.05;
         }
         source.connect(filterNode);
         filterNode.connect(gainNode);
         nodes.push(filterNode);
       } else {
         source.connect(gainNode);
-      }
-
-      // Мягкая тёплая органная нота, нарастающая с интенсивностью пламени (как ambientOrgan1)
-      let toneOsc: OscillatorNode | null = null;
-      if (typeof ctx.createOscillator === 'function') {
-        toneOsc = ctx.createOscillator();
-        const toneGain = ctx.createGain();
-        toneOsc.type = 'triangle';
-        if (toneOsc.frequency) {
-          toneOsc.frequency.value = 146.83 + activeIntensity * 28;
-        }
-        setParamImmediate(toneGain.gain, 0.22, now);
-        toneOsc.connect(toneGain);
-        toneGain.connect(gainNode);
-        if (typeof toneOsc.start === 'function') {
-          toneOsc.start(now);
-        }
-        nodes.push(toneOsc, toneGain);
       }
 
       gainNode.connect(sfxGain);
@@ -842,7 +811,6 @@ export function createBaliteAudio(
 
       flameLoop = {
         source,
-        toneOsc,
         gainNode,
         filterNode,
         nodes,

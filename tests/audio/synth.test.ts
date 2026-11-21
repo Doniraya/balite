@@ -485,10 +485,12 @@ describe('createBaliteAudio (процедурный Web Audio синтезато
     expectSoundProduced('playBossIntro', () => audio.playBossIntro?.());
     expectSoundProduced('playDialogue(1.1)', () => audio.playDialogue(1.1));
 
-    // Непрерывный гул пламени запускает loop-источник и останавливает его при сбросе в 0
+    // Непрерывный шум пламени запускает loop-источник без тонального гула и останавливает его при сбросе в 0
     const bufBeforeFlame = ctx.bufferSources.length;
+    const oscBeforeFlame = ctx.oscillators.length;
     audio.setFlameIntensity?.(0.75);
     expect(ctx.bufferSources.length).toBeGreaterThan(bufBeforeFlame);
+    expect(ctx.oscillators.length).toBe(oscBeforeFlame);
     const flameSrc = ctx.bufferSources[bufBeforeFlame]!;
     audio.setFlameIntensity?.(0);
     expect(flameSrc.stop).toHaveBeenCalled();

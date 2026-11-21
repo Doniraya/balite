@@ -647,4 +647,71 @@ describe('createTutorialOverlay', () => {
     reducedController.destroy();
     vi.useRealTimers();
   });
+
+  it('печатает длинные реплики (>120 символов) до самого конца без обрыва на 1400ms и синхронизирует плашки по --char-i', () => {
+    vi.useFakeTimers();
+    const playDialogueSpy = vi.fn();
+    const mockAudio = {
+      playDialogue: playDialogueSpy,
+    } as unknown as import('../../src/audio/synth').BaliteAudioController;
+
+    const animController = createTutorialOverlay({
+      onNext: vi.fn(),
+      onSkip: vi.fn(),
+      audio: mockAudio,
+      reducedMotion: false,
+    });
+
+    const longText =
+      'Взгляни на {C:blue}панель подсчёта{}! Итог комбинации складывается из {X:chips,C:white}Сила{} и {X:mult,C:white}×Множ{}, а при хорошей руке {C:attention}пламя вспыхивает над числами{} и открывает путь дальше по залу гильдии.';
+
+    animController.showStep({
+      id: 'step-long-dyna',
+      title: 'Длинная реплика',
+      text: longText,
+    });
+
+    const textEl = animController.element.querySelector<HTMLElement>('.tut-text')!;
+    const chars = Array.from(textEl.querySelectorAll<HTMLElement>('.tut-char'));
+    expect(chars.length).toBeGreaterThan(120);
+
+    // Проверяем шаг анимации и строгий рост задержки от середины до последнего символа
+    const stepMs = Number.parseFloat(textEl.style.getPropertyValue('--char-step-ms'));
+    expect(stepMs).toBeGreaterThan(0);
+
+    const midCharIndex = Number(chars[Math.floor(chars.length / 2)]!.style.getPropertyValue('--char-i'));
+    const lastCharIndex = Number(chars[chars.length - 1]!.style.getPropertyValue('--char-i'));
+    expect(lastCharIndex * stepMs).toBeGreaterThan(midCharIndex * stepMs);
+    expect(lastCharIndex * stepMs).toBeGreaterThan(1400);
+
+    // Плашки .tut-hl и .tut-badge получают --char-i своего первого символа для синхронного появления
+    const hlSpans = Array.from(textEl.querySelectorAll<HTMLElement>('.tut-hl'));
+    const badgeSpans = Array.from(textEl.querySelectorAll<HTMLElement>('.tut-badge'));
+    expect(hlSpans.length).toBeGreaterThanOrEqual(2);
+    expect(badgeSpans.length).toBeGreaterThanOrEqual(2);
+
+    for (const pill of [...hlSpans, ...badgeSpans]) {
+      const firstInnerChar = pill.querySelector<HTMLElement>('.tut-char');
+      expect(firstInnerChar).not.toBeNull();
+      expect(pill.style.getPropertyValue('--char-i')).toBe(
+        firstInnerChar!.style.getPropertyValue('--char-i'),
+      );
+    }
+
+    // На отметке 1400ms печать ещё продолжается (никакого досрочного обрыва), и озвучка не затихла на 680ms
+    vi.advanceTimersByTime(700);
+    const callsAt700 = playDialogueSpy.mock.calls.length;
+    vi.advanceTimersByTime(700);
+    expect(textEl.classList.contains('is-revealing')).toBe(true);
+    expect(textEl.classList.contains('is-reveal-complete')).toBe(false);
+    expect(playDialogueSpy.mock.calls.length).toBeGreaterThan(callsAt700);
+
+    // После завершения времени последнего символа печать корректно финализируется
+    vi.advanceTimersByTime(1600);
+    expect(textEl.classList.contains('is-reveal-complete')).toBe(true);
+    expect(textEl.classList.contains('is-revealing')).toBe(false);
+
+    animController.destroy();
+    vi.useRealTimers();
+  });
 });

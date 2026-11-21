@@ -43,6 +43,7 @@ interface FlamePalette {
 interface FlameZone {
   side: FlameSide;
   xCenter: number;
+  topY: number;
   width: number;
   palette: FlamePalette;
 }
@@ -76,9 +77,10 @@ const PALETTES: Record<FlameSide, FlamePalette> = {
   },
 };
 
-const OVERLAY_PAD_TOP = 24;
-const OVERLAY_PAD_X = 8;
+const OVERLAY_PAD_TOP = 54;
+const OVERLAY_PAD_X = 10;
 const OVERLAY_PAD_BOTTOM = 4;
+const BASE_PILL_OVERLAP_PX = 6;
 const PIXEL_CELL_SIZE = 3;
 const PARTICLES_PER_SIDE = 12;
 const STOP_THRESHOLD = 0.005;
@@ -261,11 +263,23 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
   let realIntensity = 0;
   let intensityVel = 0;
   let flameTimer = 0;
-  let widthCss = 180;
-  let heightCss = 56;
+  let widthCss = 184;
+  let heightCss = 94;
   let zones: Record<FlameSide, FlameZone> = {
-    chips: { side: 'chips', xCenter: widthCss * 0.25, width: widthCss * 0.42, palette: PALETTES.chips },
-    mult: { side: 'mult', xCenter: widthCss * 0.75, width: widthCss * 0.42, palette: PALETTES.mult },
+    chips: {
+      side: 'chips',
+      xCenter: widthCss * 0.25,
+      topY: OVERLAY_PAD_TOP,
+      width: widthCss * 0.42,
+      palette: PALETTES.chips,
+    },
+    mult: {
+      side: 'mult',
+      xCenter: widthCss * 0.75,
+      topY: OVERLAY_PAD_TOP,
+      width: widthCss * 0.42,
+      palette: PALETTES.mult,
+    },
   };
 
   let rafId: number | null = null;
@@ -297,12 +311,14 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
     ): FlameZone => {
       if (hasContainerLayout && anchor) {
         const rect = anchor.getBoundingClientRect();
-        if (rect.width > 1) {
+        if (rect.width > 1 && rect.height > 1) {
           const xCenter = rect.left - contRect.left + OVERLAY_PAD_X + rect.width * 0.5;
+          const topY = Math.max(OVERLAY_PAD_TOP - 8, rect.top - contRect.top + OVERLAY_PAD_TOP);
           return {
             side,
             xCenter,
-            width: Math.max(24, rect.width * 0.92),
+            topY,
+            width: Math.max(24, rect.width * 0.96),
             palette: PALETTES[side],
           };
         }
@@ -310,7 +326,8 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
       return {
         side,
         xCenter: widthCss * fallbackRatio,
-        width: widthCss * 0.4,
+        topY: OVERLAY_PAD_TOP,
+        width: widthCss * 0.42,
         palette: PALETTES[side],
       };
     };
@@ -339,8 +356,9 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
     ctx.imageSmoothingEnabled = false;
 
     const px = PIXEL_CELL_SIZE;
-    const baseLineY = Math.floor((heightCss - OVERLAY_PAD_BOTTOM - 2) / px) * px;
-    const maxFlameHeight = 14 + intensity * 28;
+    // Видимая высота языков пламени НАД верхним краем плиток: ~20-26px при слабом пробитии и до ~48px при сильном
+    const visibleHeightAbovePill = 20 + intensity * 26;
+    const maxFlameHeight = BASE_PILL_OVERLAP_PX + visibleHeightAbovePill;
     const hasRectPath = typeof ctx.rect === 'function';
 
     const drawPixelBatch = (
@@ -367,7 +385,7 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
       }
     };
 
-    // Пиксельные языки пламени по жёсткой ретро-сетке (в духе flame.fs без размытия)
+    // Пиксельные языки пламени по жёсткой ретро-сетке (вырываются от верхнего края обеих плиток вверх)
     const sides: readonly FlameSide[] = ['chips', 'mult'];
     for (let sideIdx = 0; sideIdx < sides.length; sideIdx += 1) {
       const side = sides[sideIdx]!;
@@ -375,6 +393,8 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
       const seedOffset = sideIdx * 17.31;
       const halfCols = Math.max(3, Math.floor((zone.width * 0.5) / px));
       const centerColX = Math.round(zone.xCenter / px) * px;
+      // Базовая линия заведена на 6px ниже верха плитки (под z-index: 2), чтобы пламя росло без щели
+      const baseLineY = Math.round((zone.topY + BASE_PILL_OVERLAP_PX) / px) * px;
 
       const outerRects: Array<readonly [number, number, number, number]> = [];
       const innerRects: Array<readonly [number, number, number, number]> = [];
@@ -389,7 +409,7 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
         const wave1 = Math.sin(flameTimer * 5.2 + col * 0.72 + seedOffset);
         const wave2 = Math.cos(flameTimer * 8.1 - col * 1.15 + seedOffset * 0.6);
         const wave3 = Math.sin(flameTimer * 3.4 + col * 0.35 - seedOffset);
-        const turbulence = 0.64 + 0.22 * wave1 + 0.14 * wave2 + 0.1 * wave3;
+        const turbulence = 0.72 + 0.18 * wave1 + 0.12 * wave2 + 0.08 * wave3;
 
         const colHeightPx = Math.max(0, Math.round((maxFlameHeight * arch * turbulence) / px) * px);
         if (colHeightPx < px) continue;
@@ -405,10 +425,11 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
           );
           const cellX = x + swayCells * px;
           const cellY = baseLineY - (r + 1) * px;
+          if (cellY < 0) continue;
 
-          if (hFrac < 0.32 && Math.abs(normX) < 0.68) {
+          if (hFrac < 0.36 && Math.abs(normX) < 0.68) {
             coreRects.push([cellX, cellY, px, px]);
-          } else if (hFrac < 0.68 && Math.abs(normX) < 0.88) {
+          } else if (hFrac < 0.72 && Math.abs(normX) < 0.88) {
             innerRects.push([cellX, cellY, px, px]);
           } else {
             outerRects.push([cellX, cellY, px, px]);
@@ -420,12 +441,13 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
       for (const particle of particles) {
         if (particle.side !== side) continue;
         const life = particle.progress;
-        if (life < 0.28 || life > 0.94) continue;
+        if (life < 0.24 || life > 0.94) continue;
         const sway = Math.sin(flameTimer * 3.8 + particle.swayPhase + life * 4) * particle.swayAmp;
         const sparkX =
           Math.round((zone.xCenter + particle.xOffset * zone.width * (1 - life * 0.4) + sway) / px) *
           px;
-        const sparkY = Math.round((baseLineY - life * (maxFlameHeight + 10)) / px) * px;
+        const sparkY = Math.round((baseLineY - life * (maxFlameHeight + 12)) / px) * px;
+        if (sparkY < 0 || sparkY >= zone.topY + 2) continue;
         if (life < 0.62) {
           innerRects.push([sparkX, sparkY, px, px]);
         } else {
@@ -433,7 +455,7 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
         }
       }
 
-      ctx.globalAlpha = Math.min(1, 0.72 + intensity * 0.28);
+      ctx.globalAlpha = Math.min(1, 0.8 + intensity * 0.2);
       drawPixelBatch(zone.palette.outer, outerRects);
       drawPixelBatch(zone.palette.inner, innerRects);
       drawPixelBatch(zone.palette.core, coreRects);
@@ -538,7 +560,11 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
     }
 
     if (targetIntensity > STOP_THRESHOLD) {
-      // Отмечаем активность сразу на входе, чтобы оверлей был видим с первого кадра
+      // Пересчитываем геометрию плиток и даём мгновенный стартовый импульс, чтобы пламя было видно с 1-го кадра
+      if (realIntensity <= STOP_THRESHOLD) {
+        resize();
+        realIntensity = Math.max(realIntensity, Math.min(0.08, targetIntensity * 0.45));
+      }
       element.dataset.flameActive = 'true';
       ensureLoop();
     } else if (realIntensity <= STOP_THRESHOLD) {
