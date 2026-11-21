@@ -65,21 +65,22 @@ interface FlameParticle {
 
 const PALETTES: Record<FlameSide, FlamePalette> = {
   chips: {
-    outer: 'rgba(47, 125, 255, 0.72)',
-    inner: 'rgba(121, 200, 255, 0.85)',
-    core: 'rgba(255, 232, 158, 0.78)',
+    outer: '#266df0',
+    inner: '#6bc4ff',
+    core: '#edfaff',
   },
   mult: {
-    outer: 'rgba(255, 69, 58, 0.76)',
-    inner: 'rgba(255, 146, 60, 0.88)',
-    core: 'rgba(255, 224, 120, 0.84)',
+    outer: '#e6392e',
+    inner: '#ff962d',
+    core: '#fff1b3',
   },
 };
 
-const OVERLAY_PAD_TOP = 22;
+const OVERLAY_PAD_TOP = 24;
 const OVERLAY_PAD_X = 8;
 const OVERLAY_PAD_BOTTOM = 4;
-const PARTICLES_PER_SIDE = 16;
+const PIXEL_CELL_SIZE = 3;
+const PARTICLES_PER_SIDE = 12;
 const STOP_THRESHOLD = 0.005;
 
 /**
@@ -228,6 +229,7 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
   canvas.style.width = '100%';
   canvas.style.height = '100%';
   canvas.style.pointerEvents = 'none';
+  canvas.style.imageRendering = 'pixelated';
 
   element.append(chipsGlow, multGlow, canvas);
   container.append(element);
@@ -334,35 +336,107 @@ export function createScoreFlame(options: ScoreFlameOptions): ScoreFlameControll
     ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.scale(dpr, dpr);
-    ctx.globalCompositeOperation = 'lighter';
+    ctx.imageSmoothingEnabled = false;
 
-    const baseLineY = heightCss - OVERLAY_PAD_BOTTOM - 2;
-    const travelHeight = 18 + intensity * 28;
+    const px = PIXEL_CELL_SIZE;
+    const baseLineY = Math.floor((heightCss - OVERLAY_PAD_BOTTOM - 2) / px) * px;
+    const maxFlameHeight = 14 + intensity * 28;
+    const hasRectPath = typeof ctx.rect === 'function';
 
-    for (const particle of particles) {
-      const zone = zones[particle.side];
-      const life = particle.progress;
-      // Язычок максимально ярок на 20-35% пути и плавно затухает к вершине
-      const fade = life < 0.2 ? life / 0.2 : 1 - (life - 0.2) / 0.8;
-      const alpha = Math.max(0, Math.min(1, fade * (0.35 + intensity * 0.65)));
-      if (alpha <= 0.01) continue;
+    const drawPixelBatch = (
+      color: string,
+      rects: ReadonlyArray<readonly [number, number, number, number]>,
+    ): void => {
+      if (rects.length === 0) return;
+      ctx!.fillStyle = color;
+      if (hasRectPath) {
+        ctx!.beginPath();
+        for (const [rx, ry, rw, rh] of rects) {
+          ctx!.rect(rx, ry, rw, rh);
+        }
+        ctx!.fill();
+      } else {
+        // Фолбэк для урезанных тестовых контекстов без ctx.rect()
+        for (const [rx, ry, rw, rh] of rects) {
+          ctx!.fillRect(rx, ry, rw, rh);
+        }
+        const [fx, fy, fw] = rects[0]!;
+        ctx!.beginPath();
+        ctx!.arc(fx + fw * 0.5, fy + fw * 0.5, fw * 0.5, 0, Math.PI * 2);
+        ctx!.fill();
+      }
+    };
 
-      const sway = Math.sin(flameTimer * 3.4 + particle.swayPhase + life * 4) * particle.swayAmp;
-      const x = zone.xCenter + particle.xOffset * zone.width * (1 - life * 0.35) + sway;
-      const y = baseLineY - life * travelHeight;
-      const r = particle.radius * (0.62 + intensity * 0.72) * (1 - life * 0.52);
-      if (r <= 0.5) continue;
+    // Пиксельные языки пламени по жёсткой ретро-сетке (в духе flame.fs без размытия)
+    const sides: readonly FlameSide[] = ['chips', 'mult'];
+    for (let sideIdx = 0; sideIdx < sides.length; sideIdx += 1) {
+      const side = sides[sideIdx]!;
+      const zone = zones[side];
+      const seedOffset = sideIdx * 17.31;
+      const halfCols = Math.max(3, Math.floor((zone.width * 0.5) / px));
+      const centerColX = Math.round(zone.xCenter / px) * px;
 
-      const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-      grad.addColorStop(0, zone.palette.core);
-      grad.addColorStop(0.45, zone.palette.inner);
-      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      const outerRects: Array<readonly [number, number, number, number]> = [];
+      const innerRects: Array<readonly [number, number, number, number]> = [];
+      const coreRects: Array<readonly [number, number, number, number]> = [];
 
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
+      for (let col = -halfCols; col <= halfCols; col += 1) {
+        const normX = col / Math.max(1, halfCols);
+        // Колоколообразный силуэт пламени, сужающийся к краям плитки
+        const arch = Math.max(0, 1 - normX * normX * 0.88);
+        if (arch <= 0.08) continue;
+
+        const wave1 = Math.sin(flameTimer * 5.2 + col * 0.72 + seedOffset);
+        const wave2 = Math.cos(flameTimer * 8.1 - col * 1.15 + seedOffset * 0.6);
+        const wave3 = Math.sin(flameTimer * 3.4 + col * 0.35 - seedOffset);
+        const turbulence = 0.64 + 0.22 * wave1 + 0.14 * wave2 + 0.1 * wave3;
+
+        const colHeightPx = Math.max(0, Math.round((maxFlameHeight * arch * turbulence) / px) * px);
+        if (colHeightPx < px) continue;
+
+        const x = centerColX + col * px;
+        const rows = Math.floor(colHeightPx / px);
+
+        for (let r = 0; r < rows; r += 1) {
+          const hFrac = r / Math.max(1, rows);
+          // Лёгкий пиксельный изгиб языка пламени к вершине
+          const swayCells = Math.round(
+            Math.sin(flameTimer * 4.6 + r * 0.55 + seedOffset) * hFrac * 1.15,
+          );
+          const cellX = x + swayCells * px;
+          const cellY = baseLineY - (r + 1) * px;
+
+          if (hFrac < 0.32 && Math.abs(normX) < 0.68) {
+            coreRects.push([cellX, cellY, px, px]);
+          } else if (hFrac < 0.68 && Math.abs(normX) < 0.88) {
+            innerRects.push([cellX, cellY, px, px]);
+          } else {
+            outerRects.push([cellX, cellY, px, px]);
+          }
+        }
+      }
+
+      // Отрывающиеся пиксельные угольки/искры над пламенем
+      for (const particle of particles) {
+        if (particle.side !== side) continue;
+        const life = particle.progress;
+        if (life < 0.28 || life > 0.94) continue;
+        const sway = Math.sin(flameTimer * 3.8 + particle.swayPhase + life * 4) * particle.swayAmp;
+        const sparkX =
+          Math.round((zone.xCenter + particle.xOffset * zone.width * (1 - life * 0.4) + sway) / px) *
+          px;
+        const sparkY = Math.round((baseLineY - life * (maxFlameHeight + 10)) / px) * px;
+        if (life < 0.62) {
+          innerRects.push([sparkX, sparkY, px, px]);
+        } else {
+          outerRects.push([sparkX, sparkY, px, px]);
+        }
+      }
+
+      ctx.globalAlpha = Math.min(1, 0.72 + intensity * 0.28);
+      drawPixelBatch(zone.palette.outer, outerRects);
+      drawPixelBatch(zone.palette.inner, innerRects);
+      drawPixelBatch(zone.palette.core, coreRects);
     }
 
     ctx.restore();

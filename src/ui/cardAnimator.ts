@@ -1,4 +1,5 @@
 import type { AnimationSpeed } from '../engine/types';
+import { flipCardFrameToBack } from './cardFrame';
 import {
   createMoveableState,
   juiceUp,
@@ -125,6 +126,10 @@ interface ActiveGhostFlight {
   readonly cardId: string;
   readonly el: HTMLElement;
   readonly startDistance: number;
+  readonly shouldFlip: boolean;
+  readonly flipDurationSeconds: number;
+  flipElapsedSeconds: number;
+  flippedToBack: boolean;
   delaySeconds: number;
   readonly flightTempo: number;
   onLaunch?: () => void;
@@ -227,12 +232,21 @@ function applyLiveTransform(flight: ActiveLiveFlight): void {
 }
 
 /**
- * Применяет текущий трансформ и плавное затухание прозрачности к призраку в сбросе.
+ * Применяет текущий трансформ, 3D-переворот рубашкой вверх и плавное затухание прозрачности к призраку в сбросе.
  */
 function applyGhostTransform(flight: ActiveGhostFlight): void {
   const { t, vt } = flight.state;
   const deg = radToDeg(vt.r);
   const parts = [`translate3d(${vt.x.toFixed(2)}px, ${vt.y.toFixed(2)}px, 0)`];
+  if (flight.shouldFlip && flight.flipDurationSeconds > 0) {
+    const flipProgress = clamp(flight.flipElapsedSeconds / flight.flipDurationSeconds, 0, 1);
+    if (flipProgress < 1) {
+      const rotYDeg = flipProgress < 0.5 ? flipProgress * 180 : (1 - flipProgress) * -180;
+      if (Math.abs(rotYDeg) > 0.1) {
+        parts.push('perspective(640px)', `rotateY(${rotYDeg.toFixed(1)}deg)`);
+      }
+    }
+  }
   if (Math.abs(deg) > 0.001) {
     parts.push(`rotate(${deg.toFixed(2)}deg)`);
   }
@@ -244,7 +258,7 @@ function applyGhostTransform(flight: ActiveGhostFlight): void {
   if (flight.startDistance > 1) {
     const remaining = Math.hypot(t.x - vt.x, t.y - vt.y);
     const progress = clamp(1 - remaining / flight.startDistance, 0, 1);
-    const opacity = progress < 0.55 ? 1 : clamp(1 - (progress - 0.55) / 0.35, 0, 1);
+    const opacity = progress < 0.72 ? 1 : clamp(1 - (progress - 0.72) / 0.25, 0, 1);
     flight.el.style.opacity = opacity.toFixed(3);
   }
 }
@@ -325,9 +339,35 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
     const reduced = prefersReducedMotion();
     const nextFlights: ActiveFlight[] = [];
 
+    const stepFlightState = (flight: ActiveFlight, stepDt: number): void => {
+      if (flight.kind === 'ghost' && flight.shouldFlip && !reduced) {
+        flight.flipElapsedSeconds = Math.min(
+          flight.flipDurationSeconds,
+          flight.flipElapsedSeconds + stepDt,
+        );
+        const flipProgress =
+          flight.flipDurationSeconds > 0
+            ? flight.flipElapsedSeconds / flight.flipDurationSeconds
+            : 1;
+        if (flipProgress >= 0.5 && !flight.flippedToBack) {
+          flipCardFrameToBack(flight.el);
+          flight.flippedToBack = true;
+        }
+        // Сначала карта переворачивается рубашкой вверх на месте, а затем стремительно улетает направо
+        const moveDt = flipProgress < 0.55 ? stepDt * 0.12 : stepDt;
+        flight.state = stepMoveable(flight.state, moveDt, 1, reduced);
+        return;
+      }
+      // Пружины Moveable и juice_up всегда тикают по реальному времени REAL (C1)
+      flight.state = stepMoveable(flight.state, stepDt, 1, reduced);
+    };
+
     for (const flight of flights) {
       if (flight.kind === 'live' && !flight.el.isConnected) {
         clearLiveElementFlight(flight.el);
+        continue;
+      }
+      if (flight.kind === 'live' && flight.el.classList.contains('is-dragging')) {
         continue;
       }
 
@@ -349,8 +389,7 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
           flight.onLaunch();
           flight.onLaunch = undefined;
         }
-        // Пружины Moveable и juice_up всегда тикают по реальному времени REAL (C1)
-        flight.state = stepMoveable(flight.state, remDt, 1, reduced);
+        stepFlightState(flight, remDt);
       } else {
         if (flight.kind === 'live') {
           delete flight.el.dataset.flightHidden;
@@ -362,10 +401,15 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
           flight.onLaunch();
           flight.onLaunch = undefined;
         }
-        flight.state = stepMoveable(flight.state, dtSeconds, 1, reduced);
+        stepFlightState(flight, dtSeconds);
       }
 
-      if (flight.state.settled) {
+      const isGhostFlipDone =
+        flight.kind !== 'ghost' ||
+        !flight.shouldFlip ||
+        flight.flipElapsedSeconds >= flight.flipDurationSeconds;
+
+      if (flight.state.settled && isGhostFlipDone) {
         if (
           flight.kind === 'live' &&
           flight.state.zoom?.enabled &&
@@ -454,11 +498,15 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
 
     const currentSlots = container.querySelectorAll<HTMLElement>(TRACKED_CARD_SELECTOR);
     const presentIds = new Set<string>();
+    let handToPlayCount = 0;
     currentSlots.forEach((slotEl) => {
       const cardId = slotEl.dataset.cardId;
       const rawZone = slotEl.dataset.zone;
       if (cardId && (rawZone === 'hand' || rawZone === 'play')) {
         presentIds.add(cardId);
+        if (rawZone === 'play' && snapshot.cards.get(cardId)?.zone === 'hand') {
+          handToPlayCount += 1;
+        }
       }
     });
     let departingCount = 0;
@@ -522,9 +570,12 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
         if (prev.zone === 'hand' && rawZone === 'play') {
           shouldJuice = true;
           const order = playOrder++;
-          delaySeconds = (basePlayDelay + order * 0.1) / activeSpeed;
+          delaySeconds = (basePlayDelay + order * 0.08) / activeSpeed;
           flightTempo = 1;
           onLaunch = onCardDeal ? () => onCardDeal(order, 'play') : undefined;
+        } else if (prev.zone === 'hand' && rawZone === 'hand' && handToPlayCount > 0) {
+          // Оставшиеся карты в руке смыкаются к центру только после того, как сыгранные карты поднялись вверх на стол
+          delaySeconds = (basePlayDelay + handToPlayCount * 0.07 + 0.12) / activeSpeed;
         }
       } else if (
         rawZone === 'hand' &&
@@ -608,13 +659,14 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
         ghost.style.height = `${entry.rect.height.toFixed(2)}px`;
         flightLayer.append(ghost);
 
+        const shouldFlip = !entry.shattered;
         const targetTransform = entry.shattered
           ? { x: 0, y: 24, scale: 0.35, r: entry.fanAngleRad - 0.35 }
           : {
-              x: Math.max(220, effectiveLayerWidth - relLeft + 96),
-              y: entry.zone === 'play' ? -90 : -45,
-              scale: 0.7,
-              r: 0.25,
+              x: Math.max(260, effectiveLayerWidth - relLeft + 140),
+              y: 0,
+              scale: 1,
+              r: 0.06,
             };
 
         let ghostState = createMoveableState({
@@ -631,6 +683,10 @@ export function createCardAnimator(options: CardAnimatorOptions = {}): CardAnima
           cardId: entry.cardId,
           el: ghost,
           startDistance: Math.hypot(targetTransform.x, targetTransform.y),
+          shouldFlip,
+          flipDurationSeconds: shouldFlip ? 0.15 / activeSpeed : 0,
+          flipElapsedSeconds: 0,
+          flippedToBack: false,
           delaySeconds: (baseDepartDelay + order * 0.1) / activeSpeed,
           flightTempo: 1,
           onLaunch: onCardDepart ? () => onCardDepart(order, entry.zone) : undefined,

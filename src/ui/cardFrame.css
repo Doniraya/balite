@@ -826,12 +826,52 @@
   }
 }
 
+/* 3D-переворот карты при применении Свитков Кузницы и Карт Пандоры (Card:flip) */
+.card-frame.is-consumable-flipping {
+  animation: card-frame-consumable-flip calc(340ms / var(--anim-speed, 1))
+    cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--flip-index, 0) * 90ms / var(--anim-speed, 1));
+}
+
+@keyframes card-frame-consumable-flip {
+  0% {
+    transform: perspective(720px) rotateY(0deg) scale(1);
+  }
+  45% {
+    transform: perspective(720px) rotateY(90deg) scale(1.09);
+    filter: brightness(1.38) drop-shadow(0 0 12px rgba(245, 185, 66, 0.8));
+  }
+  72% {
+    transform: perspective(720px) rotateY(-12deg) scale(1.04);
+  }
+  100% {
+    transform: perspective(720px) rotateY(0deg) scale(1);
+  }
+}
+
 /* Лёгкое затемнение интерактивных карт при наведении на ПК */
 @media (hover: hover) and (pointer: fine) {
   .card-frame.is-interactive:not(:disabled):hover {
     filter: brightness(0.86);
     cursor: pointer;
   }
+}
+
+[data-reduced-motion='true'] .card-frame {
+  transition: none;
+  transform: none;
+}
+
+[data-reduced-motion='true'] .card-frame.is-selected,
+[data-reduced-motion='true'] .card-frame.is-selected.is-interactive:active:not(.is-disabled) {
+  transform: translateY(-24px);
+}
+
+[data-reduced-motion='true'] .card-frame__edition-sheen,
+[data-reduced-motion='true'] .card-frame.is-triggering,
+[data-reduced-motion='true'] .card-frame.is-selected.is-triggering,
+[data-reduced-motion='true'] .card-frame.is-consumable-flipping {
+  animation: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -847,7 +887,8 @@
 
   .card-frame__edition-sheen,
   .card-frame.is-triggering,
-  .card-frame.is-selected.is-triggering {
+  .card-frame.is-selected.is-triggering,
+  .card-frame.is-consumable-flipping {
     animation: none !important;
   }
 }

@@ -35,8 +35,9 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
   box-sizing: border-box;
   overflow: hidden;
-  animation: modal-sheet-slide-up calc(360ms / var(--anim-speed, 1))
-    cubic-bezier(0.2, 1.18, 0.32, 1) both;
+  will-change: transform, opacity;
+  animation: modal-sheet-slide-up calc(260ms / var(--anim-speed, 1))
+    cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes modal-backdrop-fade {
@@ -50,12 +51,27 @@
 
 @keyframes modal-sheet-slide-up {
   0% {
-    transform: translate3d(0, 112vh, 0);
-  }
-  76% {
-    transform: translate3d(0, -10px, 0);
+    opacity: 0;
+    transform: translate3d(0, 44px, 0) scale(0.97);
   }
   100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.modal-body.is-tab-switching {
+  animation: modal-tab-fade-in calc(180ms / var(--anim-speed, 1))
+    cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes modal-tab-fade-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  100% {
+    opacity: 1;
     transform: translate3d(0, 0, 0);
   }
 }
@@ -1016,7 +1032,7 @@
 
 /* Масштаб модальных окон под широкий ПК-экран */
 @media (min-width: 960px) and (orientation: landscape) {
-  .modal-sheet:not(.modal-sheet--deck) {
+  .modal-sheet:not(.modal-sheet--deck):not(.modal-sheet--run-info) {
     width: min(100%, 760px);
     padding: 20px 24px;
     gap: 14px;
@@ -1259,19 +1275,23 @@
 .run-info-formula {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .run-info-chip-pill {
-  background: #0077ff;
+  border: 0 solid transparent;
+  border-image: url('../assets/ui/hud-pill-chips.webp') 22 26 22 26 fill / 5px 7px / 0 stretch;
+  background: transparent;
   color: #ffffff;
   font-weight: 900;
   font-size: 15px;
-  border-radius: 12px;
-  padding: 3px 12px;
-  border: 1.5px solid #0050b3;
-  box-shadow: 0 2px 0 #00408f;
-  min-width: 34px;
+  border-radius: 0;
+  padding: 5px 14px;
+  box-shadow: none;
+  filter: drop-shadow(0 2px 4px rgba(8, 20, 48, 0.65));
+  text-shadow: 0 2px 2px rgba(0, 0, 0, 0.85);
+  image-rendering: pixelated;
+  min-width: 44px;
   text-align: center;
   display: inline-flex;
   align-items: center;
@@ -1279,23 +1299,27 @@
 }
 
 .run-info-mult-times {
-  color: #ffffff;
+  color: #f5b942;
   font-weight: 900;
   font-size: 14px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
   padding: 0 1px;
 }
 
 .run-info-mult-pill {
-  background: #e84e38;
+  border: 0 solid transparent;
+  border-image: url('../assets/ui/hud-pill-mult.webp') 22 26 22 26 fill / 5px 7px / 0 stretch;
+  background: transparent;
   color: #ffffff;
   font-weight: 900;
   font-size: 15px;
-  border-radius: 12px;
-  padding: 3px 12px;
-  border: 1.5px solid #a82e1d;
-  box-shadow: 0 2px 0 #7e2215;
-  min-width: 24px;
+  border-radius: 0;
+  padding: 5px 14px;
+  box-shadow: none;
+  filter: drop-shadow(0 2px 4px rgba(42, 6, 10, 0.65));
+  text-shadow: 0 2px 2px rgba(0, 0, 0, 0.85);
+  image-rendering: pixelated;
+  min-width: 38px;
   text-align: center;
   display: inline-flex;
   align-items: center;
@@ -1845,9 +1869,189 @@
   line-height: 1.2;
 }
 
+/* Укрупнённые окна «Состав колоды» и «Детали партии» на широких ПК-экранах */
+@media (min-width: 960px) and (orientation: landscape) {
+  .modal-sheet--deck {
+    width: min(96vw, 1380px);
+    max-height: min(94dvh, 1020px);
+    padding: 20px 26px;
+    gap: 16px;
+  }
+
+  .deck-tab-btn {
+    min-width: 210px;
+    min-height: 50px;
+    font-size: 16px;
+  }
+
+  .deck-modal-layout {
+    grid-template-columns: minmax(275px, 330px) minmax(0, 1fr);
+    gap: 18px;
+  }
+
+  .deck-modal-sidebar {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .deck-info-card__name {
+    font-size: 18px;
+  }
+
+  .deck-info-card__desc {
+    font-size: 14.5px;
+    padding: 12px 10px;
+  }
+
+  .deck-base-cards__title {
+    font-size: 15px;
+  }
+
+  .deck-category-cell__badge {
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
+  }
+
+  .deck-category-cell__count {
+    font-size: 17px;
+  }
+
+  .deck-suit-chip {
+    min-height: 50px;
+    font-size: 17px;
+  }
+
+  .deck-rank-row {
+    grid-template-columns: 28px auto;
+  }
+
+  .deck-rank-row__badge {
+    width: 28px;
+    height: 25px;
+    font-size: 13.5px;
+  }
+
+  .deck-rank-row__count {
+    font-size: 15.5px;
+  }
+
+  .deck-modal-rows {
+    gap: 12px;
+    padding: 10px 14px;
+  }
+
+  .deck-fan-row {
+    --card-compact-width: clamp(68px, 5.5vw, 84px);
+  }
+
+  .deck-fan-row .card-frame + .card-frame {
+    margin-left: calc(-16px - var(--deck-fan-extra, 0px));
+  }
+
+  .modal-sheet--run-info {
+    width: min(94vw, 1080px);
+    max-height: min(94dvh, 980px);
+    padding: 22px 28px;
+    gap: 16px;
+  }
+
+  .run-info-tab {
+    min-width: 175px;
+    min-height: 54px;
+    font-size: 18px;
+    padding: 12px 26px;
+  }
+
+  .run-info-hand-row {
+    grid-template-columns: 78px 1fr auto 74px;
+    min-height: 54px;
+    padding: 10px 18px;
+    gap: 16px;
+  }
+
+  .run-info-level-badge {
+    font-size: 15px;
+    padding: 4px 11px;
+  }
+
+  .run-info-hand-name {
+    font-size: 18px;
+  }
+
+  .run-info-chip-pill,
+  .run-info-mult-pill {
+    font-size: 18px;
+    padding: 6px 18px;
+    min-width: 56px;
+    border-image-width: 6px 8px;
+  }
+
+  .run-info-played-count {
+    font-size: 17px;
+  }
+
+  .hand-preview-popup {
+    width: min(94%, 620px);
+    padding: 16px 22px 18px;
+  }
+
+  .hand-preview-popup__desc {
+    font-size: 16.5px;
+  }
+
+  .hand-preview-popup__cards {
+    height: 90px;
+  }
+
+  .run-info-mini-card {
+    width: 54px;
+    height: 76px;
+  }
+
+  .run-info-blind-card {
+    min-height: 390px;
+    padding: 16px 14px 18px;
+    gap: 10px;
+  }
+
+  .run-info-blind-name-pill {
+    font-size: 16px;
+    padding: 6px 10px;
+  }
+
+  .run-info-blind-token {
+    width: 96px;
+    height: 96px;
+  }
+
+  .run-info-blind-token .blind-card__emblem,
+  .run-info-blind-card .run-info-blind-emblem {
+    width: 92px !important;
+    height: 92px !important;
+    min-width: 92px !important;
+    min-height: 92px !important;
+    max-width: 92px !important;
+    max-height: 92px !important;
+  }
+
+  .run-info-blind-boss-desc {
+    font-size: 14px;
+  }
+
+  .run-info-blind-target-value {
+    font-size: 22px;
+  }
+
+  .run-info-blind-reward {
+    font-size: 16px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .modal-backdrop,
-  .modal-sheet {
+  .modal-sheet,
+  .modal-body.is-tab-switching {
     animation: none;
   }
 }

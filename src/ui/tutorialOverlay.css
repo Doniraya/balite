@@ -679,3 +679,57 @@
   }
 }
 
+/* 10. Посимвольное появление реплик Миры (DynaText pop_in) */
+.tut-word {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.tut-char {
+  display: inline-block;
+}
+
+.tut-text.is-revealing .tut-char {
+  opacity: 0;
+  transform: translateY(3px) scale(0.76);
+  animation: tut-char-pop 140ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: min(1200ms, calc(var(--char-i, 0) * 16ms));
+}
+
+.tut-text.is-reveal-complete .tut-char {
+  opacity: 1;
+  transform: none;
+  animation: none;
+}
+
+@keyframes tut-char-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(3px) scale(0.76);
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(-1px) scale(1.06);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+[data-reduced-motion='true'] .tut-text.is-revealing .tut-char,
+[data-reduced-motion='true'] .tut-spotlight,
+[data-reduced-motion='true'] .tut-arrow {
+  opacity: 1;
+  transform: none;
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tut-text.is-revealing .tut-char {
+    opacity: 1;
+    transform: none;
+    animation: none;
+  }
+}
+

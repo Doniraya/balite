@@ -1098,6 +1098,10 @@ export interface GameSettings {
   readonly suitPalette?: SuitPalette;
   /** Выбранное оформление рубашки колоды (default | b_red | b_blue | b_yellow | b_black). */
   readonly cardBack?: CardBackStyle;
+  /** Включена ли лёгкая тряска сцены при ударах и событиях (по умолчанию true). */
+  readonly screenShake?: boolean;
+  /** Включён ли ручной режим уменьшения анимаций (по умолчанию false). */
+  readonly reducedMotion?: boolean;
 }
 
 /**

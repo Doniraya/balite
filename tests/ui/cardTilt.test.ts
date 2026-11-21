@@ -337,4 +337,41 @@ describe('initCardTiltController (Story 2.2: 3D-наклон и фазовое �
 
     controller.destroy();
   });
+
+  it('автоматически подхватывает новые карты через MutationObserver при переключении вкладок (replaceChildren без ручного refresh)', async () => {
+    const container = document.createElement('div');
+    const tabHost = document.createElement('div');
+    const slotInitial = createCardElement('deck_rem_1', 80, 120, 64, 90);
+    tabHost.appendChild(slotInitial);
+    container.appendChild(tabHost);
+    document.body.appendChild(container);
+
+    const raf = createManualRafDriver();
+    const controller = initCardTiltController({
+      container,
+      reducedMotion: false,
+      now: raf.now,
+      requestFrame: raf.requestFrame,
+      cancelFrame: raf.cancelFrame,
+    });
+
+    raf.stepFrames(5, 16);
+    const cardInitial = slotInitial.querySelector('.card-frame') as HTMLElement;
+    expect(cardInitial.style.getPropertyValue('--sway-r')).not.toBe('');
+
+    // Имитируем переключение вкладки «Оставшаяся колода» -> «Полная колода» без вызова controller.refresh()
+    const slotFull = createCardElement('deck_full_1', 140, 120, 64, 90);
+    const cardFull = slotFull.querySelector('.card-frame') as HTMLElement;
+    tabHost.replaceChildren(slotFull);
+
+    // Даём отработать MutationObserver и микротаску scheduleRefresh
+    await Promise.resolve();
+    await Promise.resolve();
+
+    raf.stepFrames(8, 16);
+    expect(cardFull.style.getPropertyValue('--sway-r')).not.toBe('');
+    expect(cardFull.style.getPropertyValue('--sway-y')).not.toBe('');
+
+    controller.destroy();
+  });
 });

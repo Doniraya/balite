@@ -225,6 +225,8 @@ export const RU_DICTIONARY: LocaleDictionary = {
       crtOff: 'Выкл',
       crtLight: 'Лёгкий',
       crtOriginal: 'Оригинал',
+      screenShake: 'Тряска экрана',
+      reducedMotion: 'Уменьшить анимации',
       resetTutorial: 'Пройти обучение заново',
       suitPalette: 'Палитра мастей',
       suitPaletteStandard: 'Классическая',

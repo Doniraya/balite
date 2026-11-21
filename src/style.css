@@ -174,6 +174,16 @@ body {
     cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.stage-screen-host.is-ui-jiggle--medium {
+  animation: stage-ui-jiggle-medium calc(250ms / var(--anim-speed, 1))
+    cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.stage-screen-host.is-ui-jiggle--heavy {
+  animation: stage-ui-jiggle-heavy calc(320ms / var(--anim-speed, 1))
+    cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 @keyframes stage-ui-jiggle {
   0% {
     transform: translate3d(0, 0, 0) rotate(0deg);
@@ -186,6 +196,45 @@ body {
   }
   82% {
     transform: translate3d(-0.6px, 0.5px, 0) rotate(-0.05deg);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+}
+
+@keyframes stage-ui-jiggle-medium {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  20% {
+    transform: translate3d(-3px, 2px, 0) rotate(-0.28deg);
+  }
+  45% {
+    transform: translate3d(2.8px, -1.8px, 0) rotate(0.24deg);
+  }
+  72% {
+    transform: translate3d(-1.4px, 1px, 0) rotate(-0.12deg);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+}
+
+@keyframes stage-ui-jiggle-heavy {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  16% {
+    transform: translate3d(-5px, 3.2px, 0) rotate(-0.46deg);
+  }
+  34% {
+    transform: translate3d(4.8px, -3px, 0) rotate(0.4deg);
+  }
+  54% {
+    transform: translate3d(-3px, 2px, 0) rotate(-0.24deg);
+  }
+  76% {
+    transform: translate3d(1.6px, -1px, 0) rotate(0.12deg);
   }
   100% {
     transform: translate3d(0, 0, 0) rotate(0deg);
@@ -207,56 +256,69 @@ body {
   position: absolute;
   transform: translate(-50%, -50%);
   z-index: 26;
-  padding: 5px 11px;
-  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 58px;
+  padding: 8px 16px;
+  border-radius: 0;
   font-family: 'Pixellari', system-ui, -apple-system, sans-serif;
-  font-size: 15px;
+  font-size: clamp(18px, 4.2vw, 22px);
   font-weight: 900;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.03em;
+  text-align: center;
   white-space: nowrap;
   color: #ffffff;
-  background: rgba(28, 16, 10, 0.94);
-  border: 2px solid rgba(255, 232, 179, 0.72);
-  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.82);
-  box-shadow:
-    0 4px 0 rgba(0, 0, 0, 0.52),
-    0 8px 18px rgba(0, 0, 0, 0.48);
+  border: 0 solid transparent;
+  border-image: url('./assets/ui/hud-plaque-dark.webp') 22 26 22 26 fill / 7px 9px / 0 stretch;
+  background: transparent;
+  image-rendering: pixelated;
+  text-shadow: 0 2px 2px rgba(0, 0, 0, 0.9);
+  filter: drop-shadow(0 5px 12px rgba(0, 0, 0, 0.65));
   pointer-events: none;
   animation: trace-popup-rise var(--trace-popup-duration, 760ms) cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .trace-popup--chips {
-  background: rgba(30, 88, 198, 0.96);
-  border-color: #93c5fd;
+  border-image: url('./assets/ui/hud-pill-chips.webp') 22 26 22 26 fill / 7px 9px / 0 stretch;
+  filter: drop-shadow(0 5px 12px rgba(8, 20, 48, 0.72));
 }
 
 .trace-popup--mult {
-  background: rgba(196, 52, 46, 0.96);
-  border-color: #fca5a5;
+  border-image: url('./assets/ui/hud-pill-mult.webp') 22 26 22 26 fill / 7px 9px / 0 stretch;
+  filter: drop-shadow(0 5px 12px rgba(42, 6, 10, 0.72));
 }
 
 .trace-popup--xmult {
-  background: linear-gradient(135deg, #c026d3 0%, #db2777 100%);
-  border-color: #f9a8d4;
+  border-image: url('./assets/ui/hud-pill-mult.webp') 22 26 22 26 fill / 7px 9px / 0 stretch;
+  filter: hue-rotate(-32deg) saturate(1.22) drop-shadow(0 5px 12px rgba(88, 12, 102, 0.75));
 }
 
 .trace-popup--dollars {
-  background: rgba(180, 122, 16, 0.96);
-  border-color: #fde68a;
-  color: #fffbeb;
+  border-image: url('./assets/ui/hud-plaque-dark.webp') 22 26 22 26 fill / 7px 9px / 0 stretch;
+  color: #fde047;
 }
 
 .trace-popup--shatter,
 .trace-popup--debuff,
 .trace-popup--boss {
-  background: rgba(138, 28, 36, 0.96);
-  border-color: #fda4af;
+  border-image: url('./assets/ui/hud-pill-mult.webp') 22 26 22 26 fill / 7px 9px / 0 stretch;
+  color: #ffe4e6;
 }
 
 .trace-popup--level,
 .trace-popup--tag {
-  background: rgba(28, 128, 86, 0.96);
-  border-color: #86efac;
+  border-image: url('./assets/ui/hud-plaque-dark.webp') 22 26 22 26 fill / 7px 9px / 0 stretch;
+  color: #86efac;
+}
+
+@media (min-width: 960px) and (orientation: landscape) {
+  .trace-popup {
+    min-width: 74px;
+    padding: 10px 22px;
+    font-size: clamp(22px, 1.85vw, 27px);
+    border-image-width: 8px 11px;
+  }
 }
 
 @keyframes trace-popup-rise {
@@ -427,6 +489,14 @@ body {
   }
 }
 
+[data-reduced-motion='true'] .crt-overlay::after,
+[data-reduced-motion='true'] .boot-spinner,
+[data-reduced-motion='true'] .stage-screen-host.is-ui-jiggle,
+[data-reduced-motion='true'] .stage-screen-host.is-ui-jiggle--medium,
+[data-reduced-motion='true'] .stage-screen-host.is-ui-jiggle--heavy {
+  animation: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .crt-overlay::after {
     animation: none;
@@ -434,7 +504,9 @@ body {
   .boot-spinner {
     animation: none;
   }
-  .stage-screen-host.is-ui-jiggle {
+  .stage-screen-host.is-ui-jiggle,
+  .stage-screen-host.is-ui-jiggle--medium,
+  .stage-screen-host.is-ui-jiggle--heavy {
     animation: none;
   }
 }

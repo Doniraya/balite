@@ -482,62 +482,69 @@ function appendInnerFrame(svg: SVGSVGElement, stroke: string, opacity = 0.25): v
 }
 
 /**
+ * Создаёт SVG-иллюстрацию рубашки игральной карты.
+ */
+function createPlayingCardBackSvg(): SVGSVGElement {
+  const svg = createCardArtSvg('back');
+  appendInnerFrame(svg, 'var(--card-back-accent, #f5b942)', 0.65);
+  svg.appendChild(
+    createSvgEl('rect', {
+      x: 16,
+      y: 16,
+      width: 88,
+      height: 136,
+      rx: 5,
+      fill: 'none',
+      stroke: 'var(--card-back-secondary, #93c5fd)',
+      'stroke-width': 0.9,
+      'stroke-dasharray': '3 3',
+      opacity: 0.55,
+    }),
+  );
+  svg.appendChild(
+    createSvgEl('circle', {
+      cx: 60,
+      cy: 84,
+      r: 28,
+      fill: 'none',
+      stroke: 'var(--card-back-accent, #f5b942)',
+      'stroke-width': 1.5,
+    }),
+  );
+  svg.appendChild(
+    createSvgEl('circle', {
+      cx: 60,
+      cy: 84,
+      r: 18,
+      fill: 'rgba(245, 185, 66, 0.14)',
+      stroke: 'var(--card-back-secondary, #93c5fd)',
+      'stroke-width': 1,
+    }),
+  );
+  // 8-лучевая путеводная звезда алхимика
+  svg.appendChild(
+    createSvgEl('path', {
+      d: 'M 60 50 L 65 79 L 94 84 L 65 89 L 60 118 L 55 89 L 26 84 L 55 79 Z',
+      fill: 'var(--card-back-accent, #f5b942)',
+      opacity: 0.9,
+    }),
+  );
+  svg.appendChild(
+    createSvgEl('path', {
+      d: 'M 42 66 L 57 81 L 78 66 L 63 84 L 78 102 L 57 87 L 42 102 L 57 84 Z',
+      fill: 'var(--card-back-secondary, #93c5fd)',
+      opacity: 0.65,
+    }),
+  );
+  return svg;
+}
+
+/**
  * Создаёт SVG-иллюстрацию для игральной карты: номерной 2..10, придворной 11..14, Каменной или рубашки.
  */
 function createPlayingCardSvg(card: PlayingCard, isFaceDown: boolean): SVGSVGElement {
   if (isFaceDown) {
-    const svg = createCardArtSvg('back');
-    appendInnerFrame(svg, 'var(--card-back-accent, #f5b942)', 0.65);
-    svg.appendChild(
-      createSvgEl('rect', {
-        x: 16,
-        y: 16,
-        width: 88,
-        height: 136,
-        rx: 5,
-        fill: 'none',
-        stroke: 'var(--card-back-secondary, #93c5fd)',
-        'stroke-width': 0.9,
-        'stroke-dasharray': '3 3',
-        opacity: 0.55,
-      }),
-    );
-    svg.appendChild(
-      createSvgEl('circle', {
-        cx: 60,
-        cy: 84,
-        r: 28,
-        fill: 'none',
-        stroke: 'var(--card-back-accent, #f5b942)',
-        'stroke-width': 1.5,
-      }),
-    );
-    svg.appendChild(
-      createSvgEl('circle', {
-        cx: 60,
-        cy: 84,
-        r: 18,
-        fill: 'rgba(245, 185, 66, 0.14)',
-        stroke: 'var(--card-back-secondary, #93c5fd)',
-        'stroke-width': 1,
-      }),
-    );
-    // 8-лучевая путеводная звезда алхимика
-    svg.appendChild(
-      createSvgEl('path', {
-        d: 'M 60 50 L 65 79 L 94 84 L 65 89 L 60 118 L 55 89 L 26 84 L 55 79 Z',
-        fill: 'var(--card-back-accent, #f5b942)',
-        opacity: 0.9,
-      }),
-    );
-    svg.appendChild(
-      createSvgEl('path', {
-        d: 'M 42 66 L 57 81 L 78 66 L 63 84 L 78 102 L 57 87 L 42 102 L 57 84 Z',
-        fill: 'var(--card-back-secondary, #93c5fd)',
-        opacity: 0.65,
-      }),
-    );
-    return svg;
+    return createPlayingCardBackSvg();
   }
 
   if (card.enhancement === 'stone') {
@@ -834,6 +841,44 @@ export function renderPlayingCardFrame(options: PlayingCardFrameOptions): HTMLEl
   }
 
   return root;
+}
+
+/**
+ * Переключает DOM-элемент игральной карты (или содержащий её слот-призрак) в вид рубашки
+ * ровно в момент прохождения угла 90° при 3D-перевороте сброса.
+ */
+export function flipCardFrameToBack(root: HTMLElement): void {
+  const frameEl = root.classList.contains('card-frame')
+    ? root
+    : root.querySelector<HTMLElement>('.card-frame');
+  if (!frameEl || frameEl.classList.contains('is-face-down')) {
+    return;
+  }
+
+  frameEl.classList.add('is-face-down');
+  frameEl.classList.remove('is-forced', 'is-selected', 'is-triggering');
+  frameEl.dataset.faceDown = 'true';
+
+  const enhLayer = frameEl.querySelector<HTMLElement>('.card-frame__layer-enhancement');
+  if (enhLayer) {
+    enhLayer.className =
+      'card-frame__layer card-frame__layer-enhancement card-frame__enhancement--back';
+  }
+
+  const artLayer = frameEl.querySelector<HTMLElement>('.card-frame__layer-art');
+  if (artLayer) {
+    artLayer.replaceChildren(createPlayingCardBackSvg());
+  }
+
+  const chromeLayer = frameEl.querySelector<HTMLElement>('.card-frame__layer-chrome');
+  if (chromeLayer) {
+    chromeLayer.replaceChildren();
+  }
+
+  const fxLayer = frameEl.querySelector<HTMLElement>('.card-frame__layer-fx');
+  if (fxLayer) {
+    fxLayer.replaceChildren();
+  }
 }
 
 /**

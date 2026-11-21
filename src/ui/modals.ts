@@ -1543,6 +1543,32 @@ function renderSettingsControlsBody(body: HTMLElement, options: SettingsModalOpt
     }),
   );
 
+  // Переключатель тряски сцены Вкл / Выкл
+  body.appendChild(
+    createSegmentedSettingGroup<'on' | 'off'>({
+      label: translator.t('ui.settings.screenShake'),
+      items: [
+        { value: 'on', text: translator.t('ui.settings.soundOn'), dataAttr: 'data-screen-shake' },
+        { value: 'off', text: translator.t('ui.settings.soundOff'), dataAttr: 'data-screen-shake' },
+      ],
+      currentValue: settings.screenShake !== false ? 'on' : 'off',
+      onSelect: (val) => onChangeSettings({ screenShake: val === 'on' }),
+    }),
+  );
+
+  // Переключатель ручного уменьшения анимаций Вкл / Выкл
+  body.appendChild(
+    createSegmentedSettingGroup<'on' | 'off'>({
+      label: translator.t('ui.settings.reducedMotion'),
+      items: [
+        { value: 'off', text: translator.t('ui.settings.soundOff'), dataAttr: 'data-reduced-motion' },
+        { value: 'on', text: translator.t('ui.settings.soundOn'), dataAttr: 'data-reduced-motion' },
+      ],
+      currentValue: settings.reducedMotion === true ? 'on' : 'off',
+      onSelect: (val) => onChangeSettings({ reducedMotion: val === 'on' }),
+    }),
+  );
+
   // Переключение языка ru / en
   body.appendChild(
     createSegmentedSettingGroup<I18nLang>({
@@ -1794,10 +1820,9 @@ export function renderSettingsModal(options: SettingsModalOptions): HTMLElement 
     currentTab = nextTab;
     onTabChange?.(nextTab);
     renderActiveTab();
-    // Перезапускаем пружинный выезд окна снизу вверх при смене подменю, как в Balatro
-    sheet.style.animation = 'none';
-    void sheet.offsetWidth;
-    sheet.style.animation = '';
+    body.classList.remove('is-tab-switching');
+    void body.offsetWidth;
+    body.classList.add('is-tab-switching');
   };
 
   const renderActiveTab = (): void => {

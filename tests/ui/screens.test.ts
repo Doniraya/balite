@@ -19,6 +19,7 @@ import {
   type ScreenActionHandlers,
   type ScreenViewModel,
   getBlindSpriteUrl,
+  isRelicReadyPulse,
   renderRunView,
 } from '../../src/ui/screens';
 import { getTooltipData } from '../../src/ui/tooltip';
@@ -2225,16 +2226,27 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       const attachDynamicRect = (slotEl: HTMLElement) => {
         slotEl.getBoundingClientRect = () => {
           const idx = Array.from(fanEl.children).indexOf(slotEl);
-          const left = Math.max(0, idx) * 80;
+          const baseLeft = Math.max(0, idx) * 80;
+          const tf = slotEl.style.transform;
+          let tx = 0;
+          let sc = 1;
+          if (tf && tf !== 'none') {
+            const trMatch = tf.match(/translate3d\(([-\d.]+)px/);
+            if (trMatch) tx = Number.parseFloat(trMatch[1]!);
+            const scMatch = tf.match(/scale\(([-\d.]+)\)/);
+            if (scMatch) sc = Number.parseFloat(scMatch[1]!);
+          }
+          const width = 60 * sc;
+          const left = baseLeft + tx - (width - 60) / 2;
           return {
             x: left,
             y: 500,
             left,
             top: 500,
-            width: 60,
-            height: 90,
-            right: left + 60,
-            bottom: 590,
+            width,
+            height: 90 * sc,
+            right: left + width,
+            bottom: 500 + 90 * sc,
             toJSON: () => ({}),
           } as DOMRect;
         };
@@ -2247,10 +2259,17 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
         return ev;
       };
 
-      // 1. Тянем первую карту (center=30) вправо к третьему слоту (center=190): DOM меняется прямо на pointermove
+      // 1. Тянем первую карту (center=30) пошагово вправо через второй слот к третьему (center=190):
+      // масштаб карты не должен раздуваться выше 1.15, а порядок слотов не должен дёргаться назад
       const firstCard = slots[0]!;
       firstCard.dispatchEvent(makePtr('pointerdown', 30, 540));
-      window.dispatchEvent(makePtr('pointermove', 200, 540));
+      for (const x of [50, 95, 115, 145, 185, 195, 200]) {
+        window.dispatchEvent(makePtr('pointermove', x, 540));
+        const scMatch = firstCard.style.transform.match(/scale\(([-\d.]+)\)/);
+        if (scMatch) {
+          expect(Number.parseFloat(scMatch[1]!)).toBeLessThanOrEqual(1.15);
+        }
+      }
 
       const orderDuringDrag = Array.from(fanEl.children).map(
         (node) => (node as HTMLElement).dataset.cardId,
@@ -2296,6 +2315,63 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       );
       expect(orderAfterCancel).toEqual(fourIds);
       expect(handlers.onCommand).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Story 9.1: пульсация готовых Навыков и дрожание последней руки', () => {
+    it('помечает готовые условные Навыки data-ready-pulse="true" и счётчик последней руки классом is-hud-quiver', () => {
+      const base = createPlayingState('READY_PULSE_TEST');
+      const blackCards = base.deck.filter((c) => c.suit === 'spades' || c.suit === 'clubs').slice(0, 4);
+      const heartCard = base.deck.find((c) => c.suit === 'hearts')!;
+      const acrobat = createRelicInstance('j_acrobat', 'r_acrobat');
+      const mystic = createRelicInstance('j_mystic_summit', 'r_mystic');
+      const vagabond = createRelicInstance('j_vagabond', 'r_vagabond');
+      const blackboard = createRelicInstance('j_blackboard', 'r_blackboard');
+      const plain = createRelicInstance('j_joker', 'r_plain');
+
+      const readyState: RunState = {
+        ...base,
+        phase: 'playing',
+        handsLeft: 1,
+        discardsLeft: 0,
+        dollars: 4,
+        handIds: [...blackCards.map((c) => c.id), heartCard.id],
+        relics: [acrobat, mystic, vagabond, blackboard, plain],
+      };
+
+      // Если красная карта выбрана (уйдёт из руки), в руке останутся только Пики/Трефы -> Ночная засада готова!
+      expect(isRelicReadyPulse(acrobat, 0, readyState, [heartCard.id])).toBe(true);
+      expect(isRelicReadyPulse(mystic, 1, readyState, [heartCard.id])).toBe(true);
+      expect(isRelicReadyPulse(vagabond, 2, readyState, [heartCard.id])).toBe(true);
+      expect(isRelicReadyPulse(blackboard, 3, readyState, [heartCard.id])).toBe(true);
+      expect(isRelicReadyPulse(blackboard, 3, readyState, [])).toBe(false);
+      expect(isRelicReadyPulse(plain, 4, readyState, [heartCard.id])).toBe(false);
+
+      const handlers = createMockHandlers();
+      renderRunView(
+        root,
+        createViewModel(readyState, { selectedCardIds: [heartCard.id] }),
+        handlers,
+      );
+
+      expect(
+        root.querySelector('[data-relic-uid="r_acrobat"]')?.getAttribute('data-ready-pulse'),
+      ).toBe('true');
+      expect(
+        root.querySelector('[data-relic-uid="r_mystic"]')?.getAttribute('data-ready-pulse'),
+      ).toBe('true');
+      expect(
+        root.querySelector('[data-relic-uid="r_vagabond"]')?.getAttribute('data-ready-pulse'),
+      ).toBe('true');
+      expect(
+        root.querySelector('[data-relic-uid="r_blackboard"]')?.getAttribute('data-ready-pulse'),
+      ).toBe('true');
+      expect(
+        root.querySelector('[data-relic-uid="r_plain"]')?.getAttribute('data-ready-pulse'),
+      ).toBeNull();
+
+      const lastHandStat = root.querySelector<HTMLElement>('.hud-stat[data-last-hand="true"]');
+      expect(lastHandStat?.classList.contains('is-hud-quiver')).toBe(true);
     });
   });
 });

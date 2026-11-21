@@ -129,6 +129,7 @@ describe('createScoreFlame', () => {
     const fillRect = vi.fn();
     const clearRect = vi.fn();
     const beginPath = vi.fn();
+    const rect = vi.fn();
     const arc = vi.fn();
     const fill = vi.fn();
     const createRadialGradient = vi.fn(() => ({
@@ -139,6 +140,7 @@ describe('createScoreFlame', () => {
       clearRect,
       fillRect,
       beginPath,
+      rect,
       arc,
       fill,
       createRadialGradient,
@@ -149,6 +151,7 @@ describe('createScoreFlame', () => {
       moveTo: vi.fn(),
       quadraticCurveTo: vi.fn(),
       closePath: vi.fn(),
+      imageSmoothingEnabled: true,
       globalCompositeOperation: 'source-over',
       globalAlpha: 1,
       fillStyle: '#000',
@@ -168,13 +171,18 @@ describe('createScoreFlame', () => {
       cancelFrame: raf.cancelFrame,
     });
 
+    const canvasEl = controller.element.querySelector('canvas')!;
+    expect(canvasEl.style.imageRendering).toBe('pixelated');
+
     controller.resize();
     controller.setIntensity(0.9);
     raf.flushFrame(16);
     raf.flushFrame(16);
 
     expect(clearRect).toHaveBeenCalled();
+    expect(rect).toHaveBeenCalled();
     expect(fill).toHaveBeenCalled();
+    expect(fakeCtx.imageSmoothingEnabled).toBe(false);
     controller.destroy();
   });
 

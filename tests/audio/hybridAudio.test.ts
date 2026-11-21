@@ -1,6 +1,10 @@
 // Тесты реестра сэмплов и гибридного аудиодвижка Balite (Story 5.1).
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createHybridBaliteAudio } from '../../src/audio/hybridAudio';
+import {
+  BGM_BASE_MIX_GAIN,
+  SAMPLE_MIX_GAINS,
+  createHybridBaliteAudio,
+} from '../../src/audio/hybridAudio';
 import {
   AUDIO_SAMPLE_KEYS,
   AUDIO_SAMPLE_REGISTRY,
@@ -352,6 +356,93 @@ describe('sampleRegistry и createHybridBaliteAudio', () => {
       );
       audio.playFlameThreshold();
       audio.playDialogue();
+    }).not.toThrow();
+
+    audio.dispose();
+  });
+
+  it('балансирует микс сэмплов (тихий card_hover, комфортный BGM) и модулирует BGM по фазам (Story 9.1)', async () => {
+    const { FakeAudioContext, instances } = createFakeAudioContextClass();
+    vi.stubGlobal('AudioContext', FakeAudioContext);
+
+    const fetchSpy = vi.fn(async () => ({
+      ok: true,
+      arrayBuffer: async () => new ArrayBuffer(16),
+    }));
+
+    const audio = createHybridBaliteAudio(
+      undefined,
+      { soundEnabled: true, sfxVolume: 0.8, musicVolume: 0.4 },
+      {
+        sampleRegistry: {
+          bgm: '/audio/bgm.ogg',
+          card_hover: '/audio/card_hover.ogg',
+          chip_hit: '/audio/chip_hit.ogg',
+          mult_hit: '/audio/mult_hit.ogg',
+          win: '/audio/win.ogg',
+          dialogue: '/audio/dialogue.ogg',
+        },
+        fetchFn: fetchSpy as unknown as typeof fetch,
+        randomFn: () => 0.5,
+      },
+    );
+
+    audio.unlock();
+    await flushMicrotasks();
+
+    const ctx = instances[0]!;
+    // Проверяем относительный баланс микса: наведение на карту ощутимо тише ударов и победы
+    expect(SAMPLE_MIX_GAINS.card_hover).toBeLessThan(SAMPLE_MIX_GAINS.chip_hit * 0.5);
+    expect(SAMPLE_MIX_GAINS.card_hover).toBeLessThan(SAMPLE_MIX_GAINS.win * 0.4);
+    expect(BGM_BASE_MIX_GAIN).toBeLessThanOrEqual(0.3);
+
+    const gainCountBeforeHover = ctx.gains.length;
+    audio.playCardHover();
+    const hoverGainNode = ctx.gains[gainCountBeforeHover]!;
+    expect(hoverGainNode.gain.value).toBeCloseTo(SAMPLE_MIX_GAINS.card_hover, 4);
+
+    const gainCountBeforeWin = ctx.gains.length;
+    audio.playWin();
+    const winGainNode = ctx.gains[gainCountBeforeWin]!;
+    expect(winGainNode.gain.value).toBeCloseTo(SAMPLE_MIX_GAINS.win, 4);
+    expect(hoverGainNode.gain.value).toBeLessThan(winGainNode.gain.value);
+
+    // BGM подключён через фильтр и реагирует на setMusicMood (shop -> lowpass, game_over -> 0.5x pitch)
+    const bgmSource = ctx.bufferSources.find((s) => s.loop === true)!;
+    expect(bgmSource).toBeDefined();
+    expect(ctx.filters.length).toBeGreaterThan(0);
+
+    audio.setMusicMood?.('shop');
+    const bgmFilter = ctx.filters[ctx.filters.length - 1] as {
+      frequency: MockAudioParam;
+    };
+    expect(bgmFilter.frequency.setTargetAtTime).toHaveBeenCalledWith(
+      2100,
+      expect.any(Number),
+      expect.any(Number),
+    );
+
+    audio.setMusicMood?.('game_over');
+    expect(bgmSource.playbackRate.setTargetAtTime).toHaveBeenCalledWith(
+      0.5,
+      expect.any(Number),
+      expect.any(Number),
+    );
+
+    // playDialogue с явным pitchRate применяет переданный питч
+    const beforeDlg = ctx.bufferSources.length;
+    audio.playDialogue(1.12);
+    expect(ctx.bufferSources[beforeDlg]!.playbackRate.value).toBeCloseTo(1.12, 3);
+
+    // playXMultHit, playEditionTrigger, playGoldSeal, playBossIntro, playCancel и setFlameIntensity работают без сбоев
+    expect(() => {
+      audio.playXMultHit?.(3);
+      audio.playEditionTrigger?.('polychrome', 2);
+      audio.playGoldSeal?.();
+      audio.playBossIntro?.();
+      audio.playCancel?.();
+      audio.setFlameIntensity?.(0.6);
+      audio.setFlameIntensity?.(0);
     }).not.toThrow();
 
     audio.dispose();

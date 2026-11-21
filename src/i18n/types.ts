@@ -356,6 +356,8 @@ export interface UiDictionary {
     readonly crtOff: string;
     readonly crtLight: string;
     readonly crtOriginal: string;
+    readonly screenShake: string;
+    readonly reducedMotion: string;
     readonly resetTutorial: string;
     readonly suitPalette: string;
     readonly suitPaletteStandard: string;

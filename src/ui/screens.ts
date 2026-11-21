@@ -41,7 +41,6 @@ import {
 import { getRelicLocParams } from './inspector';
 import {
   createMoveableState,
-  hardSetTarget,
   setMoveableZoom,
   setTarget,
   stepMoveable,
@@ -842,12 +841,38 @@ function attachSlotGestures(options: SlotGestureOptions): void {
   // Состояние живого перетаскивания на Moveable и плавного разъезда соседних карт
   let currentDragIndex = index;
   let initialChildrenOrder: HTMLElement[] | null = null;
+  let slotRects: DOMRect[] = [];
   let hasRealLayout = false;
   let dragOriginShiftX = 0;
   let dragState: MoveableState | null = null;
   let dragRafId: number | null = null;
   let lastDragFrameMs: number | null = null;
   const neighborStates = new Map<HTMLElement, MoveableState>();
+
+  /**
+   * Снимает чистые геометрические рамки слотов без искажений от текущих CSS-трансформаций (scale/rotate/translate).
+   */
+  const measureUntransformedRects = (
+    nodes: readonly HTMLElement[],
+  ): Map<HTMLElement, DOMRect> => {
+    const savedTransforms = new Map<HTMLElement, string>();
+    for (const node of nodes) {
+      savedTransforms.set(node, node.style.transform);
+      node.style.transform = 'none';
+    }
+    const rects = new Map<HTMLElement, DOMRect>();
+    for (const node of nodes) {
+      rects.set(node, node.getBoundingClientRect());
+    }
+    for (const [node, prevTransform] of savedTransforms) {
+      if (prevTransform) {
+        node.style.transform = prevTransform;
+      } else {
+        node.style.removeProperty('transform');
+      }
+    }
+    return rects;
+  };
 
   if (enableDrag) {
     el.style.touchAction = 'none';
@@ -993,8 +1018,15 @@ function attachSlotGestures(options: SlotGestureOptions): void {
         el.dataset.flightActive = 'true';
         const children = Array.from(containerEl.children).slice(0, total) as HTMLElement[];
         initialChildrenOrder = children;
+        const measuredMap = measureUntransformedRects(children);
+        slotRects = children.map(
+          (child) => measuredMap.get(child) ?? child.getBoundingClientRect(),
+        );
+        if (slotRects[index]) {
+          startRect = slotRects[index]!;
+        }
         hasRealLayout =
-          startRect.width > 0 && children.some((child) => child.getBoundingClientRect().width > 0);
+          startRect.width > 0 && slotRects.some((rect) => rect.width > 0);
         currentDragIndex = index;
         dragOriginShiftX = 0;
         dragState = setMoveableZoom(
@@ -1002,6 +1034,7 @@ function attachSlotGestures(options: SlotGestureOptions): void {
           { enabled: true, hover: false, drag: true },
         );
         if (!isReducedMotion()) {
+          applyDragTransform(dragState);
           ensureDragLoop();
         }
       }
@@ -1013,10 +1046,16 @@ function attachSlotGestures(options: SlotGestureOptions): void {
         const projectedCenterX = startRect.left + startRect.width / 2 + dx;
         let targetIdx = currentDragIndex;
         let minDist = Number.POSITIVE_INFINITY;
-        siblings.forEach((sibling, idx) => {
-          const rect = sibling.getBoundingClientRect();
+        const activeSlots =
+          slotRects.length === total
+            ? slotRects
+            : siblings.map(
+                (s) => measureUntransformedRects([s]).get(s) ?? s.getBoundingClientRect(),
+              );
+        activeSlots.forEach((rect, idx) => {
           const center = rect.left + rect.width / 2;
-          const dist = Math.abs(projectedCenterX - center);
+          const rawDist = Math.abs(projectedCenterX - center);
+          const dist = idx === currentDragIndex ? Math.max(0, rawDist - 4) : rawDist;
           if (dist < minDist) {
             minDist = dist;
             targetIdx = idx;
@@ -1024,10 +1063,7 @@ function attachSlotGestures(options: SlotGestureOptions): void {
         });
 
         if (targetIdx !== currentDragIndex) {
-          const beforeLeft = new Map<HTMLElement, number>();
-          for (const sibling of siblings) {
-            beforeLeft.set(sibling, sibling.getBoundingClientRect().left);
-          }
+          const beforeRects = measureUntransformedRects(siblings);
 
           const targetNode = siblings[targetIdx];
           if (targetNode) {
@@ -1038,27 +1074,41 @@ function attachSlotGestures(options: SlotGestureOptions): void {
             }
             updateContainerFanGeometry(containerEl, total);
 
-            const afterElRect = el.getBoundingClientRect();
+            const updatedSiblings = Array.from(containerEl.children).slice(0, total) as HTMLElement[];
+            const afterRects = measureUntransformedRects(updatedSiblings);
+            slotRects = updatedSiblings.map(
+              (node) => afterRects.get(node) ?? node.getBoundingClientRect(),
+            );
+
+            const afterElRect = afterRects.get(el) ?? el.getBoundingClientRect();
             const newOriginShiftX = afterElRect.left - startRect.left;
             const deltaShift = newOriginShiftX - dragOriginShiftX;
             dragOriginShiftX = newOriginShiftX;
             if (dragState) {
-              dragState = hardSetTarget(dragState, {
-                x: dragState.vt.x - deltaShift,
-                y: dragState.vt.y,
-                scale: dragState.vt.scale,
-                r: dragState.vt.r,
-              });
-              dragState = setMoveableZoom(dragState, { enabled: true, hover: false, drag: true });
+              dragState = {
+                ...dragState,
+                t: {
+                  ...dragState.t,
+                  x: dragState.t.x - deltaShift,
+                },
+                vt: {
+                  ...dragState.vt,
+                  x: dragState.vt.x - deltaShift,
+                },
+              };
+              if (!isReducedMotion()) {
+                applyDragTransform(dragState);
+              }
             }
 
-            const updatedSiblings = Array.from(containerEl.children).slice(0, total) as HTMLElement[];
             for (const sibling of updatedSiblings) {
               if (sibling === el) continue;
-              const prevLeft = beforeLeft.get(sibling);
-              if (prevLeft === undefined) continue;
-              const afterLeft = sibling.getBoundingClientRect().left;
-              const diffX = prevLeft - afterLeft;
+              const prevLeft = beforeRects.get(sibling)?.left;
+              const afterLeft = afterRects.get(sibling)?.left;
+              if (prevLeft === undefined || afterLeft === undefined) continue;
+              const existingNeighbor = neighborStates.get(sibling);
+              const prevVisualLeft = prevLeft + (existingNeighbor ? existingNeighbor.vt.x : 0);
+              const diffX = prevVisualLeft - afterLeft;
               if (Math.abs(diffX) >= 0.5 && !isReducedMotion()) {
                 let sState = createMoveableState({ x: diffX, y: 0, scale: 1, r: 0 });
                 sState = setTarget(sState, { x: 0, y: 0, scale: 1, r: 0 });
@@ -1091,6 +1141,7 @@ function attachSlotGestures(options: SlotGestureOptions): void {
     const savedOrder = initialChildrenOrder;
     hasRealLayout = false;
     initialChildrenOrder = null;
+    slotRects = [];
     stopDragVisuals();
 
     if (cancelled) {
@@ -1153,7 +1204,7 @@ function attachSlotGestures(options: SlotGestureOptions): void {
     startY = pointerEv.clientY ?? 0;
     lastX = startX;
     lastY = startY;
-    startRect = el.getBoundingClientRect();
+    startRect = measureUntransformedRects([el]).get(el) ?? el.getBoundingClientRect();
 
     if (holdDelayMs !== undefined && onHold) {
       holdTimer = setTimeout(() => {
@@ -1463,6 +1514,10 @@ function renderHudBelt(
   const statsRow = createEl('div', 'hud-stats-row');
 
   const handsStat = createEl('div', 'hud-stat');
+  if (state.phase === 'playing' && state.handsLeft === 1) {
+    handsStat.classList.add('is-hud-quiver');
+    handsStat.dataset.lastHand = 'true';
+  }
   handsStat.append(
     createEl('span', 'hud-stat__label', translator.t('ui.hud.hands')),
     createEl('span', 'hud-stat__value', String(state.handsLeft)),
@@ -1526,6 +1581,48 @@ function renderHudBelt(
 }
 
 /**
+ * Определяет, выполнено ли прямо сейчас условие условного Навыка,
+ * чтобы мягко пульсировать его слотом (как juice_card_until в оригинале).
+ */
+export function isRelicReadyPulse(
+  relic: RelicInstance,
+  index: number,
+  state: RunState,
+  selectedCardIds: readonly string[],
+): boolean {
+  if (relic.debuffed) return false;
+  switch (relic.id) {
+    case 'j_acrobat':
+      return state.phase === 'playing' && state.handsLeft === 1;
+    case 'j_mystic_summit':
+      return state.phase === 'playing' && state.discardsLeft === 0;
+    case 'j_vagabond':
+      return state.phase === 'playing' && state.dollars <= 4;
+    case 'j_blackboard': {
+      if (state.phase !== 'playing') return false;
+      const selectedSet = new Set(selectedCardIds);
+      const remainingIds = state.handIds.filter((id) => !selectedSet.has(id));
+      if (remainingIds.length === 0) return false;
+      const byId = new Map(state.deck.map((c) => [c.id, c]));
+      return remainingIds.every((id) => {
+        const card = byId.get(id);
+        if (!card) return false;
+        if (card.enhancement === 'stone') return false;
+        return card.enhancement === 'wild' || card.suit === 'spades' || card.suit === 'clubs';
+      });
+    }
+    case 'j_ceremonial': {
+      if (state.phase !== 'blind_select') return false;
+      const rightRelic = state.relics[index + 1];
+      if (!rightRelic) return false;
+      return !Boolean(rightRelic.state.extra?.eternal);
+    }
+    default:
+      return false;
+  }
+}
+
+/**
  * Отрисовывает Пояс 2: ленты Реликвий, Расходников и активные Знаки.
  */
 function renderInventoryBelt(ctx: RenderContext): HTMLElement {
@@ -1576,6 +1673,10 @@ function renderInventoryBelt(ctx: RenderContext): HTMLElement {
     slot.style.setProperty('--fan-angle', `${relicGeom.angleDeg.toFixed(2)}deg`);
     if (isHighlighted) {
       slot.dataset.highlighted = 'true';
+    }
+    if (!vm.isAnimating && isRelicReadyPulse(relic, index, state, vm.selectedCardIds)) {
+      slot.classList.add('is-ready-pulse');
+      slot.dataset.readyPulse = 'true';
     }
 
     // Передаём interactive: false, чтобы не вкладывать кнопку внутрь слота с role="button"
@@ -1742,6 +1843,19 @@ function renderDeckSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void {
     btn.dataset.deckId = deckId;
     btn.setAttribute('aria-pressed', String(selected));
 
+    const deckCardPreview = renderEntityCardFrame({
+      kind: 'deck',
+      deckId,
+      translator,
+      locked: !unlocked,
+      compact: true,
+      interactive: false,
+    });
+    delete deckCardPreview.dataset.deckId;
+    deckCardPreview.setAttribute('aria-hidden', 'true');
+    deckCardPreview.classList.add('deck-option__card-preview');
+
+    const body = createEl('div', 'deck-option__body');
     const top = createEl('div', 'deck-option__top');
     top.append(
       createEl('span', 'deck-option__name', deckText.name),
@@ -1751,7 +1865,7 @@ function renderDeckSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void {
         translator.t(unlocked ? 'ui.deckSelect.unlocked' : 'ui.deckSelect.locked'),
       ),
     );
-    btn.append(top, createEl('span', 'deck-option__desc', deckText.description));
+    body.append(top, createEl('span', 'deck-option__desc', deckText.description));
     if (!unlocked) {
       // Порядок разблокировки колод в app.ts идёт строго по очереди DECK_IDS: 1-я закрытая -> следующая победа
       lockedQueuePos += 1;
@@ -1759,8 +1873,9 @@ function renderDeckSelectArena(ctx: RenderContext, arenaEl: HTMLElement): void {
         lockedQueuePos === 1
           ? translator.t('ui.deckSelect.unlockHintNext')
           : translator.t('ui.deckSelect.unlockHintRemaining', { count: lockedQueuePos });
-      btn.append(createEl('span', 'deck-option__unlock-hint', unlockHintText));
+      body.append(createEl('span', 'deck-option__unlock-hint', unlockHintText));
     }
+    btn.append(deckCardPreview, body);
 
     btn.addEventListener('click', () => {
       if (unlocked) {

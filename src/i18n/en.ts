@@ -225,6 +225,8 @@ export const EN_DICTIONARY: LocaleDictionary = {
       crtOff: 'Off',
       crtLight: 'Light',
       crtOriginal: 'Original',
+      screenShake: 'Screen Shake',
+      reducedMotion: 'Reduced Motion',
       resetTutorial: 'Restart Tutorial',
       suitPalette: 'Suit Colors',
       suitPaletteStandard: 'Default Colors',

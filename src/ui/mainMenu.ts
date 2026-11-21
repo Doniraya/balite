@@ -157,8 +157,6 @@ export function renderMainMenu(
     collectionBtn.append(alertBadge);
   }
 
-  panel.append(playBtn, settingsBtn, collectionBtn);
-
   const langBtn = document.createElement('button');
   langBtn.type = 'button';
   langBtn.className = 'main-menu__lang-btn';
@@ -173,7 +171,8 @@ export function renderMainMenu(
   );
   langBtn.addEventListener('click', handlers.onToggleLanguage);
 
-  dock.append(panel, langBtn);
+  panel.append(playBtn, settingsBtn, collectionBtn, langBtn);
+  dock.append(panel);
 
   shell.append(topBar, hero, dock);
   root.append(shell);

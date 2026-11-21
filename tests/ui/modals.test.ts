@@ -1436,4 +1436,34 @@ describe('Модальные окна (src/ui/modals.ts)', () => {
     expect(sheet?.dataset.suitPalette).toBe('high_contrast');
     expect(sheet?.dataset.cardBack).toBe('b_red');
   });
+
+  it('Story 9.1: вкладка Настройки переключает Тряску экрана и Уменьшение анимаций', () => {
+    const ru = createTranslator('ru');
+    const baseMeta = createInitialMetaSave(1000, { lang: 'ru' });
+    const onChangeSettings = vi.fn();
+
+    const modal = renderSettingsModal({
+      settings: baseMeta.settings,
+      meta: baseMeta,
+      initialTab: 'settings',
+      translator: ru,
+      onChangeSettings,
+      onClose: vi.fn(),
+    });
+    assertCleanLocalizedElement(modal);
+
+    const shakeOff = modal.querySelector<HTMLButtonElement>('[data-screen-shake="off"]');
+    const shakeOn = modal.querySelector<HTMLButtonElement>('[data-screen-shake="on"]');
+    const reducedOn = modal.querySelector<HTMLButtonElement>('[data-reduced-motion="on"]');
+    const reducedOff = modal.querySelector<HTMLButtonElement>('[data-reduced-motion="off"]');
+
+    expect(shakeOn?.getAttribute('aria-pressed')).toBe('true');
+    expect(reducedOff?.getAttribute('aria-pressed')).toBe('true');
+
+    shakeOff?.click();
+    expect(onChangeSettings).toHaveBeenLastCalledWith({ screenShake: false });
+
+    reducedOn?.click();
+    expect(onChangeSettings).toHaveBeenLastCalledWith({ reducedMotion: true });
+  });
 });

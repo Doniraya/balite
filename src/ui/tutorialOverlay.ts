@@ -61,6 +61,7 @@ export interface TutorialOverlayOptions {
   readonly onAction?: (action: string) => void;
   readonly container?: HTMLElement;
   readonly audio?: BaliteAudioController;
+  readonly reducedMotion?: boolean | (() => boolean);
 }
 
 /**
@@ -228,6 +229,112 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
   let currentStep: TutorialStep | null = null;
   let currentTargetElement: HTMLElement | null = null;
   let currentArrowPosition: TutorialArrowPosition = 'none';
+  let revealTimers: Array<ReturnType<typeof setTimeout>> = [];
+  let isRevealComplete = true;
+
+  const isReducedMotion = (): boolean => {
+    if (typeof options.reducedMotion === 'function') {
+      return options.reducedMotion();
+    }
+    if (typeof options.reducedMotion === 'boolean') {
+      return options.reducedMotion;
+    }
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    }
+    return false;
+  };
+
+  const clearRevealTimers = (): void => {
+    for (const timerId of revealTimers) {
+      globalThis.clearTimeout(timerId);
+    }
+    revealTimers = [];
+  };
+
+  const completeTextReveal = (): void => {
+    clearRevealTimers();
+    isRevealComplete = true;
+    textEl.classList.add('is-reveal-complete');
+    textEl.classList.remove('is-revealing');
+  };
+
+  /**
+   * Оборачивает текстовые узлы внутри отформатированной реплики в посимвольные
+   * DynaText-спаны, сохраняя целостность слов при переносах и все цветовые обёртки.
+   */
+  const applyDynaTextReveal = (rootEl: HTMLElement): number => {
+    let charIndex = 0;
+
+    const walk = (node: Node): void => {
+      if (node.nodeType === 3) {
+        const raw = node.textContent ?? '';
+        if (!raw) return;
+        const frag = document.createDocumentFragment();
+        const tokens = raw.split(/(\s+)/);
+        for (const token of tokens) {
+          if (!token) continue;
+          if (/^\s+$/.test(token)) {
+            frag.appendChild(document.createTextNode(token));
+            continue;
+          }
+          const wordSpan = document.createElement('span');
+          wordSpan.className = 'tut-word';
+          for (const ch of token) {
+            const chSpan = document.createElement('span');
+            chSpan.className = 'tut-char';
+            chSpan.style.setProperty('--char-i', String(charIndex));
+            chSpan.textContent = ch;
+            wordSpan.appendChild(chSpan);
+            charIndex += 1;
+          }
+          frag.appendChild(wordSpan);
+        }
+        node.parentNode?.replaceChild(frag, node);
+        return;
+      }
+      if (node.nodeType === 1) {
+        const children = Array.from(node.childNodes);
+        for (const child of children) {
+          walk(child);
+        }
+      }
+    };
+
+    walk(rootEl);
+    return charIndex;
+  };
+
+  const scheduleDialogueChatter = (charCount: number): void => {
+    clearRevealTimers();
+    if (charCount <= 4 || !options.audio) {
+      return;
+    }
+    // Тихие посимвольные слоги с плавным ростом питча (как DynaText в text.lua:201)
+    const maxSyllables = Math.min(10, Math.floor(charCount / 5));
+    const stepMs = 68;
+    for (let i = 1; i <= maxSyllables; i += 1) {
+      const progress = i / Math.max(1, maxSyllables);
+      const pitchRate = 0.88 + progress * 0.24;
+      const timerId = globalThis.setTimeout(() => {
+        if (!isVisible || isRevealComplete) return;
+        options.audio?.playDialogue(pitchRate);
+      }, i * stepMs);
+      revealTimers.push(timerId);
+    }
+
+    const totalMs = Math.min(1400, charCount * 16 + 180);
+    const doneTimer = globalThis.setTimeout(() => {
+      completeTextReveal();
+    }, totalMs);
+    revealTimers.push(doneTimer);
+  };
+
+  const handleSpeechBubbleClick = (event: MouseEvent): void => {
+    if (!isVisible || isRevealComplete) return;
+    event.stopPropagation();
+    completeTextReveal();
+  };
 
   // Создаем корневой элемент оверлея
   const overlayEl = document.createElement('div');
@@ -749,6 +856,7 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
   nextBtn.addEventListener('click', handleNextClick);
   skipBtn.addEventListener('click', handleSkipClick);
   topSkipBtn.addEventListener('click', handleSkipClick);
+  speechBubbleEl.addEventListener('click', handleSpeechBubbleClick);
   blockerEl.addEventListener('click', handleBlockerClick);
   window.addEventListener('keydown', handleKeyDown);
   window.addEventListener('resize', handleWindowResize);
@@ -774,8 +882,10 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
     },
 
     showStep(step: TutorialStep): void {
-      if (step.id !== currentStep?.id || step.text !== currentStep?.text) {
-        options.audio?.playDialogue();
+      const isNewStep = step.id !== currentStep?.id || step.text !== currentStep?.text;
+      if (isNewStep) {
+        clearRevealTimers();
+        options.audio?.playDialogue(0.86);
       }
       currentStep = step;
 
@@ -798,8 +908,17 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
       // 3. Заголовок
       stepTitleEl.textContent = step.title;
 
-      // 4. Текст с подсветкой терминов
+      // 4. Текст с подсветкой терминов и посимвольным появлением (DynaText)
       textEl.innerHTML = formatTutorialText(step.text);
+      if (isNewStep && !isReducedMotion()) {
+        const charCount = applyDynaTextReveal(textEl);
+        isRevealComplete = false;
+        textEl.classList.remove('is-reveal-complete');
+        textEl.classList.add('is-revealing');
+        scheduleDialogueChatter(charCount);
+      } else {
+        completeTextReveal();
+      }
 
       // 5. Кнопка «Дальше» или подсказка о действии
       const isLastStep =
@@ -834,6 +953,7 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
 
     hide(): void {
       isVisible = false;
+      completeTextReveal();
       clearHoveredElement();
       overlayEl.classList.remove('is-visible');
       currentTargetElement = null;
@@ -854,6 +974,7 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
 
     destroy(): void {
       isVisible = false;
+      clearRevealTimers();
       clearHoveredElement();
       currentTargetElement = null;
       currentStep = null;
@@ -861,6 +982,7 @@ export function createTutorialOverlay(options: TutorialOverlayOptions): Tutorial
       nextBtn.removeEventListener('click', handleNextClick);
       skipBtn.removeEventListener('click', handleSkipClick);
       topSkipBtn.removeEventListener('click', handleSkipClick);
+      speechBubbleEl.removeEventListener('click', handleSpeechBubbleClick);
       blockerEl.removeEventListener('click', handleBlockerClick);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('resize', handleWindowResize);

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createBaliteAudio } from '../../src/audio/synth';
+import { createBaliteAudio, volumeToGain } from '../../src/audio/synth';
 import type { TraceEvent } from '../../src/engine/types';
 import { createAudioUnlockController } from '../../src/platform/audioUnlock';
 
@@ -358,10 +358,13 @@ describe('createBaliteAudio (процедурный Web Audio синтезато
     expect(sfxGain.gain.value).toBe(1);
     expect(musicGain.gain.value).toBe(0);
 
-    // Включаем музыку и меняем громкость эффектов
+    // Включаем музыку и меняем громкость эффектов (действует перцептивная кривая volumeToGain)
     audio.setSettings({ sfxVolume: 0.45, musicVolume: 0.35 });
-    expect(sfxGain.gain.value).toBeCloseTo(0.45);
-    expect(musicGain.gain.value).toBeCloseTo(0.35);
+    expect(sfxGain.gain.value).toBeCloseTo(volumeToGain(0.45), 4);
+    expect(musicGain.gain.value).toBeCloseTo(volumeToGain(0.35), 4);
+    expect(volumeToGain(0.5)).toBeLessThan(0.5);
+    expect(volumeToGain(0)).toBe(0);
+    expect(volumeToGain(1)).toBe(1);
     expect(ctx.oscillators.length).toBeGreaterThan(0);
 
     // Выключение звука через soundEnabled: false
@@ -468,6 +471,27 @@ describe('createBaliteAudio (процедурный Web Audio синтезато
     expectSoundProduced('playReroll', () => audio.playReroll());
     expectSoundProduced('playWin', () => audio.playWin());
     expectSoundProduced('playLose', () => audio.playLose());
+    expectSoundProduced('playCancel', () => audio.playCancel?.());
+    expectSoundProduced('playXMultHit', () => audio.playXMultHit?.(2));
+    expectSoundProduced('playEditionTrigger(foil)', () => audio.playEditionTrigger?.('foil', 1));
+    expectSoundProduced('playEditionTrigger(holo)', () => audio.playEditionTrigger?.('holo', 1));
+    expectSoundProduced('playEditionTrigger(polychrome)', () =>
+      audio.playEditionTrigger?.('polychrome', 1),
+    );
+    expectSoundProduced('playEditionTrigger(negative)', () =>
+      audio.playEditionTrigger?.('negative', 1),
+    );
+    expectSoundProduced('playGoldSeal', () => audio.playGoldSeal?.());
+    expectSoundProduced('playBossIntro', () => audio.playBossIntro?.());
+    expectSoundProduced('playDialogue(1.1)', () => audio.playDialogue(1.1));
+
+    // Непрерывный гул пламени запускает loop-источник и останавливает его при сбросе в 0
+    const bufBeforeFlame = ctx.bufferSources.length;
+    audio.setFlameIntensity?.(0.75);
+    expect(ctx.bufferSources.length).toBeGreaterThan(bufBeforeFlame);
+    const flameSrc = ctx.bufferSources[bufBeforeFlame]!;
+    audio.setFlameIntensity?.(0);
+    expect(flameSrc.stop).toHaveBeenCalled();
 
     const beforePos = ctx.oscillators.length;
     audio.playGoldDelta(true);

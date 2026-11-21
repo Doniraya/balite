@@ -1,4 +1,4 @@
-// Гибридный аудиодвижок Balite: сэмплы с приоритетным фолбэком на процедурный синтезатор (Story 5.1).
+// Гибридный аудиодвижок Balite: сэмплы с балансом микса, динамикой BGM и фолбэком на синтезатор (Story 5.1 / 9.1).
 import type { GameSettings, TraceEvent } from '../engine/types';
 import type { AudioUnlockController } from '../platform/types';
 import {
@@ -9,6 +9,8 @@ import {
   computeBalatroComboPitch,
   createBaliteAudio,
   dispatchTraceAudioEvent,
+  type AudioEditionKind,
+  type AudioMusicMood,
   type BaliteAudioController,
   type BaliteAudioSettings,
 } from './synth';
@@ -23,7 +25,84 @@ export interface HybridAudioOptions {
   readonly randomFn?: () => number;
 }
 
+/** Базовый коэффициент громкости фонового трека BGM (под комфортный дефолт без клиппинга). */
+export const BGM_BASE_MIX_GAIN = 0.24;
+
+/** Индивидуальные коэффициенты микса для каждого SFX-сэмпла (баланс между шорохом и акцентами). */
+export const SAMPLE_MIX_GAINS: Readonly<Record<Exclude<AudioSampleKey, 'bgm'>, number>> = {
+  card_hover: 0.075,
+  dialogue: 0.11,
+  card_deselect: 0.15,
+  card_deal: 0.16,
+  card_select: 0.17,
+  button: 0.17,
+  gold: 0.21,
+  chip_hit: 0.21,
+  relic_trigger: 0.22,
+  consumable: 0.22,
+  debuff: 0.22,
+  mult_hit: 0.23,
+  booster_open: 0.24,
+  flame_surge: 0.24,
+  lose: 0.24,
+  shatter: 0.25,
+  win: 0.26,
+};
+
+interface BgmMoodProfile {
+  readonly filterFreq: number;
+  readonly playbackRate: number;
+  readonly gainMul: number;
+  readonly rampSec: number;
+}
+
+const BGM_MOOD_PROFILES: Readonly<Record<AudioMusicMood, BgmMoodProfile>> = {
+  menu: { filterFreq: 18000, playbackRate: 1.0, gainMul: 1.0, rampSec: 0.55 },
+  battle: { filterFreq: 18000, playbackRate: 1.0, gainMul: 1.0, rampSec: 0.55 },
+  shop: { filterFreq: 2100, playbackRate: 0.985, gainMul: 0.85, rampSec: 0.65 },
+  booster: { filterFreq: 1450, playbackRate: 0.96, gainMul: 0.8, rampSec: 0.45 },
+  boss: { filterFreq: 20000, playbackRate: 1.04, gainMul: 1.08, rampSec: 0.6 },
+  last_hand: { filterFreq: 16500, playbackRate: 1.055, gainMul: 1.06, rampSec: 0.45 },
+  victory: { filterFreq: 20000, playbackRate: 1.02, gainMul: 1.0, rampSec: 0.5 },
+  game_over: { filterFreq: 850, playbackRate: 0.5, gainMul: 0.82, rampSec: 1.1 },
+};
+
 const MICRO_DETUNE_RANGE = 0.02;
+
+function applySmoothParam(
+  param: AudioParam | undefined,
+  target: number,
+  now: number,
+  rampSec: number,
+  immediate: boolean,
+): void {
+  if (!param) return;
+  try {
+    if (immediate) {
+      if (typeof param.cancelScheduledValues === 'function') {
+        param.cancelScheduledValues(now);
+      }
+      if (typeof param.setValueAtTime === 'function') {
+        param.setValueAtTime(target, now);
+      }
+      param.value = target;
+      return;
+    }
+    if (typeof param.setTargetAtTime === 'function') {
+      param.setTargetAtTime(target, now, Math.max(0.04, rampSec / 3));
+    } else if (typeof param.linearRampToValueAtTime === 'function') {
+      param.linearRampToValueAtTime(target, now + rampSec);
+    } else {
+      param.value = target;
+    }
+  } catch {
+    try {
+      param.value = target;
+    } catch {
+      // Игнорируем ограничения тестовых моков AudioParam
+    }
+  }
+}
 
 function computeComboPlaybackRate(
   comboIndex = 0,
@@ -84,8 +163,11 @@ export function createHybridBaliteAudio(
   let musicGain: GainNode | null = null;
 
   let bgmSource: AudioBufferSourceNode | null = null;
+  let bgmFilter: BiquadFilterNode | null = null;
+  let bgmMixGain: GainNode | null = null;
   let bgmStartTime = 0;
   let bgmPauseOffset = 0;
+  let currentMusicMood: AudioMusicMood = 'menu';
 
   let lastMuted = false;
   let lastUnlocked = false;
@@ -95,11 +177,32 @@ export function createHybridBaliteAudio(
 
   const hasBgmBuffer = (): boolean => decodedBuffers.has('bgm');
 
+  const applyBgmMood = (immediate: boolean): void => {
+    if (!audioCtx || !bgmSource) return;
+    const profile = BGM_MOOD_PROFILES[currentMusicMood];
+    const now = typeof audioCtx.currentTime === 'number' ? audioCtx.currentTime : 0;
+
+    applySmoothParam(bgmSource.playbackRate, profile.playbackRate, now, profile.rampSec, immediate);
+    if (bgmFilter) {
+      applySmoothParam(bgmFilter.frequency, profile.filterFreq, now, profile.rampSec, immediate);
+    }
+    if (bgmMixGain) {
+      applySmoothParam(
+        bgmMixGain.gain,
+        BGM_BASE_MIX_GAIN * profile.gainMul,
+        now,
+        profile.rampSec,
+        immediate,
+      );
+    }
+  };
+
   const stopBgmSource = (saveOffset: boolean): void => {
     if (!bgmSource) return;
     if (saveOffset && audioCtx) {
       const bgmBuffer = decodedBuffers.get('bgm');
-      const elapsed = Math.max(0, (audioCtx.currentTime || 0) - bgmStartTime);
+      const profile = BGM_MOOD_PROFILES[currentMusicMood];
+      const elapsed = Math.max(0, (audioCtx.currentTime || 0) - bgmStartTime) * profile.playbackRate;
       const duration = bgmBuffer?.duration && bgmBuffer.duration > 0 ? bgmBuffer.duration : 0;
       bgmPauseOffset =
         duration > 0 ? (bgmPauseOffset + elapsed) % duration : bgmPauseOffset + elapsed;
@@ -118,7 +221,19 @@ export function createHybridBaliteAudio(
     } catch {
       // Игнорируем ошибку отсоединения узла
     }
+    try {
+      bgmFilter?.disconnect();
+    } catch {
+      // Игнорируем ошибку отсоединения фильтра
+    }
+    try {
+      bgmMixGain?.disconnect();
+    } catch {
+      // Игнорируем ошибку отсоединения микс-гейна
+    }
     bgmSource = null;
+    bgmFilter = null;
+    bgmMixGain = null;
   };
 
   const startBgmSource = (): void => {
@@ -142,7 +257,27 @@ export function createHybridBaliteAudio(
       const source = audioCtx.createBufferSource();
       source.buffer = bgmBuffer;
       source.loop = true;
-      source.connect(musicGain);
+
+      let tail: AudioNode = source;
+      if (typeof audioCtx.createBiquadFilter === 'function') {
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'lowpass';
+        tail.connect(filter);
+        tail = filter;
+        bgmFilter = filter;
+      }
+
+      if (typeof audioCtx.createGain === 'function') {
+        const mix = audioCtx.createGain();
+        tail.connect(mix);
+        tail = mix;
+        bgmMixGain = mix;
+      }
+
+      tail.connect(musicGain);
+      bgmSource = source;
+      applyBgmMood(true);
+
       const offset =
         bgmBuffer.duration && bgmBuffer.duration > 0
           ? bgmPauseOffset % bgmBuffer.duration
@@ -151,7 +286,6 @@ export function createHybridBaliteAudio(
       if (typeof source.start === 'function') {
         source.start(0, offset);
       }
-      bgmSource = source;
     } catch {
       stopBgmSource(false);
     }
@@ -221,7 +355,11 @@ export function createHybridBaliteAudio(
     return 1 + (clamped * 2 - 1) * MICRO_DETUNE_RANGE;
   };
 
-  const playSample = (key: AudioSampleKey, playbackRate = 1): boolean => {
+  const playSample = (
+    key: Exclude<AudioSampleKey, 'bgm'>,
+    playbackRate = 1,
+    gainScale = 1,
+  ): boolean => {
     if (
       disposed ||
       synth.isMuted() ||
@@ -242,7 +380,33 @@ export function createHybridBaliteAudio(
       if (source.playbackRate && typeof source.playbackRate === 'object') {
         source.playbackRate.value = playbackRate;
       }
-      source.connect(sfxGain);
+
+      const mixGainValue = Math.max(0.01, (SAMPLE_MIX_GAINS[key] ?? 0.2) * gainScale);
+      let sampleGain: GainNode | null = null;
+      if (typeof audioCtx.createGain === 'function') {
+        sampleGain = audioCtx.createGain();
+        if (sampleGain.gain) {
+          sampleGain.gain.value = mixGainValue;
+        }
+        source.connect(sampleGain);
+        sampleGain.connect(sfxGain);
+      } else {
+        source.connect(sfxGain);
+      }
+
+      source.onended = () => {
+        try {
+          source.disconnect();
+        } catch {
+          // Узел уже отключён
+        }
+        try {
+          sampleGain?.disconnect();
+        } catch {
+          // Узел уже отключён
+        }
+      };
+
       if (typeof source.start === 'function') {
         source.start(audioCtx.currentTime || 0);
       }
@@ -269,13 +433,33 @@ export function createHybridBaliteAudio(
     }
   };
 
+  const setMusicMood = (mood: AudioMusicMood): void => {
+    if (disposed) return;
+    const changed = currentMusicMood !== mood;
+    currentMusicMood = mood;
+    synth.setMusicMood?.(mood);
+    if (changed) {
+      applyBgmMood(false);
+    }
+  };
+
+  const setFlameIntensity = (intensity: number): void => {
+    if (disposed) return;
+    synth.setFlameIntensity?.(intensity);
+  };
+
   const controller: BaliteAudioController = {
     unlock,
     setSettings: (settings) => synth.setSettings(settings),
     getSettings: (): BaliteAudioSettings => synth.getSettings(),
     isMuted: () => synth.isMuted(),
+    setMusicMood,
+    setFlameIntensity,
     playButton: () => {
       if (!playSample('button', microVariationRate())) synth.playButton();
+    },
+    playCancel: () => {
+      synth.playCancel?.();
     },
     playCardHover: () => {
       if (!playSample('card_hover', microVariationRate())) synth.playCardHover();
@@ -298,6 +482,30 @@ export function createHybridBaliteAudio(
       if (!playSample('mult_hit', computeComboPlaybackRate(comboIndex, false, randomFn))) {
         synth.playMultHit(comboIndex);
       }
+    },
+    playXMultHit: (comboIndex = 0) => {
+      const baseRate = computeComboPlaybackRate(comboIndex, false, randomFn);
+      // Пониженный плотный удар сэмпла + глубокий саб-удар синтезатора отличают ×Множ от +Множ
+      const playedSample = playSample('mult_hit', Math.max(0.68, baseRate * 0.84), 1.15);
+      if (!playedSample) {
+        synth.playXMultHit?.(comboIndex);
+      } else {
+        synth.playXMultHit?.(comboIndex);
+      }
+    },
+    playEditionTrigger: (edition: AudioEditionKind, comboIndex = 0) => {
+      synth.playEditionTrigger?.(edition, comboIndex);
+    },
+    playGoldSeal: () => {
+      const played = playSample('gold', 1.22, 0.92);
+      if (!played) {
+        synth.playGoldSeal?.();
+      } else {
+        synth.playGoldSeal?.();
+      }
+    },
+    playBossIntro: () => {
+      synth.playBossIntro?.();
     },
     playRelicTrigger: (comboIndex = 0, isRetriggerAnnounce = false) => {
       if (
@@ -344,8 +552,12 @@ export function createHybridBaliteAudio(
     playLose: () => {
       if (!playSample('lose', 1)) synth.playLose();
     },
-    playDialogue: () => {
-      if (!playSample('dialogue', microVariationRate())) synth.playDialogue();
+    playDialogue: (pitchRate?: number) => {
+      const rate =
+        typeof pitchRate === 'number' && Number.isFinite(pitchRate)
+          ? Math.max(0.65, Math.min(1.45, pitchRate))
+          : microVariationRate();
+      if (!playSample('dialogue', rate)) synth.playDialogue(rate);
     },
     playForTraceEvent: (event: TraceEvent, comboIndex: number) =>
       dispatchTraceAudioEvent(controller, event, comboIndex),

@@ -208,6 +208,8 @@ export interface CreateInitialMetaSaveOptions {
   readonly tutorialStep?: number;
   readonly suitPalette?: SuitPalette;
   readonly cardBack?: CardBackStyle;
+  readonly screenShake?: boolean;
+  readonly reducedMotion?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -339,6 +341,8 @@ function sanitizeSettings(
   const cardBack: CardBackStyle | undefined = isValidCardBackStyle(rec.cardBack)
     ? rec.cardBack
     : undefined;
+  const screenShake = typeof rec.screenShake === 'boolean' ? rec.screenShake : undefined;
+  const reducedMotion = typeof rec.reducedMotion === 'boolean' ? rec.reducedMotion : undefined;
 
   return {
     animationSpeed,
@@ -353,6 +357,8 @@ function sanitizeSettings(
     ...(shortcutPrompted !== undefined ? { shortcutPrompted } : {}),
     ...(suitPalette !== undefined && suitPalette !== DEFAULT_SUIT_PALETTE ? { suitPalette } : {}),
     ...(cardBack !== undefined && cardBack !== DEFAULT_CARD_BACK_STYLE ? { cardBack } : {}),
+    ...(screenShake === false ? { screenShake: false } : {}),
+    ...(reducedMotion === true ? { reducedMotion: true } : {}),
     settingsVersion: SETTINGS_SCHEMA_VERSION,
   };
 }
@@ -954,6 +960,8 @@ export function createInitialMetaSave(
         tutorialStep: options.tutorialStep,
         suitPalette: options.suitPalette,
         cardBack: options.cardBack,
+        screenShake: options.screenShake,
+        reducedMotion: options.reducedMotion,
         settingsVersion: SETTINGS_SCHEMA_VERSION,
       },
       { preserveLegacyDoubleSpeed: true },

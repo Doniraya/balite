@@ -467,6 +467,31 @@ export function initCardTiltController(options: CardTiltOptions): CardTiltContro
     refresh();
   };
 
+  let refreshScheduled = false;
+  const scheduleRefresh = (): void => {
+    if (destroyed || refreshScheduled) return;
+    refreshScheduled = true;
+    queueMicrotask(() => {
+      refreshScheduled = false;
+      if (!destroyed) {
+        refresh();
+      }
+    });
+  };
+
+  const mutationObserver =
+    typeof MutationObserver !== 'undefined'
+      ? new MutationObserver((mutations) => {
+          if (destroyed) return;
+          for (const mutation of mutations) {
+            if (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0) {
+              scheduleRefresh();
+              break;
+            }
+          }
+        })
+      : null;
+
   container.addEventListener('pointerover', handlePointerOver);
   container.addEventListener('pointermove', handlePointerMove);
   container.addEventListener('pointerout', handlePointerOut);
@@ -475,6 +500,7 @@ export function initCardTiltController(options: CardTiltOptions): CardTiltContro
   container.addEventListener('pointercancel', handleTouchRelease);
   container.addEventListener('mouseleave', handleMouseLeave);
   mediaQuery?.addEventListener?.('change', handleMediaChange);
+  mutationObserver?.observe(container, { childList: true, subtree: true });
 
   refresh();
 
@@ -484,6 +510,7 @@ export function initCardTiltController(options: CardTiltOptions): CardTiltContro
       if (destroyed) return;
       destroyed = true;
       stopLoop();
+      mutationObserver?.disconnect();
 
       container.removeEventListener('pointerover', handlePointerOver);
       container.removeEventListener('pointermove', handlePointerMove);

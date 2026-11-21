@@ -1,5 +1,5 @@
 import { createHybridBaliteAudio } from '../audio/hybridAudio';
-import type { BaliteAudioController } from '../audio/synth';
+import type { AudioMusicMood, BaliteAudioController } from '../audio/synth';
 import {
   CELESTIAL_IDS,
   DECK_IDS,
@@ -284,6 +284,34 @@ function resolveBackdropMood(state: RunState): BackdropMood {
     case 'game_over':
       return 'defeat';
     case 'playing': {
+      const slot = state.anteBlinds[state.currentBlindIndex];
+      return slot?.kind === 'boss' ? 'boss' : 'battle';
+    }
+  }
+}
+
+/**
+ * Возвращает музыкальный профиль BGM для динамической фильтрации и темпа (Story 9.1).
+ */
+function resolveAudioMusicMood(state: RunState, isMainMenu: boolean): AudioMusicMood {
+  if (isMainMenu) return 'menu';
+  switch (state.phase) {
+    case 'deck_select':
+    case 'blind_select':
+      return 'menu';
+    case 'shop':
+    case 'cashout':
+      return 'shop';
+    case 'booster':
+      return 'booster';
+    case 'victory':
+      return 'victory';
+    case 'game_over':
+      return 'game_over';
+    case 'playing': {
+      if (state.handsLeft === 1) {
+        return 'last_hand';
+      }
       const slot = state.anteBlinds[state.currentBlindIndex];
       return slot?.kind === 'boss' ? 'boss' : 'battle';
     }
@@ -684,6 +712,21 @@ export function mountBaliteApp(
     root.dataset.cardBack = cardBack;
   };
 
+  const systemReducedMotionMql =
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-reduced-motion: reduce)')
+      : null;
+
+  const isReducedMotionEnabled = (): boolean =>
+    saveData.meta.settings.reducedMotion === true || Boolean(systemReducedMotionMql?.matches);
+
+  const isScreenShakeEnabled = (): boolean =>
+    saveData.meta.settings.screenShake !== false && !isReducedMotionEnabled();
+
+  const syncReducedMotionCss = (): void => {
+    root.dataset.reducedMotion = isReducedMotionEnabled() ? 'true' : 'false';
+  };
+
   const screenHostEl = document.createElement('div');
   screenHostEl.className = 'stage-screen-host';
 
@@ -729,9 +772,11 @@ export function mountBaliteApp(
   syncCrtModeCss(saveData.meta.settings.crtMode);
   syncSuitPaletteCss(saveData.meta.settings.suitPalette ?? 'standard');
   syncCardBackCss(saveData.meta.settings.cardBack ?? 'default');
+  syncReducedMotionCss();
   const audio: BaliteAudioController =
     options.audio ?? createHybridBaliteAudio(bridge.audio, saveData.meta.settings);
   const cardAnimator = createCardAnimator({
+    prefersReducedMotion: isReducedMotionEnabled,
     ...options.cardAnimatorOptions,
     flightLayer: flightLayerEl,
     getSpeed: () => saveData.meta.settings.animationSpeed,
@@ -739,10 +784,12 @@ export function mountBaliteApp(
     onCardDepart: () => audio.playCardDeal(),
   });
   const cardTiltController: CardTiltController = initCardTiltController({
+    reducedMotion: isReducedMotionEnabled,
     ...options.cardTiltOptions,
     container: stageEl,
   });
   const particleCanvas: ParticleCanvasController = createParticleCanvas({
+    reducedMotion: isReducedMotionEnabled,
     ...options.particleCanvasOptions,
     container: stageEl,
     speed: () => saveData.meta.settings.animationSpeed,
@@ -909,6 +956,7 @@ export function mountBaliteApp(
     createTutorialOverlay({
       container: root,
       audio,
+      reducedMotion: isReducedMotionEnabled,
       onNext: () => {
         advanceTutorialStep();
       },
@@ -951,11 +999,11 @@ export function mountBaliteApp(
   let cashoutFinishedKey: string | null = null;
   let victoryConfettiKey: string | null = null;
   let isSkippingTrace = false;
-  let pendingPlayLaunchDelay = false;
 
   const scoreRoller: NumberRollerController = createNumberRoller({
     initialValue: 0,
     durationMs: 500,
+    reducedMotion: isReducedMotionEnabled,
     ...options.numberRollerOptions,
     format: formatBalatroNumber,
     speed: () => saveData.meta.settings.animationSpeed,
@@ -970,6 +1018,7 @@ export function mountBaliteApp(
   const chipsRoller: NumberRollerController = createNumberRoller({
     initialValue: 0,
     durationMs: 300,
+    reducedMotion: isReducedMotionEnabled,
     ...options.numberRollerOptions,
     format: formatBalatroNumber,
     speed: () => saveData.meta.settings.animationSpeed,
@@ -983,6 +1032,7 @@ export function mountBaliteApp(
   const multRoller: NumberRollerController = createNumberRoller({
     initialValue: 0,
     durationMs: 300,
+    reducedMotion: isReducedMotionEnabled,
     ...options.numberRollerOptions,
     format: formatBalatroNumber,
     speed: () => saveData.meta.settings.animationSpeed,
@@ -1121,6 +1171,7 @@ export function mountBaliteApp(
     destroyCashoutTimeline();
 
     activeCashoutTimeline = createCashoutTimeline({
+      reducedMotion: isReducedMotionEnabled,
       ...options.numberRollerOptions,
       speed: () => saveData.meta.settings.animationSpeed,
       rows: cashoutRefs.rows.map((row) => ({
@@ -1176,16 +1227,27 @@ export function mountBaliteApp(
     scoreFlame?.destroy();
     scoreFlame = null;
     scoreFlameContainer = null;
+    audio.setFlameIntensity?.(0);
   };
 
-  /** Обновляет интенсивность пламени и проигрывает звук порога один раз при переходе 0 -> >0. */
+  const pulseFormulaSurge = (): void => {
+    if (!screenRefs || destroyed || isReducedMotionEnabled()) return;
+    screenRefs.formulaEl.classList.remove('is-formula-surge');
+    void screenRefs.formulaEl.offsetWidth;
+    screenRefs.formulaEl.classList.add('is-formula-surge');
+  };
+
+  /** Обновляет интенсивность пламени, непрерывный звук огня и разовый всплеск порога при переходе 0 -> >0. */
   const setScoreFlameIntensityWithSound = (intensity: number): void => {
     const normalized = Number.isFinite(intensity) && intensity > 0 ? intensity : 0;
     if (lastScoreFlameIntensity <= 0 && normalized > 0) {
       audio.playFlameThreshold();
+      triggerStageUiJiggle('heavy');
+      pulseFormulaSurge();
     }
     lastScoreFlameIntensity = normalized;
     scoreFlame?.setIntensity(normalized);
+    audio.setFlameIntensity?.(normalized);
   };
 
   const syncScoreFlame = (state: RunState, refs: ScreenRefs): void => {
@@ -1199,6 +1261,7 @@ export function mountBaliteApp(
       destroyScoreFlame();
       scoreFlameContainer = refs.formulaEl;
       scoreFlame = createScoreFlame({
+        reducedMotion: isReducedMotionEnabled,
         ...options.scoreFlameOptions,
         container: refs.formulaEl,
         chipsAnchor: refs.chipsPillEl,
@@ -1573,11 +1636,21 @@ export function mountBaliteApp(
     }, lifeMs);
   };
 
-  const triggerStageUiJiggle = (): void => {
-    if (destroyed) return;
-    screenHostEl.classList.remove('is-ui-jiggle');
+  const triggerStageUiJiggle = (strength: 'soft' | 'medium' | 'heavy' = 'soft'): void => {
+    if (destroyed || !isScreenShakeEnabled()) return;
+    screenHostEl.classList.remove(
+      'is-ui-jiggle',
+      'is-ui-jiggle--medium',
+      'is-ui-jiggle--heavy',
+    );
     void screenHostEl.offsetWidth;
-    screenHostEl.classList.add('is-ui-jiggle');
+    const cls =
+      strength === 'heavy'
+        ? 'is-ui-jiggle--heavy'
+        : strength === 'medium'
+          ? 'is-ui-jiggle--medium'
+          : 'is-ui-jiggle';
+    screenHostEl.classList.add(cls);
   };
 
   const renderOverlay = (): void => {
@@ -1642,7 +1715,6 @@ export function mountBaliteApp(
           onClose: closeOverlays,
           onTabChange: (tab) => {
             activeSettingsTab = tab;
-            triggerStageUiJiggle();
           },
           onReturnToMainMenu: () => {
             audio.playButton();
@@ -1918,6 +1990,7 @@ export function mountBaliteApp(
       multRoller.snap(0);
       stageEl.classList.add('stage-portrait--menu');
       backdrop.setMood('menu');
+      audio.setMusicMood?.('menu');
       screenRefs = null;
       renderMainMenu(
         screenHostEl,
@@ -1968,6 +2041,7 @@ export function mountBaliteApp(
     stageEl.classList.remove('stage-portrait--menu');
     const viewState = isAnimating && animationDisplayState ? animationDisplayState : runState;
     backdrop.setMood(resolveBackdropMood(viewState));
+    audio.setMusicMood?.(resolveAudioMusicMood(viewState, false));
 
     const dailyBestScore =
       saveData.meta.stats.dailyBestDate === currentDailySpec.dateKey
@@ -2196,6 +2270,13 @@ export function mountBaliteApp(
     syncHudRollers(viewState, screenRefs);
 
     const renderedShellEl = screenHostEl.querySelector<HTMLElement>('.run-shell');
+    if (
+      renderedShellEl &&
+      viewState.phase === 'deck_select' &&
+      prevPhaseBeforeRender !== 'deck_select'
+    ) {
+      renderedShellEl.dataset.deckSelectEnter = 'true';
+    }
     if (transitionKind !== null) {
       if (renderedShellEl) {
         renderedShellEl.dataset.phaseTransition = transitionKind;
@@ -2256,15 +2337,10 @@ export function mountBaliteApp(
     }
 
     if (layoutSnapshot) {
-      const usePlayLaunchDelay = pendingPlayLaunchDelay;
-      pendingPlayLaunchDelay = false;
       cardAnimator.animateFromSnapshot(screenHostEl, layoutSnapshot, {
         speed: saveData.meta.settings.animationSpeed,
         ...(transitionKind === 'blind-to-playing' ? { dealInitialDelaySeconds: 1.1 } : {}),
-        ...(usePlayLaunchDelay ? { playInitialDelaySeconds: 0.4 } : {}),
       });
-    } else {
-      pendingPlayLaunchDelay = false;
     }
 
     if (!isAnimating && viewState.phase === 'blind_select') {
@@ -2382,7 +2458,6 @@ export function mountBaliteApp(
       handsLeft: Math.max(0, prevState.handsLeft - 1),
     };
     selectedCardIds = [];
-    pendingPlayLaunchDelay = playedIds.length > 0;
 
     render();
 
@@ -2502,6 +2577,10 @@ export function mountBaliteApp(
         };
         chipsRoller.setTarget(runningChips);
         setMultDisplay(runningMult, false);
+        if (xMult > 1 && !isSkippingTrace) {
+          triggerStageUiJiggle('medium');
+          pulseFormulaSurge();
+        }
         setScoreFlameIntensityWithSound(
           computeScoreFlameIntensity(
             prevState.score,
@@ -2570,6 +2649,7 @@ export function mountBaliteApp(
         }
         if (!isSkippingTrace) {
           particleCanvas.emitAtElement('shatter', cardSlot);
+          triggerStageUiJiggle('heavy');
         }
         backdrop.spawnParticles(0.5, 0.5, POPUP_COLORS.shatter, 18);
       },
@@ -2580,8 +2660,10 @@ export function mountBaliteApp(
         screenRefs.bannerEl.classList.remove('is-hidden');
         if (tone === 'win') {
           backdrop.setMood('victory');
+          audio.setMusicMood?.('victory');
         } else if (tone === 'lose') {
           backdrop.setMood('defeat');
+          audio.setMusicMood?.('game_over');
         }
       },
     }, { leadInSteps });
@@ -2658,10 +2740,14 @@ export function mountBaliteApp(
     }
 
     let usedConsumableKind: ConsumableKind | null = null;
+    let consumableFlipTargetIds: readonly string[] = [];
     if (command.type === 'USE_CONSUMABLE') {
       const used = prevState.consumables.find((item) => item.uid === command.consumableUid);
       if (used) {
         usedConsumableKind = resolveConsumableKind(used.id);
+        if (command.targetCardIds && command.targetCardIds.length > 0) {
+          consumableFlipTargetIds = command.targetCardIds;
+        }
         const sourceEl = screenHostEl.querySelector<HTMLElement>(
           `[data-consumable-uid="${used.uid}"]`,
         );
@@ -2684,6 +2770,9 @@ export function mountBaliteApp(
       const choice = prevState.booster?.choices.find((item) => item.uid === command.choiceUid);
       if (choice?.kind === 'consumable') {
         usedConsumableKind = resolveConsumableKind(choice.consumable.id);
+        if (command.targetCardIds && command.targetCardIds.length > 0) {
+          consumableFlipTargetIds = command.targetCardIds;
+        }
         const sourceEl = screenHostEl.querySelector<HTMLElement>(
           `[data-choice-uid="${choice.uid}"]`,
         );
@@ -2705,11 +2794,20 @@ export function mountBaliteApp(
 
     const hasConsumableTrace = result.events.some((ev) => ev.type === 'CONSUMABLE_TRIGGER');
     const stateChanged = runState !== prevState || result.events.length > 0;
+    const enteredBossBattle =
+      command.type === 'SELECT_BLIND' &&
+      stateChanged &&
+      runState.phase === 'playing' &&
+      runState.anteBlinds[runState.currentBlindIndex]?.kind === 'boss';
 
     if (command.type === 'OPEN_PACK') {
       if (stateChanged) {
         audio.playBoosterOpen();
+        triggerStageUiJiggle('medium');
       }
+    } else if (enteredBossBattle) {
+      audio.playBossIntro?.();
+      triggerStageUiJiggle('medium');
     } else if (command.type === 'BUY_SHOP_OFFER' || command.type === 'BUY_CHARTER') {
       audio.playBuy();
     } else if (
@@ -2735,6 +2833,26 @@ export function mountBaliteApp(
       consumableTargetMode,
     );
     render();
+
+    // Каскадный 3D-переворот (Card:flip) на картах, усиленных Свитком Кузницы или Картой Пандоры
+    if (stateChanged && consumableFlipTargetIds.length > 0 && !isReducedMotionEnabled()) {
+      const animSpeed = saveData.meta.settings.animationSpeed;
+      consumableFlipTargetIds.forEach((cardId, idx) => {
+        const frameEl = screenHostEl.querySelector<HTMLElement>(
+          `[data-zone="hand"][data-card-id="${cardId}"] .card-frame`,
+        );
+        if (!frameEl) return;
+        frameEl.style.setProperty('--flip-index', String(idx));
+        frameEl.classList.remove('is-consumable-flipping');
+        void frameEl.offsetWidth;
+        frameEl.classList.add('is-consumable-flipping');
+        const cleanupMs = Math.max(180, Math.round((380 + idx * 95) / animSpeed));
+        registerTimeout(() => {
+          frameEl.classList.remove('is-consumable-flipping');
+          frameEl.style.removeProperty('--flip-index');
+        }, cleanupMs);
+      });
+    }
     if (runState.phase === 'shop' || runState.phase === 'game_over') {
       refreshRewardedAvailability();
     }
@@ -2866,6 +2984,10 @@ export function mountBaliteApp(
       updatedAt,
     });
     saveData = createPlayerSaveData(nextMeta, saveData.activeRun, revision, updatedAt);
+    if (patch.reducedMotion !== undefined) {
+      syncReducedMotionCss();
+      scoreFlame?.setIntensity(lastScoreFlameIntensity);
+    }
     void persistBaliteSave(bridge, saveData).catch(() => false);
 
     // При смене громкости/скорости не пересоздаём DOM модалки, чтобы не срывать ползунок
@@ -2979,6 +3101,17 @@ export function mountBaliteApp(
     onRandomSeed: () => {
       audio.playButton();
       seedInput = createRandomSeed();
+      const existingSeedInput =
+        screenHostEl.querySelector<HTMLInputElement>('#balite-seed-input');
+      if (!showMainMenu && runState.phase === 'deck_select' && existingSeedInput) {
+        existingSeedInput.value = seedInput;
+        cardAnimator.triggerJuice(existingSeedInput, {
+          scaleDelta: 0.06,
+          rotDelta: 0,
+          speed: saveData.meta.settings.animationSpeed,
+        });
+        return;
+      }
       render();
     },
     onStartRun: () => {
@@ -3454,7 +3587,11 @@ export function mountBaliteApp(
     const anySlot = targetEl?.closest<HTMLElement>(
       '.hand-card-slot, .inventory-slot, .play-zone__card',
     );
-    if (!anySlot || anySlot.classList.contains('is-dragging')) {
+    if (
+      !anySlot ||
+      anySlot.classList.contains('is-dragging') ||
+      screenHostEl.querySelector('.is-dragging') !== null
+    ) {
       return;
     }
 
@@ -3513,7 +3650,7 @@ export function mountBaliteApp(
     const anySlot = targetEl?.closest<HTMLElement>(
       '.hand-card-slot, .inventory-slot, .play-zone__card',
     );
-    if (!anySlot) return;
+    if (!anySlot || anySlot.classList.contains('is-dragging')) return;
 
     const related = (event as Partial<MouseEvent>).relatedTarget;
     if (related && typeof Node !== 'undefined' && related instanceof Node && anySlot.contains(related)) {
@@ -3634,6 +3771,7 @@ export function mountBaliteApp(
         syncCrtModeCss(saveData.meta.settings.crtMode);
         syncSuitPaletteCss(saveData.meta.settings.suitPalette ?? 'standard');
         syncCardBackCss(saveData.meta.settings.cardBack ?? 'default');
+        syncReducedMotionCss();
         mountHoverTooltip();
         audio.setSettings(saveData.meta.settings);
 
@@ -3726,6 +3864,7 @@ export function mountBaliteApp(
     delete root.dataset.crt;
     delete root.dataset.suitPalette;
     delete root.dataset.cardBack;
+    delete root.dataset.reducedMotion;
     root.replaceChildren();
 
     if (ownsBridge) {

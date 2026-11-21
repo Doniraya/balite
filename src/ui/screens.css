@@ -942,15 +942,15 @@
 .deck-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(6px, 0.8dvh, 8px);
+  gap: clamp(6px, 0.8dvh, 10px);
 }
 
 .deck-option {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: clamp(3px, 0.5dvh, 4px);
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: clamp(8px, 1vw, 12px);
   padding: clamp(8px, 1dvh, 12px) clamp(10px, 1.2vw, 14px);
   border-radius: 4px;
   border: 6px solid transparent;
@@ -960,6 +960,22 @@
   color: var(--screen-text);
   text-align: left;
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5);
+}
+
+.deck-option__card-preview {
+  flex-shrink: 0;
+  --card-compact-width: clamp(46px, 5vw, 56px);
+  pointer-events: none;
+}
+
+.deck-option__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: clamp(3px, 0.5dvh, 5px);
+  flex: 1;
+  min-width: 0;
 }
 
 .deck-option.is-selected {
@@ -1236,10 +1252,10 @@
   }
 }
 
-/* Плавный выезд стартовой панели выбора колоды снизу вверх */
-.run-shell[data-phase='deck_select'] .arena-stage {
-  animation: arena-panel-rise calc(340ms / var(--anim-speed, 1))
-    cubic-bezier(0.2, 1.16, 0.3, 1) both;
+/* Плавный выезд стартовой панели выбора колоды снизу вверх только при первичном входе */
+.run-shell[data-phase='deck_select'][data-deck-select-enter='true'] .arena-stage {
+  animation: arena-panel-rise calc(300ms / var(--anim-speed, 1))
+    cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes arena-panel-rise {
@@ -2613,7 +2629,7 @@
 
 .hand-fan .card-frame,
 .hand-cards .card-frame {
-  --card-width: clamp(60px, min(13.5vw, 8.2dvh), 86px);
+  --card-width: clamp(64px, min(14vw, 8.2dvh), 86px);
 }
 
 .hand-card-slot {
@@ -3451,11 +3467,122 @@
     border: none;
     background: transparent;
     gap: clamp(10px, 1.3vw, 18px);
-    padding-block: clamp(16px, 2.4dvh, 24px);
+    padding: clamp(14px, 2dvh, 22px) clamp(8px, 1vw, 14px) clamp(26px, 3.8dvh, 44px);
   }
 
   .play-zone .card-frame {
-    --card-width: clamp(82px, min(7.4vw, 12.6dvh), 120px);
+    --card-width: clamp(88px, min(7.6vw, 14.2dvh), 124px);
+  }
+
+  /* Экран выбора колоды на широком ПК: крупная центрированная раскладка без пустой нижней половины */
+  .arena-stage[data-phase='deck_select'] {
+    max-width: 1080px;
+    width: 100%;
+    margin: auto;
+    justify-content: center;
+    gap: clamp(14px, 1.8dvh, 22px);
+    padding: clamp(10px, 1.5dvh, 20px) clamp(14px, 1.6vw, 24px);
+  }
+
+  .arena-stage[data-phase='deck_select'] .arena-title {
+    font-size: clamp(22px, 2.1vw, 30px);
+  }
+
+  .inventory-deck-banner {
+    font-size: clamp(15px, 1.35vw, 19px);
+    min-height: 44px;
+  }
+
+  .deck-grid {
+    gap: clamp(12px, 1.4dvh, 18px);
+  }
+
+  .deck-option {
+    min-height: clamp(112px, 14.5dvh, 148px);
+    padding: clamp(12px, 1.6dvh, 18px) clamp(14px, 1.6vw, 20px);
+    gap: 16px;
+    border-width: 8px;
+    border-image-width: 10px;
+  }
+
+  .deck-option__card-preview {
+    --card-compact-width: clamp(58px, 5.2vw, 72px);
+  }
+
+  .deck-option__name {
+    font-size: clamp(18px, 1.6vw, 22px);
+  }
+
+  .deck-option__status {
+    font-size: clamp(13px, 1.15vw, 15px);
+  }
+
+  .deck-option__desc {
+    font-size: clamp(14px, 1.25vw, 17px);
+    line-height: 1.35;
+  }
+
+  .deck-option__unlock-hint {
+    font-size: clamp(12.5px, 1.1vw, 15px);
+  }
+
+  .daily-run-card {
+    padding: clamp(14px, 1.8dvh, 20px) clamp(18px, 1.8vw, 24px);
+    gap: 16px;
+  }
+
+  .daily-run-card__title {
+    font-size: clamp(17px, 1.55vw, 21px);
+  }
+
+  .daily-run-card__date {
+    font-size: clamp(13px, 1.15vw, 15px);
+  }
+
+  .daily-run-card__meta {
+    font-size: clamp(13.5px, 1.2vw, 16px);
+  }
+
+  .daily-run-card__btn {
+    min-height: 52px;
+    padding: 10px 22px;
+    font-size: clamp(15px, 1.35vw, 18px);
+  }
+
+  .seed-bar {
+    padding: clamp(10px, 1.3dvh, 14px) clamp(14px, 1.5vw, 18px);
+    border: 8px solid transparent;
+    border-image: url('../assets/ui/wood-frame-9slice.webp') 38 / 8px / 0 stretch;
+    background: rgba(28, 16, 10, 0.92);
+    background-clip: padding-box;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+    gap: 12px;
+  }
+
+  .seed-bar__label {
+    font-size: clamp(14px, 1.25vw, 17px);
+  }
+
+  .seed-bar__input {
+    min-height: 50px;
+    padding: 8px 14px;
+    font-size: clamp(16px, 1.4vw, 19px);
+  }
+
+  .seed-bar .ui-btn {
+    min-height: 50px;
+    padding: 8px 18px;
+    font-size: clamp(15px, 1.3vw, 18px);
+  }
+
+  .deck-start-actions {
+    gap: 14px;
+  }
+
+  .deck-start-actions .ui-btn {
+    min-height: clamp(56px, 6.8dvh, 66px);
+    font-size: clamp(19px, 1.75vw, 24px);
+    font-weight: 800;
   }
 
   /* Магазин на ПК: слева Далее + Обновить, справа 2 товара; ниже слева Грамота, справа 2 бустера */
@@ -3844,5 +3971,88 @@
   .blind-card__boss-badge {
     font-size: 9.5px;
     padding: 2px 5px;
+  }
+}
+
+/* Пульсация готового условного Навыка (juice_card_until: Финальный рывок, Последний рубеж и т.д.) */
+.inventory-slot.is-ready-pulse:not(.is-dragging) {
+  animation: relic-ready-pulse 900ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.inventory-slot.is-ready-pulse:not(.is-dragging) .card-frame {
+  box-shadow:
+    0 6px 16px rgba(4, 7, 15, 0.55),
+    0 0 0 2px rgba(245, 185, 66, 0.72),
+    0 0 14px rgba(245, 185, 66, 0.38);
+}
+
+@keyframes relic-ready-pulse {
+  0%,
+  55%,
+  100% {
+    transform: translateY(0) rotate(var(--fan-angle, 0deg)) scale(1);
+  }
+  72% {
+    transform: translateY(-4px) rotate(calc(var(--fan-angle, 0deg) + 2.4deg)) scale(1.06);
+  }
+  86% {
+    transform: translateY(-1px) rotate(calc(var(--fan-angle, 0deg) - 1.2deg)) scale(0.99);
+  }
+}
+
+/* Напряжённое дрожание счётчика рук на последнем ходе (DynaText quiver) */
+.hud-stat.is-hud-quiver .hud-stat__value {
+  color: #ff6b6b;
+  text-shadow: 0 0 10px rgba(255, 82, 82, 0.55), 0 2px 0 rgba(40, 8, 8, 0.9);
+  animation: hud-last-hand-quiver 1.15s ease-in-out infinite;
+}
+
+@keyframes hud-last-hand-quiver {
+  0%,
+  70%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+  76% {
+    transform: translate3d(-1px, -0.5px, 0) rotate(-3deg) scale(1.1);
+  }
+  82% {
+    transform: translate3d(1px, 0.5px, 0) rotate(3deg) scale(1.1);
+  }
+  88% {
+    transform: translate3d(-0.8px, 0, 0) rotate(-2deg) scale(1.05);
+  }
+}
+
+/* Всплеск формулы Сила × Множ при крупном ×Множ или пробитии порога */
+.hud-formula.is-formula-surge {
+  animation: hud-formula-surge calc(280ms / var(--anim-speed, 1))
+    cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes hud-formula-surge {
+  0% {
+    transform: scale(1);
+  }
+  38% {
+    transform: scale(1.07);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+[data-reduced-motion='true'] .inventory-slot.is-ready-pulse,
+[data-reduced-motion='true'] .hud-stat.is-hud-quiver .hud-stat__value,
+[data-reduced-motion='true'] .hud-formula.is-formula-surge,
+[data-reduced-motion='true'] .belt--hud.is-blind-jiggle .hud-grid {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inventory-slot.is-ready-pulse,
+  .hud-stat.is-hud-quiver .hud-stat__value,
+  .hud-formula.is-formula-surge {
+    animation: none;
   }
 }

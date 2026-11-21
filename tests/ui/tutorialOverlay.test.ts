@@ -182,7 +182,9 @@ describe('createTutorialOverlay', () => {
     expect(counterEl?.textContent).toBe('Шаг 1 из 12');
 
     const bodyEl = document.querySelector('.tut-card-body');
-    expect(bodyEl?.innerHTML).toContain('<span class="tut-hl tut-hl--gold">Мира</span>');
+    const goldSpan = bodyEl?.querySelector<HTMLElement>('.tut-hl.tut-hl--gold');
+    expect(goldSpan?.textContent).toBe('Мира');
+    expect(bodyEl?.textContent).toBe('Привет! Я Мира, администратор гильдии.');
 
     const nextBtn = document.querySelector<HTMLButtonElement>('.tut-btn--next');
     expect(nextBtn?.textContent).toBe('Дальше');
@@ -587,5 +589,62 @@ describe('createTutorialOverlay', () => {
     expect(playDialogueSpy).toHaveBeenCalledTimes(2);
 
     testController.destroy();
+  });
+
+  it('поддерживает посимвольный DynaText, допечатывание по клику на облачко и режим reducedMotion', () => {
+    vi.useFakeTimers();
+    const playDialogueSpy = vi.fn();
+    const mockAudio = {
+      playDialogue: playDialogueSpy,
+    } as unknown as import('../../src/audio/synth').BaliteAudioController;
+
+    const animController = createTutorialOverlay({
+      onNext: vi.fn(),
+      onSkip: vi.fn(),
+      audio: mockAudio,
+      reducedMotion: false,
+    });
+
+    animController.showStep({
+      id: 'step-dyna',
+      title: 'Живой текст',
+      text: 'Приветствую, искатель приключений в гильдии!',
+    });
+
+    const textEl = animController.element.querySelector<HTMLElement>('.tut-text')!;
+    expect(textEl.classList.contains('is-revealing')).toBe(true);
+    expect(textEl.querySelectorAll('.tut-char').length).toBeGreaterThan(10);
+    expect(textEl.textContent).toBe('Приветствую, искатель приключений в гильдии!');
+    expect(playDialogueSpy).toHaveBeenCalledTimes(1);
+
+    // По таймеру приходят мягкие слоги с растущим питчем
+    vi.advanceTimersByTime(150);
+    expect(playDialogueSpy.mock.calls.length).toBeGreaterThan(1);
+
+    // Клик по облачку речи мгновенно завершает печать и останавливает дальнейшее озвучивание
+    const callsAtClick = playDialogueSpy.mock.calls.length;
+    animController.element.querySelector<HTMLElement>('.tut-speech-bubble')?.click();
+    expect(textEl.classList.contains('is-reveal-complete')).toBe(true);
+    vi.advanceTimersByTime(500);
+    expect(playDialogueSpy.mock.calls.length).toBe(callsAtClick);
+    animController.destroy();
+
+    // В режиме reducedMotion посимвольные обёртки и таймеры не создаются
+    const reducedController = createTutorialOverlay({
+      onNext: vi.fn(),
+      onSkip: vi.fn(),
+      reducedMotion: true,
+    });
+    reducedController.showStep({
+      id: 'step-reduced',
+      title: 'Без анимации',
+      text: 'Сразу {C:gold}весь текст{}.',
+    });
+    const reducedTextEl = reducedController.element.querySelector<HTMLElement>('.tut-text')!;
+    expect(reducedTextEl.classList.contains('is-reveal-complete')).toBe(true);
+    expect(reducedTextEl.querySelectorAll('.tut-char')).toHaveLength(0);
+    expect(reducedTextEl.innerHTML).toContain('<span class="tut-hl tut-hl--gold">весь текст</span>');
+    reducedController.destroy();
+    vi.useRealTimers();
   });
 });

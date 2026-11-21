@@ -816,5 +816,95 @@ describe('CardAnimator (пружинные полёты карт поверх Mo
       scheduler.runUntilIdle(240, 16);
       animator.destroy();
     });
+
+    it('при сбросе переворачивает карту рубашкой вверх без сжатия и уносит направо, а при розыгрыше задерживает смыкание оставшейся руки', () => {
+      const { container, flightLayer } = createStagePair();
+      const scheduler = createManualFrameScheduler();
+      const animator = createCardAnimator({
+        flightLayer,
+        requestFrame: scheduler.requestFrame,
+        cancelFrame: scheduler.cancelFrame,
+        now: scheduler.now,
+        prefersReducedMotion: () => false,
+      });
+
+      const discardSlot = createCardSlot({
+        cardId: 'flip_discard_1',
+        zone: 'hand',
+        rect: { left: 160, top: 960, width: 80, height: 112 },
+      });
+      const frameInDiscard = discardSlot.querySelector('.card-frame') as HTMLElement;
+      const artLayer = document.createElement('div');
+      artLayer.className = 'card-frame__layer card-frame__layer-art';
+      frameInDiscard.appendChild(artLayer);
+
+      container.append(discardSlot);
+      const discSnap = animator.captureSnapshot(container);
+      container.replaceChildren();
+
+      animator.animateFromSnapshot(container, discSnap, { speed: 1, animateDepartures: true });
+      const ghost = flightLayer.querySelector<HTMLElement>('.card-flight-ghost')!;
+      expect(ghost).not.toBeNull();
+
+      // В первой половине переворота призрак вращается по оси Y без сжатия scale(...)
+      scheduler.step(48);
+      expect(ghost.style.transform).toContain('rotateY(');
+      expect(ghost.style.transform).not.toContain('scale(');
+
+      // После середины переворота карта переключается в состояние рубашки (is-face-down)
+      scheduler.step(48);
+      const ghostFrame = ghost.querySelector<HTMLElement>('.card-frame')!;
+      expect(ghostFrame.classList.contains('is-face-down')).toBe(true);
+      expect(ghostFrame.dataset.faceDown).toBe('true');
+      expect(ghost.style.transform).not.toContain('scale(');
+
+      scheduler.runUntilIdle(240, 16);
+      expect(flightLayer.querySelectorAll('.card-flight-ghost').length).toBe(0);
+
+      // При розыгрыше карты в Play Zone оставшаяся в руке карта сначала ждёт вылета сыгранной карты
+      const playCardBefore = createCardSlot({
+        cardId: 'play_up',
+        zone: 'hand',
+        rect: { left: 160, top: 960, width: 80, height: 112 },
+      });
+      const stayCardBefore = createCardSlot({
+        cardId: 'stay_wait',
+        zone: 'hand',
+        rect: { left: 320, top: 960, width: 80, height: 112 },
+      });
+      container.replaceChildren(playCardBefore, stayCardBefore);
+      const playSnap = animator.captureSnapshot(container);
+
+      const playCardAfter = createCardSlot({
+        cardId: 'play_up',
+        zone: 'play',
+        rect: { left: 240, top: 520, width: 80, height: 112 },
+      });
+      const stayCardAfter = createCardSlot({
+        cardId: 'stay_wait',
+        zone: 'hand',
+        rect: { left: 240, top: 960, width: 80, height: 112 },
+      });
+      container.replaceChildren(playCardAfter, stayCardAfter);
+
+      animator.animateFromSnapshot(container, playSnap, { speed: 1 });
+      const stayInitialTransform = stayCardAfter.style.transform;
+      const playInitialTransform = playCardAfter.style.transform;
+
+      // На первых 32мс сыгранная карта уже взлетает в Play Zone, а оставшаяся в руке ещё стоит на прежнем месте
+      scheduler.step(16);
+      scheduler.step(16);
+      expect(playCardAfter.style.transform).not.toBe(playInitialTransform);
+      expect(stayCardAfter.style.transform).toBe(stayInitialTransform);
+
+      // После вылета сыгранной карты оставшаяся в руке карта плавно смыкается к центру
+      for (let i = 0; i < 12; i += 1) {
+        scheduler.step(16);
+      }
+      expect(stayCardAfter.style.transform).not.toBe(stayInitialTransform);
+
+      scheduler.runUntilIdle(240, 16);
+      animator.destroy();
+    });
   });
 });

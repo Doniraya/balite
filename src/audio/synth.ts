@@ -17,6 +17,24 @@ export type BaliteAudioSettings = {
 };
 
 /**
+ * Настроение динамической модуляции фоновой музыки по игровой фазе (Story 9.1).
+ */
+export type AudioMusicMood =
+  | 'menu'
+  | 'battle'
+  | 'boss'
+  | 'last_hand'
+  | 'shop'
+  | 'booster'
+  | 'victory'
+  | 'game_over';
+
+/**
+ * Издания карт и Навыков с индивидуальным звуковым откликом.
+ */
+export type AudioEditionKind = 'foil' | 'holo' | 'polychrome' | 'negative';
+
+/**
  * Публичный интерфейс контроллера процедурного Web Audio синтезатора Balite.
  */
 export interface BaliteAudioController {
@@ -26,13 +44,20 @@ export interface BaliteAudioController {
   ): void;
   getSettings(): BaliteAudioSettings;
   isMuted(): boolean;
+  setMusicMood?(mood: AudioMusicMood): void;
+  setFlameIntensity?(intensity: number): void;
   playButton(): void;
+  playCancel?(): void;
   playCardHover(): void;
   playCardSelect(): void;
   playCardDeselect(): void;
   playCardDeal(): void;
   playChipHit(comboIndex?: number): void;
   playMultHit(comboIndex?: number): void;
+  playXMultHit?(comboIndex?: number): void;
+  playEditionTrigger?(edition: AudioEditionKind, comboIndex?: number): void;
+  playGoldSeal?(): void;
+  playBossIntro?(): void;
   playRelicTrigger(comboIndex?: number, isRetriggerAnnounce?: boolean): void;
   playGoldDelta(positive?: boolean): void;
   playBoosterOpen(): void;
@@ -44,7 +69,7 @@ export interface BaliteAudioController {
   playReroll(): void;
   playWin(): void;
   playLose(): void;
-  playDialogue(): void;
+  playDialogue(pitchRate?: number): void;
   playForTraceEvent(event: TraceEvent, comboIndex: number): void;
   dispose(): void;
 }
@@ -104,16 +129,38 @@ interface NoiseSpec {
 interface AmbientState {
   readonly oscillators: readonly OscillatorNode[];
   readonly nodes: readonly AudioNode[];
+  readonly filter: BiquadFilterNode | null;
+  readonly mixGain: GainNode;
+}
+
+interface FlameLoopState {
+  readonly source: AudioBufferSourceNode;
+  readonly toneOsc: OscillatorNode | null;
+  readonly gainNode: GainNode;
+  readonly filterNode: BiquadFilterNode | null;
+  readonly nodes: readonly AudioNode[];
 }
 
 const DEFAULT_SOUND_ENABLED = true;
 const DEFAULT_SFX_VOLUME = 0.8;
 const DEFAULT_MUSIC_VOLUME = 0.4;
+const VOLUME_CURVE_EXPONENT = 1.85;
 const MAX_COMBO_STEP = 64;
 const MAX_COMBO_PITCH_RATE = 2;
 const MIN_POSITIVE_VALUE = 0.0001;
 const CELESTIAL_ID_SET = new Set<string>(CELESTIAL_IDS);
 const RUNE_ID_SET = new Set<string>(RUNE_IDS);
+
+/**
+ * Преобразует линейное положение ползунка [0..1] в перцептивное усиление (степенная кривая слуха),
+ * чтобы низкие и средние значения громкости регулировались плавно и не били по ушам.
+ */
+export function volumeToGain(volume: number): number {
+  const clamped = clampUnit(volume, 0);
+  if (clamped <= 0) return 0;
+  if (clamped >= 1) return 1;
+  return Math.pow(clamped, VOLUME_CURVE_EXPONENT);
+}
 
 /**
  * Определяет звуковую категорию расходника по его идентификатору.
@@ -137,17 +184,36 @@ export function dispatchTraceAudioEvent(
   switch (event.type) {
     case 'CARD_TRIGGER': {
       if (event.isEditionStep) {
-        if (event.edition === 'holo' || event.edition === 'polychrome') {
-          audio.playMultHit(comboIndex);
+        if (
+          event.edition === 'foil' ||
+          event.edition === 'holo' ||
+          event.edition === 'polychrome' ||
+          event.edition === 'negative'
+        ) {
+          if (audio.playEditionTrigger) {
+            audio.playEditionTrigger(event.edition, comboIndex);
+          } else if (event.edition === 'holo' || event.edition === 'polychrome') {
+            audio.playMultHit(comboIndex);
+          } else {
+            audio.playRelicTrigger(comboIndex);
+          }
         } else {
           audio.playRelicTrigger(comboIndex);
         }
       } else if (event.xMult !== undefined && event.xMult !== 1) {
-        audio.playMultHit(comboIndex);
+        if (audio.playXMultHit) {
+          audio.playXMultHit(comboIndex);
+        } else {
+          audio.playMultHit(comboIndex);
+        }
       } else if (event.multDelta && event.multDelta !== 0) {
         audio.playMultHit(comboIndex);
       } else if (event.dollarsDelta && event.dollarsDelta !== 0) {
-        audio.playGoldDelta(event.dollarsDelta > 0);
+        if (event.seal === 'gold' && event.dollarsDelta > 0 && audio.playGoldSeal) {
+          audio.playGoldSeal();
+        } else {
+          audio.playGoldDelta(event.dollarsDelta > 0);
+        }
       } else {
         audio.playChipHit(comboIndex);
       }
@@ -156,7 +222,11 @@ export function dispatchTraceAudioEvent(
     case 'HAND_CARD_TRIGGER':
     case 'RELIC_TRIGGER': {
       if (event.xMult !== undefined && event.xMult !== 1) {
-        audio.playMultHit(comboIndex);
+        if (audio.playXMultHit) {
+          audio.playXMultHit(comboIndex);
+        } else {
+          audio.playMultHit(comboIndex);
+        }
       } else if (event.multDelta && event.multDelta !== 0) {
         audio.playMultHit(comboIndex);
       } else if (event.dollarsDelta && event.dollarsDelta !== 0) {
@@ -653,10 +723,152 @@ export function createBaliteAudio(
   let musicGain: GainNode | null = null;
   let cachedNoiseBuffer: AudioBuffer | null = null;
   let ambient: AmbientState | null = null;
+  let flameLoop: FlameLoopState | null = null;
+  let musicMood: AudioMusicMood = 'menu';
+  let flameIntensity = 0;
   let unsubscribeMute: (() => void) | null = null;
 
   const isMuted = (): boolean =>
     disposed || !soundEnabled || platformMuted || Boolean(platformAudio?.isMutedByPlatform());
+
+  const stopFlameLoop = (): void => {
+    if (!flameLoop) return;
+    try {
+      if (typeof flameLoop.source.stop === 'function') {
+        flameLoop.source.stop();
+      }
+    } catch {
+      // Источник шума уже остановлен
+    }
+    if (flameLoop.toneOsc) {
+      try {
+        if (typeof flameLoop.toneOsc.stop === 'function') {
+          flameLoop.toneOsc.stop();
+        }
+      } catch {
+        // Осциллятор уже остановлен
+      }
+    }
+    for (const node of flameLoop.nodes) {
+      safeDisconnect(node);
+    }
+    flameLoop = null;
+  };
+
+  const syncFlameLoop = (): void => {
+    const activeIntensity =
+      disposed || !unlocked || isMuted() || sfxVolume <= 0 || flameIntensity <= 0.02
+        ? 0
+        : Math.min(1, flameIntensity);
+
+    if (activeIntensity <= 0 || !ctx || !sfxGain) {
+      stopFlameLoop();
+      return;
+    }
+
+    const now = getSafeTime(ctx);
+    const targetGain = 0.018 + activeIntensity * 0.052;
+    const targetFilterFreq = 320 + activeIntensity * 720;
+
+    if (flameLoop) {
+      setParamImmediate(flameLoop.gainNode.gain, targetGain, now);
+      if (flameLoop.filterNode?.frequency) {
+        setParamImmediate(flameLoop.filterNode.frequency, targetFilterFreq, now);
+      }
+      if (flameLoop.toneOsc?.frequency) {
+        setParamImmediate(flameLoop.toneOsc.frequency, 146.83 + activeIntensity * 28, now);
+      }
+      return;
+    }
+
+    if (
+      !cachedNoiseBuffer ||
+      typeof ctx.createBufferSource !== 'function' ||
+      typeof ctx.createGain !== 'function'
+    ) {
+      return;
+    }
+
+    try {
+      const nodes: AudioNode[] = [];
+      const source = ctx.createBufferSource();
+      source.buffer = cachedNoiseBuffer;
+      source.loop = true;
+      nodes.push(source);
+
+      const gainNode = ctx.createGain();
+      setParamImmediate(gainNode.gain, targetGain, now);
+      nodes.push(gainNode);
+
+      let filterNode: BiquadFilterNode | null = null;
+      if (typeof ctx.createBiquadFilter === 'function') {
+        filterNode = ctx.createBiquadFilter();
+        filterNode.type = 'bandpass';
+        if (filterNode.frequency) {
+          filterNode.frequency.value = targetFilterFreq;
+        }
+        if (filterNode.Q) {
+          filterNode.Q.value = 1.25;
+        }
+        source.connect(filterNode);
+        filterNode.connect(gainNode);
+        nodes.push(filterNode);
+      } else {
+        source.connect(gainNode);
+      }
+
+      // Мягкая тёплая органная нота, нарастающая с интенсивностью пламени (как ambientOrgan1)
+      let toneOsc: OscillatorNode | null = null;
+      if (typeof ctx.createOscillator === 'function') {
+        toneOsc = ctx.createOscillator();
+        const toneGain = ctx.createGain();
+        toneOsc.type = 'triangle';
+        if (toneOsc.frequency) {
+          toneOsc.frequency.value = 146.83 + activeIntensity * 28;
+        }
+        setParamImmediate(toneGain.gain, 0.22, now);
+        toneOsc.connect(toneGain);
+        toneGain.connect(gainNode);
+        if (typeof toneOsc.start === 'function') {
+          toneOsc.start(now);
+        }
+        nodes.push(toneOsc, toneGain);
+      }
+
+      gainNode.connect(sfxGain);
+      if (typeof source.start === 'function') {
+        source.start(now);
+      }
+
+      flameLoop = {
+        source,
+        toneOsc,
+        gainNode,
+        filterNode,
+        nodes,
+      };
+    } catch {
+      stopFlameLoop();
+    }
+  };
+
+  const applyAmbientMood = (): void => {
+    if (!ambient || !ctx) return;
+    const now = getSafeTime(ctx);
+    const moodFreq: Record<AudioMusicMood, number> = {
+      menu: 340,
+      battle: 360,
+      boss: 480,
+      last_hand: 520,
+      shop: 280,
+      booster: 250,
+      victory: 440,
+      game_over: 190,
+    };
+    if (ambient.filter?.frequency) {
+      setParamImmediate(ambient.filter.frequency, moodFreq[musicMood], now);
+    }
+  };
 
   const stopAmbient = (): void => {
     if (!ambient) return;
@@ -766,7 +978,8 @@ export function createBaliteAudio(
       oscillators.push(lfo);
       nodes.push(lfo, lfoDepth);
 
-      ambient = { oscillators, nodes };
+      ambient = { oscillators, nodes, filter: filterRef, mixGain };
+      applyAmbientMood();
     } catch {
       stopAmbient();
     }
@@ -791,8 +1004,8 @@ export function createBaliteAudio(
     if (ctx && masterGain && sfxGain && musicGain) {
       const now = getSafeTime(ctx);
       setParamImmediate(masterGain.gain, muted ? 0 : 1, now);
-      setParamImmediate(sfxGain.gain, sfxVolume, now);
-      setParamImmediate(musicGain.gain, muted ? 0 : musicVolume, now);
+      setParamImmediate(sfxGain.gain, volumeToGain(sfxVolume), now);
+      setParamImmediate(musicGain.gain, muted ? 0 : volumeToGain(musicVolume), now);
     }
 
     if (muted || !unlocked || musicVolume <= 0 || disposed || hooks?.suppressAmbient?.()) {
@@ -801,6 +1014,8 @@ export function createBaliteAudio(
       tryResumeContext(ctx);
       startAmbient();
     }
+
+    syncFlameLoop();
 
     hooks?.onSyncState?.({
       ctx,
@@ -920,6 +1135,18 @@ export function createBaliteAudio(
     musicVolume,
   });
 
+  const setMusicMood = (mood: AudioMusicMood): void => {
+    if (disposed || musicMood === mood) return;
+    musicMood = mood;
+    applyAmbientMood();
+  };
+
+  const setFlameIntensity = (intensity: number): void => {
+    if (disposed) return;
+    flameIntensity = clampUnit(intensity, 0);
+    syncFlameLoop();
+  };
+
   const playButton = (): void => {
     const out = prepareSfx();
     if (!out) return;
@@ -936,23 +1163,48 @@ export function createBaliteAudio(
     });
   };
 
+  const playCancel = (): void => {
+    const out = prepareSfx();
+    if (!out) return;
+    scheduleTone(out.ctx, out.dest, {
+      type: 'triangle',
+      startFreq: 230,
+      endFreq: 145,
+      duration: 0.075,
+      attack: 0.003,
+      gain: 0.12,
+      filterType: 'lowpass',
+      filterStartFreq: 720,
+      filterEndFreq: 320,
+    });
+    scheduleTone(out.ctx, out.dest, {
+      type: 'sine',
+      startFreq: 170,
+      endFreq: 118,
+      delay: 0.04,
+      duration: 0.08,
+      attack: 0.003,
+      gain: 0.09,
+    });
+  };
+
   const playCardHover = (): void => {
     const out = prepareSfx();
     if (!out) return;
     scheduleTone(out.ctx, out.dest, {
       type: 'sine',
       startFreq: 680,
-      endFreq: 820,
-      duration: 0.028,
+      endFreq: 800,
+      duration: 0.024,
       attack: 0.004,
-      gain: 0.055,
+      gain: 0.028,
     });
     scheduleNoiseBurst(out.ctx, out.dest, cachedNoiseBuffer, {
-      duration: 0.022,
-      gain: 0.035,
+      duration: 0.02,
+      gain: 0.018,
       filterType: 'bandpass',
       startFreq: 2200,
-      endFreq: 3000,
+      endFreq: 2900,
       q: 1.6,
     });
   };
@@ -1072,6 +1324,197 @@ export function createBaliteAudio(
       duration: 0.12,
       attack: 0.002,
       gain: 0.22,
+    });
+  };
+
+  const playXMultHit = (comboIndex = 0): void => {
+    const out = prepareSfx();
+    if (!out) return;
+    const step = clampComboStep(comboIndex);
+    const pitch = comboPitchFactor(step);
+
+    // Более глубокий и мощный удар для ×Множ (отчётливо отделяется от +Множ на слух)
+    scheduleTone(out.ctx, out.dest, {
+      type: 'sine',
+      startFreq: 138 * (1 + step * 0.012),
+      endFreq: 46,
+      duration: 0.22,
+      attack: 0.002,
+      gain: 0.25,
+    });
+    scheduleTone(out.ctx, out.dest, {
+      type: 'sawtooth',
+      startFreq: 246.94 * pitch,
+      endFreq: 293.66 * pitch,
+      duration: 0.24,
+      attack: 0.005,
+      gain: 0.15,
+      filterType: 'lowpass',
+      filterStartFreq: 2400 * pitch,
+      filterEndFreq: 720 * pitch,
+    });
+    scheduleTone(out.ctx, out.dest, {
+      type: 'triangle',
+      startFreq: 493.88 * pitch,
+      duration: 0.22,
+      attack: 0.004,
+      gain: 0.13,
+    });
+    scheduleTone(out.ctx, out.dest, {
+      type: 'sine',
+      startFreq: 987.77 * pitch,
+      delay: 0.025,
+      duration: 0.19,
+      attack: 0.003,
+      gain: 0.1,
+    });
+  };
+
+  const playEditionTrigger = (edition: AudioEditionKind, comboIndex = 0): void => {
+    const out = prepareSfx();
+    if (!out) return;
+    const pitch = comboPitchFactor(comboIndex);
+
+    if (edition === 'foil') {
+      // Тиснёное: звонкий металлический серебряный блик
+      scheduleNoteSequence(out.ctx, out.dest, [1174.66 * pitch, 1567.98 * pitch], {
+        stepSec: 0.032,
+        duration: 0.11,
+        lastDuration: 0.18,
+        gain: 0.13,
+        type: 'triangle',
+        lastType: 'sine',
+        attack: 0.002,
+      });
+      scheduleNoiseBurst(out.ctx, out.dest, cachedNoiseBuffer, {
+        duration: 0.075,
+        gain: 0.06,
+        filterType: 'highpass',
+        startFreq: 3200,
+        endFreq: 5200,
+      });
+      return;
+    }
+
+    if (edition === 'holo') {
+      // Радужное: воздушный сияющий трезвучный перелив
+      scheduleNoteSequence(
+        out.ctx,
+        out.dest,
+        [587.33 * pitch, 739.99 * pitch, 1174.66 * pitch],
+        {
+          stepSec: 0.038,
+          duration: 0.12,
+          lastDuration: 0.22,
+          gain: 0.13,
+          type: 'sine',
+          attack: 0.005,
+        },
+      );
+      return;
+    }
+
+    if (edition === 'polychrome') {
+      // Призматическое: богатый кристальный аккорд с глубиной
+      scheduleTone(out.ctx, out.dest, {
+        type: 'sine',
+        startFreq: 196 * pitch,
+        endFreq: 98,
+        duration: 0.18,
+        attack: 0.004,
+        gain: 0.16,
+      });
+      scheduleNoteSequence(
+        out.ctx,
+        out.dest,
+        [523.25 * pitch, 659.25 * pitch, 987.77 * pitch, 1318.51 * pitch],
+        {
+          stepSec: 0.034,
+          duration: 0.12,
+          lastDuration: 0.26,
+          gain: 0.12,
+          type: 'triangle',
+          lastType: 'sine',
+          attack: 0.004,
+        },
+      );
+      return;
+    }
+
+    // Теневое (negative): таинственный глубокий обратный импульс
+    scheduleTone(out.ctx, out.dest, {
+      type: 'sawtooth',
+      startFreq: 311.13 * pitch,
+      endFreq: 155.56 * pitch,
+      duration: 0.22,
+      attack: 0.015,
+      gain: 0.12,
+      filterType: 'lowpass',
+      filterStartFreq: 420,
+      filterEndFreq: 1400,
+    });
+    scheduleTone(out.ctx, out.dest, {
+      type: 'sine',
+      startFreq: 466.16 * pitch,
+      endFreq: 233.08 * pitch,
+      delay: 0.03,
+      duration: 0.2,
+      attack: 0.01,
+      gain: 0.1,
+    });
+  };
+
+  const playGoldSeal = (): void => {
+    const out = prepareSfx();
+    if (!out) return;
+    scheduleNoteSequence(out.ctx, out.dest, [1046.5, 1318.51, 1567.98], {
+      stepSec: 0.036,
+      duration: 0.1,
+      lastDuration: 0.2,
+      gain: 0.15,
+      type: 'sine',
+      attack: 0.002,
+    });
+  };
+
+  const playBossIntro = (): void => {
+    const out = prepareSfx();
+    if (!out) return;
+    // Короткий джингл выхода Босса-монстра: литавры + тёмный медный акцент
+    scheduleTone(out.ctx, out.dest, {
+      type: 'sine',
+      startFreq: 110,
+      endFreq: 52,
+      duration: 0.34,
+      attack: 0.004,
+      gain: 0.24,
+    });
+    scheduleTone(out.ctx, out.dest, {
+      type: 'sawtooth',
+      startFreq: 146.83,
+      endFreq: 138.59,
+      delay: 0.02,
+      duration: 0.38,
+      attack: 0.012,
+      gain: 0.13,
+      filterType: 'lowpass',
+      filterStartFreq: 950,
+      filterEndFreq: 280,
+    });
+    scheduleTone(out.ctx, out.dest, {
+      type: 'triangle',
+      startFreq: 220,
+      delay: 0.11,
+      duration: 0.28,
+      attack: 0.008,
+      gain: 0.11,
+    });
+    scheduleNoiseBurst(out.ctx, out.dest, cachedNoiseBuffer, {
+      duration: 0.16,
+      gain: 0.08,
+      filterType: 'lowpass',
+      startFreq: 480,
+      endFreq: 140,
     });
   };
 
@@ -1321,26 +1764,30 @@ export function createBaliteAudio(
     });
   };
 
-  const playDialogue = (): void => {
+  const playDialogue = (pitchRate = 1): void => {
     const out = prepareSfx();
     if (!out) return;
+    const rate =
+      typeof pitchRate === 'number' && Number.isFinite(pitchRate)
+        ? Math.max(0.65, Math.min(1.45, pitchRate))
+        : 1;
     // Мягкий диалоговый щелчок/чириканье реплики Миры
     scheduleTone(out.ctx, out.dest, {
       type: 'sine',
-      startFreq: 580,
-      endFreq: 740,
-      duration: 0.045,
+      startFreq: 580 * rate,
+      endFreq: 740 * rate,
+      duration: 0.04,
       attack: 0.003,
-      gain: 0.09,
+      gain: 0.065,
     });
     scheduleTone(out.ctx, out.dest, {
       type: 'triangle',
-      startFreq: 880,
-      endFreq: 960,
-      delay: 0.015,
-      duration: 0.035,
+      startFreq: 880 * rate,
+      endFreq: 960 * rate,
+      delay: 0.014,
+      duration: 0.032,
       attack: 0.002,
-      gain: 0.06,
+      gain: 0.042,
     });
   };
 
@@ -1355,6 +1802,7 @@ export function createBaliteAudio(
     }
 
     stopAmbient();
+    stopFlameLoop();
 
     if (ctx && masterGain) {
       setParamImmediate(masterGain.gain, 0, getSafeTime(ctx));
@@ -1387,13 +1835,20 @@ export function createBaliteAudio(
     setSettings,
     getSettings,
     isMuted,
+    setMusicMood,
+    setFlameIntensity,
     playButton,
+    playCancel,
     playCardHover,
     playCardSelect,
     playCardDeselect,
     playCardDeal,
     playChipHit,
     playMultHit,
+    playXMultHit,
+    playEditionTrigger,
+    playGoldSeal,
+    playBossIntro,
     playRelicTrigger,
     playGoldDelta,
     playBoosterOpen,

@@ -3737,4 +3737,99 @@ describe('Интеграция приложения Balite (src/ui/app.ts)', () 
       expect(firstRowBeforeWait?.dataset.cashoutRevealed).toBe('true');
     }, 15_000);
   });
+
+  describe('Story 9.1: тактильный juice, 3D-переворот от Свитка, тряска сцены и настройки анимаций', () => {
+    it('переключает screenShake и reducedMotion в Настройках, сохраняет в MetaSave и управляет тряской сцены', async () => {
+      const nowMs = 10_000_000;
+      const meta = createInitialMetaSave(nowMs, {
+        lang: 'ru',
+        animationSpeed: 4,
+        tutorialCompleted: true,
+      });
+      const baseRun = createInitialRunState('b_red', 'STORY_9_1_SETTINGS');
+      const playing = dispatch(baseRun, { type: 'SELECT_BLIND' }).nextState;
+      const save = createPlayerSaveData(
+        meta,
+        serializeRunStateToSnapshot(playing, 1, nowMs),
+        1,
+        nowMs,
+      );
+      const mock = createMockBridge({ initialSave: save });
+
+      mounted = mountBaliteApp(root, { bridge: mock.bridge, initialNowMs: () => nowMs });
+      await mounted.readyPromise;
+      await flushMicrotasks(8);
+
+      expect(root.dataset.reducedMotion).toBe('false');
+      findButtonByText(root, 'Настройки')?.click();
+      root.querySelector<HTMLButtonElement>('[data-hub-action="settings"]')?.click();
+
+      // Отключаем тряску экрана и включаем уменьшение анимаций
+      root.querySelector<HTMLButtonElement>('[data-screen-shake="off"]')?.click();
+      root.querySelector<HTMLButtonElement>('[data-reduced-motion="on"]')?.click();
+
+      expect(root.dataset.reducedMotion).toBe('true');
+      expect(mounted.getSaveData().meta.settings.screenShake).toBe(false);
+      expect(mounted.getSaveData().meta.settings.reducedMotion).toBe(true);
+
+      // При отключённой тряске открытие модалки не вешает класс тряски
+      const host = root.querySelector<HTMLElement>('.stage-screen-host')!;
+      host.classList.remove('is-ui-jiggle', 'is-ui-jiggle--medium', 'is-ui-jiggle--heavy');
+      root.querySelector<HTMLButtonElement>('[data-action="close"]')?.click();
+      findButtonByText(root, 'Настройки')?.click();
+      expect(host.classList.contains('is-ui-jiggle')).toBe(false);
+    });
+
+    it('запускает каскадный 3D-переворот .is-consumable-flipping на картах при применении Свитка Кузницы', async () => {
+      const nowMs = 10_200_000;
+      const meta = createInitialMetaSave(nowMs, {
+        lang: 'ru',
+        animationSpeed: 2,
+        tutorialCompleted: true,
+      });
+      const baseRun = createInitialRunState('b_red', 'STORY_9_1_FLIP');
+      const playing = dispatch(baseRun, { type: 'SELECT_BLIND' }).nextState;
+      const empress = createConsumableInstance('c_empress', 'cons_flip_empress');
+      const stateWithScroll: RunState = {
+        ...playing,
+        consumables: [empress],
+      };
+      const save = createPlayerSaveData(
+        meta,
+        serializeRunStateToSnapshot(stateWithScroll, 1, nowMs),
+        1,
+        nowMs,
+      );
+      const mock = createMockBridge({ initialSave: save });
+
+      vi.useFakeTimers();
+      mounted = mountBaliteApp(root, { bridge: mock.bridge, initialNowMs: () => nowMs });
+      await mounted.readyPromise;
+      await flushMicrotasks(8);
+
+      const targetIds = playing.handIds.slice(0, 2);
+      root.querySelector<HTMLElement>('[data-consumable-uid="cons_flip_empress"]')?.click();
+      root.querySelector<HTMLButtonElement>('.inspector-backdrop [data-action="use"]')?.click();
+      for (const id of targetIds) {
+        root.querySelector<HTMLElement>(`.hand-card-slot[data-card-id="${id}"]`)?.click();
+      }
+      const targetBanner = root.querySelector<HTMLElement>('.target-banner')!;
+      expect(targetBanner).not.toBeNull();
+      findButtonByText(targetBanner, 'Подтвердить')?.click();
+
+      const flipped0 = root.querySelector<HTMLElement>(
+        `[data-zone="hand"][data-card-id="${targetIds[0]}"] .card-frame`,
+      );
+      const flipped1 = root.querySelector<HTMLElement>(
+        `[data-zone="hand"][data-card-id="${targetIds[1]}"] .card-frame`,
+      );
+      expect(flipped0?.classList.contains('is-consumable-flipping')).toBe(true);
+      expect(flipped1?.classList.contains('is-consumable-flipping')).toBe(true);
+      expect(flipped1?.style.getPropertyValue('--flip-index')).toBe('1');
+
+      await vi.advanceTimersByTimeAsync(500);
+      expect(flipped0?.classList.contains('is-consumable-flipping')).toBe(false);
+      expect(flipped1?.classList.contains('is-consumable-flipping')).toBe(false);
+    });
+  });
 });
