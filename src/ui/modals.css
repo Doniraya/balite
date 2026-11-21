@@ -1556,15 +1556,36 @@
 }
 
 .run-info-blind-gem {
-  color: #ef4444;
-  font-size: 13px;
+  display: inline-block;
+  width: 17px;
+  height: 16px;
+  font-size: 0;
+  line-height: 0;
+  color: transparent;
+  background: url('../assets/ui/icon-score-gem.webp') center / contain no-repeat;
+  image-rendering: pixelated;
+  flex-shrink: 0;
 }
 
 .run-info-blind-reward {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   font-size: 14px;
   font-weight: 800;
   color: #f59e0b;
   margin-top: 2px;
+}
+
+.run-info-blind-reward::before {
+  content: '';
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  background: url('../assets/ui/icon-gold-coin.webp') center / contain no-repeat;
+  image-rendering: pixelated;
+  flex-shrink: 0;
 }
 
 .run-info-blind-or {

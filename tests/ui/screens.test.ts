@@ -1578,9 +1578,10 @@ describe('4-поясной рендер экранов Balite (screens.ts)', () 
       };
       const css = readFileSync('src/ui/screens.css', 'utf8');
 
-      // Самоцветы маны с радиальным градиентом и безелем
-      expect(css).toMatch(/\.hud-pill--chips\s*\{[^}]*radial-gradient/);
-      expect(css).toMatch(/\.hud-pill--mult\s*\{[^}]*radial-gradient/);
+      // 9-slice пиксель-арт плашки Силы, Множителя и очков
+      expect(css).toMatch(/\.hud-pill--chips\s*\{[^}]*hud-pill-chips\.webp/);
+      expect(css).toMatch(/\.hud-pill--mult\s*\{[^}]*hud-pill-mult\.webp/);
+      expect(css).toMatch(/\.hud-score-box\s*\{[^}]*hud-plaque-dark\.webp/);
 
       // Резные деревянные лотки для слотов в дубовой балке
       expect(css).toMatch(/\.inventory-slot-placeholder\s*\{[^}]*inset\s+0\s+3px/);

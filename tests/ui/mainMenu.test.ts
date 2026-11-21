@@ -54,7 +54,7 @@ describe('Главное меню Balite (src/ui/mainMenu.ts)', () => {
       const logoEl = root.querySelector<HTMLElement>('.main-menu__logo');
       expect(logoEl?.getAttribute('aria-label')).toBe('Balite');
       expect(logoEl?.textContent?.replace(/\s+/g, '')).toBe('BALITE');
-      expect(root.querySelector('.main-menu__card svg')).not.toBeNull();
+      expect(root.querySelector('.main-menu__card img')).not.toBeNull();
       expect(root.innerHTML).not.toContain('♠');
       expect(root.innerHTML).not.toContain('%E2%99%A0');
 

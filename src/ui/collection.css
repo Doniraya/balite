@@ -343,9 +343,12 @@
 }
 
 .collection-lock-svg {
-  width: 55%;
-  height: 55%;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
+  width: 62%;
+  height: 62%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  pointer-events: none;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.85));
 }
 
 /* ==========================================================================

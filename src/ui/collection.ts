@@ -1,4 +1,5 @@
 import './collection.css';
+import lockChainsUrl from '../assets/ui/icon-lock-chains.webp';
 import {
   COLLECTION_BLIND_IDS,
   COLLECTION_EDITIONS,
@@ -156,58 +157,14 @@ function createLockedVoucherCard(
   const overlay = document.createElement('div');
   overlay.className = 'collection-lock-overlay';
 
-  const svgNS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(svgNS, 'svg');
-  svg.setAttribute('viewBox', '0 0 48 48');
-  svg.setAttribute('class', 'collection-lock-svg');
-  svg.setAttribute('aria-hidden', 'true');
+  const lockImg = document.createElement('img');
+  lockImg.className = 'collection-lock-svg';
+  lockImg.src = lockChainsUrl;
+  lockImg.alt = '';
+  lockImg.draggable = false;
+  lockImg.setAttribute('aria-hidden', 'true');
 
-  // Цепи крест-накрест
-  const chain1 = document.createElementNS(svgNS, 'line');
-  chain1.setAttribute('x1', '6');
-  chain1.setAttribute('y1', '6');
-  chain1.setAttribute('x2', '42');
-  chain1.setAttribute('y2', '42');
-  chain1.setAttribute('stroke', '#cbd5e1');
-  chain1.setAttribute('stroke-width', '4');
-  chain1.setAttribute('stroke-dasharray', '4 2');
-
-  const chain2 = document.createElementNS(svgNS, 'line');
-  chain2.setAttribute('x1', '42');
-  chain2.setAttribute('y1', '6');
-  chain2.setAttribute('x2', '6');
-  chain2.setAttribute('y2', '42');
-  chain2.setAttribute('stroke', '#cbd5e1');
-  chain2.setAttribute('stroke-width', '4');
-  chain2.setAttribute('stroke-dasharray', '4 2');
-
-  // Дужка замка
-  const shackle = document.createElementNS(svgNS, 'path');
-  shackle.setAttribute('d', 'M18 24 V16 A6 6 0 0 1 30 16 V24');
-  shackle.setAttribute('fill', 'none');
-  shackle.setAttribute('stroke', '#94a3b8');
-  shackle.setAttribute('stroke-width', '4');
-
-  // Корпус замка
-  const body = document.createElementNS(svgNS, 'rect');
-  body.setAttribute('x', '14');
-  body.setAttribute('y', '22');
-  body.setAttribute('width', '20');
-  body.setAttribute('height', '18');
-  body.setAttribute('rx', '4');
-  body.setAttribute('fill', '#475569');
-  body.setAttribute('stroke', '#94a3b8');
-  body.setAttribute('stroke-width', '2');
-
-  // Замочная скважина
-  const keyhole = document.createElementNS(svgNS, 'circle');
-  keyhole.setAttribute('cx', '24');
-  keyhole.setAttribute('cy', '30');
-  keyhole.setAttribute('r', '2.5');
-  keyhole.setAttribute('fill', '#0f172a');
-
-  svg.append(chain1, chain2, shackle, body, keyhole);
-  overlay.appendChild(svg);
+  overlay.appendChild(lockImg);
   card.appendChild(overlay);
 
   const tooltip: TooltipData = {

@@ -74,42 +74,33 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: clamp(12px, 2dvh, 22px) 0;
-}
-
-.main-menu__staff {
-  position: absolute;
-  inset: -26% auto -26% 50%;
-  width: clamp(56px, 8vw, 92px);
-  height: 152%;
-  transform: translateX(-50%);
-  pointer-events: none;
-  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.55));
+  padding: clamp(4px, 0.8dvh, 10px) 0;
 }
 
 .main-menu__card {
   position: relative;
-  width: clamp(74px, min(18vw, 16dvh), 132px);
-  aspect-ratio: 5 / 7;
-  border-radius: 10px;
-  background: linear-gradient(160deg, #f5e6c3 0%, #dec48e 100%);
-  border: 3px solid #f5b942;
-  box-shadow:
-    0 6px 0 #704a14,
-    0 18px 34px rgba(0, 0, 0, 0.65),
-    inset 0 0 10px rgba(122, 79, 43, 0.25);
+  width: clamp(92px, min(21vw, 22dvh), 165px);
+  aspect-ratio: 240 / 403;
+  background: transparent;
+  border: none;
+  box-shadow: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6px;
+  padding: 0;
   box-sizing: border-box;
+  filter: drop-shadow(0 14px 26px rgba(0, 0, 0, 0.72));
   animation: main-menu-card-float 4.6s ease-in-out infinite;
 }
 
-.main-menu__card-sigil {
+.main-menu__crest-img {
   width: 100%;
   height: 100%;
+  object-fit: contain;
   display: block;
+  image-rendering: pixelated;
+  pointer-events: none;
+  user-select: none;
 }
 
 @keyframes main-menu-card-float {
@@ -258,7 +249,11 @@
 
 .main-menu__lang-icon {
   flex-shrink: 0;
-  color: #f5b942;
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  display: block;
+  image-rendering: pixelated;
 }
 
 /* Адаптация под узкие портретные экраны смартфонов (<= 720px) */

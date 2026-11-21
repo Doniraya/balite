@@ -1,7 +1,7 @@
 import './mainMenu.css';
 import type { I18nLang, Translator } from '../i18n';
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
+import guildCrestUrl from '../assets/ui/guild-crest.webp';
+import langGlobeUrl from '../assets/ui/icon-lang-globe.webp';
 
 /**
  * Текущая версия сборки приложения, подставляемая Vite из package.json.
@@ -31,161 +31,35 @@ export interface MainMenuHandlers {
 }
 
 /**
- * Создаёт SVG-элемент с заданными атрибутами.
- */
-function createSvgEl(
-  tag: keyof SVGElementTagNameMap,
-  attrs: Record<string, string>,
-): SVGElement {
-  const el = document.createElementNS(SVG_NS, tag);
-  for (const [key, value] of Object.entries(attrs)) {
-    el.setAttribute(key, value);
-  }
-  return el;
-}
-
-/**
- * Создаёт SVG-эмблему вертикального алхимического жезла позади центральной карты.
- */
-function createArcaneStaffSvg(): SVGElement {
-  const svg = createSvgEl('svg', {
-    class: 'main-menu__staff',
-    viewBox: '0 0 120 320',
-    'aria-hidden': 'true',
-  });
-
-  svg.append(
-    createSvgEl('line', {
-      x1: '60',
-      y1: '14',
-      x2: '60',
-      y2: '306',
-      stroke: 'rgba(245, 185, 66, 0.72)',
-      'stroke-width': '4',
-      'stroke-linecap': 'round',
-    }),
-    createSvgEl('path', {
-      d: 'M60 18 C82 40, 38 74, 60 100 C82 126, 38 194, 60 220 C82 246, 38 280, 60 302',
-      fill: 'none',
-      stroke: 'rgba(94, 198, 255, 0.7)',
-      'stroke-width': '3',
-      'stroke-linecap': 'round',
-    }),
-    createSvgEl('polygon', {
-      points: '60,4 70,18 60,32 50,18',
-      fill: '#f5b942',
-    }),
-    createSvgEl('polygon', {
-      points: '60,288 68,302 60,316 52,302',
-      fill: '#e84a5f',
-    }),
-  );
-
-  return svg;
-}
-
-/**
- * Создаёт центральную руническую карту логотипа (строго без туза пик и покерных мастей).
+ * Создаёт центральную пиксельную эмблему гильдии (зачарованный талисман со скипетром, без покерных мастей).
  */
 function createRunicCardElement(): HTMLDivElement {
   const card = document.createElement('div');
   card.className = 'main-menu__card';
   card.setAttribute('aria-hidden', 'true');
 
-  const sigilSvg = createSvgEl('svg', {
-    class: 'main-menu__card-sigil',
-    viewBox: '0 0 100 130',
-  });
+  const crestImg = document.createElement('img');
+  crestImg.className = 'main-menu__crest-img';
+  crestImg.src = guildCrestUrl;
+  crestImg.alt = '';
+  crestImg.draggable = false;
+  crestImg.setAttribute('aria-hidden', 'true');
 
-  sigilSvg.append(
-    createSvgEl('rect', {
-      x: '8',
-      y: '8',
-      width: '84',
-      height: '114',
-      rx: '8',
-      fill: 'none',
-      stroke: '#d49a35',
-      'stroke-width': '2',
-    }),
-    // Угловые рунические звёзды в углах карты (SVG вместо текста, чтобы textContent логотипа оставался чистым)
-    createSvgEl('polygon', {
-      points: '18,14 20,18 24,20 20,22 18,26 16,22 12,20 16,18',
-      fill: '#b47816',
-    }),
-    createSvgEl('polygon', {
-      points: '82,104 84,108 88,110 84,112 82,116 80,112 76,110 80,108',
-      fill: '#b47816',
-    }),
-    createSvgEl('circle', {
-      cx: '50',
-      cy: '65',
-      r: '28',
-      fill: 'rgba(22, 46, 40, 0.08)',
-      stroke: '#1e3a34',
-      'stroke-width': '2.5',
-    }),
-    createSvgEl('polygon', {
-      points: '50,24 62,55 90,65 62,75 50,106 38,75 10,65 38,55',
-      fill: '#1b3530',
-      stroke: '#c98926',
-      'stroke-width': '2',
-    }),
-    createSvgEl('polygon', {
-      points: '50,42 59,65 50,88 41,65',
-      fill: '#f5b942',
-    }),
-    createSvgEl('circle', {
-      cx: '50',
-      cy: '65',
-      r: '4',
-      fill: '#1b3530',
-    }),
-  );
-
-  card.append(sigilSvg);
+  card.append(crestImg);
   return card;
 }
 
 /**
- * Создаёт компактную SVG-иконку выбора языка.
+ * Создаёт компактную пиксельную иконку выбора языка.
  */
-function createLanguageIconSvg(): SVGElement {
-  const svg = createSvgEl('svg', {
-    class: 'main-menu__lang-icon',
-    viewBox: '0 0 24 24',
-    width: '18',
-    height: '18',
-    'aria-hidden': 'true',
-  });
-  svg.append(
-    createSvgEl('circle', {
-      cx: '12',
-      cy: '12',
-      r: '9',
-      fill: 'none',
-      stroke: 'currentColor',
-      'stroke-width': '2',
-    }),
-    createSvgEl('ellipse', {
-      cx: '12',
-      cy: '12',
-      rx: '4',
-      ry: '9',
-      fill: 'none',
-      stroke: 'currentColor',
-      'stroke-width': '1.6',
-    }),
-    createSvgEl('line', {
-      x1: '3',
-      y1: '12',
-      x2: '21',
-      y2: '12',
-      stroke: 'currentColor',
-      'stroke-width': '1.6',
-    }),
-  );
-  return svg;
+function createLanguageIconImg(): HTMLImageElement {
+  const img = document.createElement('img');
+  img.className = 'main-menu__lang-icon';
+  img.src = langGlobeUrl;
+  img.alt = '';
+  img.draggable = false;
+  img.setAttribute('aria-hidden', 'true');
+  return img;
 }
 
 /**
@@ -227,7 +101,7 @@ export function renderMainMenu(
 
   const cardWrap = document.createElement('span');
   cardWrap.className = 'main-menu__card-wrap';
-  cardWrap.append(createArcaneStaffSvg(), createRunicCardElement());
+  cardWrap.append(createRunicCardElement());
 
   const wordRight = document.createElement('span');
   wordRight.className = 'main-menu__wordmark';
@@ -290,7 +164,7 @@ export function renderMainMenu(
   langBtn.className = 'main-menu__lang-btn';
   langBtn.dataset.menuAction = 'toggle-lang';
   langBtn.append(
-    createLanguageIconSvg(),
+    createLanguageIconImg(),
     Object.assign(document.createElement('span'), {
       className: 'main-menu__lang-label',
       textContent:

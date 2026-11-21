@@ -1,5 +1,6 @@
 import './tutorialOverlay.css';
 import type { BaliteAudioController } from '../audio/synth';
+import tutArrowGoldUrl from '../assets/ui/tut-arrow-gold.webp';
 import { getTooltipData } from './tooltip';
 import {
   type CanonicalTutorialEmotion,
@@ -212,17 +213,10 @@ export function renderMiraAvatar(
 }
 
 /**
- * Создаёт SVG иконку стрелки-указателя.
+ * Создаёт пиксельную иконку стрелки-указателя.
  */
 function renderArrowSvg(): string {
-  return `
-    <svg viewBox="0 0 24 24" width="36" height="36" fill="none">
-      <path d="M12 2L12 16" stroke="#f5b942" stroke-width="4.5" stroke-linecap="round"/>
-      <path d="M5 11L12 18L19 11" stroke="#f5b942" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="M12 4L12 16" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
-      <path d="M7 11L12 16L17 11" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-  `;
+  return `<img src="${tutArrowGoldUrl}" class="tut-arrow__img" alt="" draggable="false" />`;
 }
 
 /**
